@@ -1,5 +1,4 @@
 # obsidian-weave-reader
-# Weave EPUB Reader
 
 [English README](./README.en.md)
 
