@@ -92,6 +92,29 @@ So although the plugin is named EPUB Reader, the current project is **not limite
 - Incremental reading entry points
 - AI actions for selected text
 
+## Free and Premium
+
+Weave EPUB Reader follows a model of free core functionality with optional paid premium capabilities.
+
+### Free core functionality
+
+- Local reading and bookshelf management
+- Chapter navigation, reading progress, bookmarks, and reader appearance settings
+- Core excerpting, highlighting, and backlink navigation
+- Core local integrations with Markdown, Canvas, and Weave data
+
+### Premium capabilities
+
+- Advanced features that require activation
+- More complete advanced reading workflows, enhanced integrations, or ongoing extended capabilities
+- Some premium capabilities may depend on license validation or companion online services
+
+### Boundary notes
+
+- Whether a feature requires activation depends on the current plugin version and its actual UI/feature gating
+- AI-related features usually also require your own API key for the third-party AI provider you choose
+- Even when premium capabilities are enabled, your EPUB, Markdown, Canvas, and vault data remain under your control
+
 ## Installation
 
 ### Option 1: Manual installation
@@ -173,8 +196,24 @@ If you sync across devices, it is generally better to sync vault content rather 
 
 ### Possible network use
 
+- Premium activation, license validation, and device entitlement management may contact the plugin's companion license service
 - AI-related features may call the AI service you configured
 - Any additional external integration depends on your own setup
+
+### Data that may be involved in license validation
+
+When you use activation or license-related features, the plugin may send the following data in order to complete authorization checks:
+
+- Activation code
+- Purchase or bound email address
+- Device fingerprint summary
+- Platform information
+
+Notes:
+
+- The device fingerprint is used for device authorization management, anomaly checks, and activation-slot control
+- License validation results may be cached locally for a period of time to reduce repeated requests
+- This README summarizes behavior visible in the current public codebase; if the service policy changes later, the updated public documentation should take precedence
 
 ### File access scope
 
@@ -214,9 +253,28 @@ So the manual installation path should be:
 
 ## License
 
-This project is released under the [GPL-3.0-or-later](LICENSE) license.
+The source code of this project is released under the [GPL-3.0-or-later](LICENSE) license.
+
+### Relationship between open source licensing and the paid model
+
+- The open-source code in this repository is governed by GPL-3.0-or-later
+- Free core plus paid premium is a product and service model; it does not remove the rights GPL grants for the published source code
+- Paid value mainly corresponds to premium features, license services, online capabilities, ongoing maintenance, or related add-on services
+- If a capability depends on online services, activation systems, or account entitlements, its use may also be described by separate service, purchase, or privacy notices
+
+### What to keep in mind
+
+- If you only use the local core functionality, you typically do not need additional online services
+- If you use premium licensing, activation validation, or AI features, you should also review the related purchase, activation, and privacy notices
+
+Related public notes:
+
+- [Privacy notice](./PRIVACY.md)
+- [Premium terms overview](./PREMIUM_TERMS.md)
 
 ## Author and Feedback
 
 - Author: Rabbit (zhuzhige)
 - GitHub: https://github.com/zhuzhige123
+- Privacy: [PRIVACY.md](./PRIVACY.md)
+- Premium: [PREMIUM_TERMS.md](./PREMIUM_TERMS.md)
