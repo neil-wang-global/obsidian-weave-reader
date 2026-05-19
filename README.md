@@ -191,25 +191,6 @@ Weave EPUB Reader 是一款面向 Obsidian 的多格式电子书阅读器插件�
 - 需要把 EPUB 阅读和 Canvas / Markdown 组织方式结合起来
 - 希望通过深链接快速返回书中上下文
 
-## 开发
-
-```bash
-npm install
-npm run dev
-```
-
-生产构建：
-
-```bash
-npm run build
-```
-
-说明：
-
-- 开发模式使用 Vite watch 流程
-- 如果配置了对应的 Vault 路径，开发产物会自动同步到测试插件目录
-- 桌面端开发构建会先写入 `.desktop-hot-reload/`，再同步到目标目录
-
 ## 常见问题
 
 ### 阅读器正文没有显示摘录高亮怎么办

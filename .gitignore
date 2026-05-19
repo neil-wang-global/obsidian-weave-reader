@@ -272,6 +272,7 @@ scripts/*
 !scripts/hot-reload-utils.cjs
 !scripts/kill-vite.cjs
 !scripts/verify-release-assets.cjs
+!scripts/verify-public-repo-safety.cjs
 
 # 测试文件
 test/

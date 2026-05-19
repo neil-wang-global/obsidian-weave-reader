@@ -12,6 +12,7 @@
     "build": "cmd /c \"set WEAVE_EPUB_STANDALONE=1&& npm run check:encoding && node --max-old-space-size=4096 node_modules/vite/bin/vite.js build --mode production\"",
     "postbuild": "cmd /c \"set WEAVE_EPUB_STANDALONE=1&& node scripts/copy-manifest.cjs && node scripts/verify-release-assets.cjs\"",
     "verify:release": "node scripts/verify-release-assets.cjs",
+    "verify:public-repo": "node scripts/verify-public-repo-safety.cjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "cmd /c \"npm run check:src-js-residue && npm run build\"",

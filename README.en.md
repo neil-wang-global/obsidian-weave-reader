@@ -5,7 +5,7 @@
 <div align="center">
 
 ![Weave EPUB Reader](https://img.shields.io/badge/Obsidian-EPUB%20Reader-8a5cf6?style=for-the-badge)
-![Version](https://img.shields.io/badge/version-0.5.8-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-0.6.1-green?style=for-the-badge)
 ![Min Obsidian](https://img.shields.io/badge/Obsidian-1.7.0+-purple?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange?style=for-the-badge)
 
@@ -189,25 +189,6 @@ The plugin may read and write:
 - Building a workflow around source text, excerpts, notes, and backlinks
 - Combining EPUB reading with Markdown and Canvas-based organization
 - Returning to precise source context through deep links
-
-## Development
-
-```bash
-npm install
-npm run dev
-```
-
-Production build:
-
-```bash
-npm run build
-```
-
-Notes:
-
-- Development mode uses the Vite watch flow
-- If your vault path is configured, development output can be synced automatically into the test plugin directory
-- Desktop development writes into `.desktop-hot-reload/` before syncing to the final target directory
 
 ## FAQ
 
