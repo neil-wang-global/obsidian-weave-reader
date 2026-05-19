@@ -1,0 +1,241 @@
+# Weave EPUB Reader
+
+[中文版 README](./README.md)
+
+<div align="center">
+
+![Weave EPUB Reader](https://img.shields.io/badge/Obsidian-EPUB%20Reader-8a5cf6?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-0.5.8-green?style=for-the-badge)
+![Min Obsidian](https://img.shields.io/badge/Obsidian-1.7.0+-purple?style=for-the-badge)
+![License](https://img.shields.io/badge/license-GPL--3.0-orange?style=for-the-badge)
+
+</div>
+
+Weave EPUB Reader is a multi-format ebook reader plugin for Obsidian. It focuses on unifying reading, excerpting, backlinks, source navigation, and review into a single workflow.
+
+It can open multiple book file types directly from your vault and provides a reading-centered toolset including bookshelf management, persisted reading position, chapter navigation, in-text highlights, excerpt backlinks, Canvas binding, screenshots, export actions, and entry points for AI or incremental reading workflows.
+
+Minimum supported Obsidian version: `1.7.0`
+
+## Project Scope
+
+This repository is a **standalone book reader project**, not the documentation hub for the full Weave plugin ecosystem.
+
+This plugin is designed for users who want to:
+
+- Read multiple supported book formats directly inside Obsidian
+- Write excerpts back into Markdown, Canvas, or Weave card data
+- Jump from generated EPUB deep links back to exact positions in the book
+- See note-derived highlights rendered back into the reader body
+- Keep reading progress, bookmarks, navigation, and visual settings consistent
+
+## Reader Engine and Supported Formats
+
+### Reader engine
+
+- The current reader engine is fixed to `foliate-js`
+- The concrete runtime service in this project is `FoliateReaderService`
+- `TXT` uses a dedicated plain-text adapter path
+- Supported non-EPUB book formats are currently loaded through the Foliate generic loader path
+
+### Currently supported formats
+
+- `epub`
+- `mobi`
+- `azw3`
+- `fb2`
+- `fbz` (`fb2.zip`)
+- `cbz`
+- `txt`
+
+So although the plugin is named EPUB Reader, the current project is **not limited to EPUB only**.
+
+## Core Features
+
+### 1. Book Reading Experience
+
+- Open multiple supported book formats directly from the Obsidian vault
+- Manage imported books from a bookshelf view
+- Use paginated mode or continuous scrolling mode
+- Navigate with chapter TOC, reading progress, and pagination info
+- Customize font, line height, letter spacing, page margin, width mode, and theme
+
+### 2. Excerpts and Highlights
+
+- Create excerpts from selected text
+- Insert excerpts into Markdown, copy them, or send them to Canvas
+- Render highlights and concealed text directly in the reader body
+- Click highlights to locate source notes, copy text, delete highlights, or change color
+
+### 3. Backlinks and Live Rendering
+
+- The reader aggregates excerpts for the current EPUB from:
+  - Markdown files
+  - Canvas files
+  - Weave deck / structured card data files
+- When those source files change, the reader refreshes highlight rendering automatically
+- Under normal conditions, new excerpts should appear in the reading body in roughly 2 seconds or less
+
+### 4. Deep Links and Source Tracing
+
+- Supports plugin-generated EPUB deep links
+- Jump from excerpt notes back to the exact place in the book
+- Navigate from in-text highlights back to their source excerpts
+- Preserve source link information when exporting or creating chapter reading points
+
+### 5. Workflow Extensions
+
+- Bookmarks and last-open location persistence
+- Export the current chapter to Markdown
+- Screenshot capture and screenshot save modes
+- Canvas binding and excerpt node creation
+- Incremental reading entry points
+- AI actions for selected text
+
+## Installation
+
+### Option 1: Manual installation
+
+1. Get the following files from a release package:
+   - `main.js`
+   - `manifest.json`
+   - `styles.css`
+   - `versions.json` (if included, recommended)
+2. Copy them into:
+
+   `.obsidian/plugins/weave-epub-reader/`
+
+3. Restart Obsidian
+4. Enable `Weave EPUB Reader`
+
+## Recommended Workflows
+
+### Markdown excerpt workflow
+
+Best for users who want to integrate reading into their Obsidian note system:
+
+1. Select text in the reader
+2. Insert the excerpt into the active Markdown note
+3. Refine, reorganize, and expand the notes later
+4. Reopen the EPUB and the reader can render those excerpts back as highlights
+
+### Canvas excerpt workflow
+
+Best for visual structuring, research mapping, and concept clustering:
+
+1. Bind a Canvas to the current book
+2. Send excerpts from the reader into the Canvas
+3. Continue organizing nodes in the Canvas
+4. The reader detects those related excerpts and renders them back into the book
+
+### Backlink review workflow
+
+Best for “excerpt first, review later, return to source” reading habits:
+
+1. Revisit historical excerpts in your notes
+2. Jump back into the book through EPUB deep links
+3. Inspect nearby highlights and source context in the reader
+4. Continue review and refinement from the original text
+
+## Data and Sync Notes
+
+### Vault data
+
+The following content typically lives inside your Obsidian vault and is suitable for syncing:
+
+- EPUB files
+- Markdown excerpt notes
+- Canvas files
+- Weave-related card or deck data files
+
+### Plugin directory data
+
+The following content typically lives inside the plugin directory and is more local-state oriented:
+
+- Reader cache
+- Index data
+- Local state
+- Reading progress and UI state
+- Debugging or migration cache
+
+Typical plugin directory:
+
+`.obsidian/plugins/weave-epub-reader/`
+
+If you sync across devices, it is generally better to sync vault content rather than plugin cache files directly.
+
+## Privacy and Network Behavior
+
+### Local-first behavior
+
+- Reading, rendering, excerpting, backlinks, and caching are local by default
+- The plugin does not proactively upload your vault content to external services
+
+### Possible network use
+
+- AI-related features may call the AI service you configured
+- Any additional external integration depends on your own setup
+
+### File access scope
+
+The plugin may read and write:
+
+- EPUB, Markdown, Canvas, and related data files inside the current vault
+- State, cache, and build output inside the plugin directory
+
+## Good Fit For
+
+- Managing reading and knowledge capture entirely inside Obsidian
+- Building a workflow around source text, excerpts, notes, and backlinks
+- Combining EPUB reading with Markdown and Canvas-based organization
+- Returning to precise source context through deep links
+
+## Development
+
+```bash
+npm install
+npm run dev
+```
+
+Production build:
+
+```bash
+npm run build
+```
+
+Notes:
+
+- Development mode uses the Vite watch flow
+- If your vault path is configured, development output can be synced automatically into the test plugin directory
+- Desktop development writes into `.desktop-hot-reload/` before syncing to the final target directory
+
+## FAQ
+
+### Why are excerpt highlights not showing in the reader body
+
+Please verify that:
+
+- The excerpt was written using the plugin-generated EPUB link format
+- The excerpt exists in Markdown, Canvas, or Weave structured card data files
+- The currently open book is the same EPUB referenced by that excerpt
+
+If the source files were updated very recently, the reader will re-aggregate them and try to refresh the in-text highlights shortly afterward.
+
+### What should the plugin folder be called
+
+The plugin ID of this project is:
+
+`weave-epub-reader`
+
+So the manual installation path should be:
+
+`.obsidian/plugins/weave-epub-reader/`
+
+## License
+
+This project is released under the [GPL-3.0-or-later](LICENSE) license.
+
+## Author and Feedback
+
+- Author: Rabbit (zhuzhige)
+- GitHub: https://github.com/zhuzhige123
