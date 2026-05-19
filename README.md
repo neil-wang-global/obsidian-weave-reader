@@ -5,7 +5,7 @@
 <div align="center">
 
 ![Weave EPUB Reader](https://img.shields.io/badge/Obsidian-EPUB%20Reader-8a5cf6?style=for-the-badge)
-![Version](https://img.shields.io/badge/version-0.5.8-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-0.6.1-green?style=for-the-badge)
 ![Min Obsidian](https://img.shields.io/badge/Obsidian-1.7.0+-purple?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange?style=for-the-badge)
 
@@ -100,6 +100,7 @@ Weave EPUB Reader 是一款面向 Obsidian 的多格式电子书阅读器插件�
    - `main.js`
    - `manifest.json`
    - `styles.css`
+   - `sql-wasm.wasm`（如果发布包包含）
    - `versions.json`（如果发布包包含，建议一并复制）
 2. 将文件复制到：
 
