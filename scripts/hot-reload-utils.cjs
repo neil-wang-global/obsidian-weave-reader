@@ -1,6 +1,5 @@
 const fs = require("fs");
 const path = require("path");
-const dotenv = require("dotenv");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const DEFAULT_RUNTIME_FILES = new Set([
@@ -35,6 +34,39 @@ const DEFAULT_PRUNABLE_RUNTIME_FILES = new Set([
 	"versions.json",
 ]);
 
+function parseDotEnv(content) {
+	const parsed = {};
+
+	for (const rawLine of content.split(/\r?\n/)) {
+		const line = rawLine.trim();
+		if (!line || line.startsWith("#")) {
+			continue;
+		}
+
+		const separatorIndex = line.indexOf("=");
+		if (separatorIndex < 0) {
+			continue;
+		}
+
+		const key = line.slice(0, separatorIndex).trim();
+		if (!key) {
+			continue;
+		}
+
+		let value = line.slice(separatorIndex + 1).trim();
+		if (
+			(value.startsWith('"') && value.endsWith('"')) ||
+			(value.startsWith("'") && value.endsWith("'"))
+		) {
+			value = value.slice(1, -1);
+		}
+
+		parsed[key] = value;
+	}
+
+	return parsed;
+}
+
 function readEnvValueFromDotEnv(key) {
 	const envPath = path.join(PROJECT_ROOT, ".env");
 	if (!fs.existsSync(envPath)) {
@@ -42,7 +74,7 @@ function readEnvValueFromDotEnv(key) {
 	}
 
 	try {
-		const parsed = dotenv.parse(fs.readFileSync(envPath, "utf8"));
+		const parsed = parseDotEnv(fs.readFileSync(envPath, "utf8"));
 		const value = parsed[key];
 		return typeof value === "string" && value.trim() ? value.trim() : null;
 	} catch {

@@ -61,6 +61,7 @@ import {
 } from "./utils/license-state";
 import { logger } from "./utils/logger";
 import { initI18n, i18n, syncI18nWithObsidianLanguage } from "./utils/i18n";
+import { initWeaveSettingsLayoutClasses } from "./utils/weave-settings-layout-classes";
 import type { AIConfig } from "./types/plugin-settings";
 import {
 	DEFAULT_BOOKSHELF_DISPLAY_MODE,
@@ -502,6 +503,8 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 	async onload(): Promise<void> {
 		await this.loadSettings();
 		initI18n();
+		const destroyWeaveSettingsLayoutClasses = initWeaveSettingsLayoutClasses();
+		this.register(destroyWeaveSettingsLayoutClasses);
 		registerEpubHost(this.app, this);
 		aiConfigStore.initialize(this as WeavePlugin);
 		this.addSettingTab(new EpubSettingsTab(this.app, this));

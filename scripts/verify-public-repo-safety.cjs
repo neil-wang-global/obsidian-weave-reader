@@ -20,6 +20,7 @@ const FORBIDDEN_TRACKED_PATH_RULES = [
 	{
 		name: "design prototypes and promo assets",
 		patterns: [
+			/^app\.css$/,
 			/^design-prototypes\//,
 			/^scratch\//,
 			/^output\//,

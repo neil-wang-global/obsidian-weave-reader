@@ -1,13 +1,19 @@
 import { pathToFileURL } from "url";
-import { createRequire } from "module";
+import { builtinModules, createRequire } from "module";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
-import builtins from "builtin-modules";
 import { defineConfig } from "vite";
 import commonjs from "vite-plugin-commonjs";
 import path from "path";
 import fs from "fs";
 
 const require = createRequire(import.meta.url);
+const nodeBuiltins = [...new Set(
+  builtinModules.flatMap((moduleName) =>
+    moduleName.startsWith("node:")
+      ? [moduleName, moduleName.slice(5)]
+      : [moduleName, `node:${moduleName}`]
+  )
+)];
 const {
   DEFAULT_PRUNABLE_RUNTIME_DIRS,
   DEFAULT_PRUNABLE_RUNTIME_FILES,
@@ -105,6 +111,20 @@ export default defineConfig(({ mode }) => {
   return {
     cacheDir: path.resolve(process.cwd(), `node_modules/.vite-${svelteCacheFingerprint}`),
     resolve: {
+      alias: [
+        {
+          find: /^jszip$/,
+          replacement: path.resolve(process.cwd(), "node_modules/jszip/lib/index.js"),
+        },
+        {
+          find: /^setimmediate$/,
+          replacement: path.resolve(process.cwd(), "src/shims/setimmediate-safe.js"),
+        },
+        {
+          find: /^lie$/,
+          replacement: path.resolve(process.cwd(), "src/shims/native-promise.js"),
+        },
+      ],
       conditions: ["browser", "import", "module", "default"],
       extensions: [".ts", ".tsx", ".svelte", ".mjs", ".js", ".jsx", ".json"],
     },
@@ -315,7 +335,7 @@ export default defineConfig(({ mode }) => {
           "codemirror",
           /^@codemirror\/.*/,
           /^@lezer\/.*/,
-          ...builtins,
+          ...nodeBuiltins,
         ],
         treeshake: {
           moduleSideEffects: (id) => {

@@ -103,6 +103,7 @@ tmp-snippet.ts
 # Build output
 build/
 main.js
+/app.css
 # 只忽略根目录的构建输出 CSS，保留 src/styles/ 下的源码 CSS
 /styles.css
 

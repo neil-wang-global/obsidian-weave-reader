@@ -1129,12 +1129,10 @@ body.styled-scrollbars .epub-paragraph-overlay__text-viewport::-webkit-scrollbar
 @keyframes epubParagraphOverlayCurtainForward {
 	from {
 		opacity: 0.8;
-		clip-path: inset(8% 0 0 0 round 6px);
 		transform: translate3d(0, 8px, 0);
 	}
 	to {
 		opacity: 1;
-		clip-path: inset(0 0 0 0 round 0);
 		transform: translate3d(0, 0, 0);
 	}
 }
@@ -1142,12 +1140,10 @@ body.styled-scrollbars .epub-paragraph-overlay__text-viewport::-webkit-scrollbar
 @keyframes epubParagraphOverlayCurtainBackward {
 	from {
 		opacity: 0.8;
-		clip-path: inset(0 0 8% 0 round 6px);
 		transform: translate3d(0, -8px, 0);
 	}
 	to {
 		opacity: 1;
-		clip-path: inset(0 0 0 0 round 0);
 		transform: translate3d(0, 0, 0);
 	}
 }
@@ -1239,24 +1235,17 @@ body.styled-scrollbars .epub-paragraph-overlay__text-viewport::-webkit-scrollbar
 }
 
 .epub-paragraph-overlay__text .weave-paragraph-annotation[data-style="underline"] {
-	text-decoration-line: underline;
-	text-decoration-thickness: 0.11em;
-	text-decoration-color: currentColor;
+	text-decoration: underline;
 	text-underline-offset: 0.16em;
 }
 
 .epub-paragraph-overlay__text .weave-paragraph-annotation[data-style="strikethrough"] {
-	text-decoration-line: line-through;
-	text-decoration-thickness: 0.1em;
-	text-decoration-color: currentColor;
+	text-decoration: line-through;
 }
 
 .epub-paragraph-overlay__text .weave-paragraph-annotation[data-style="wavy"] {
-	text-decoration-line: underline;
-	text-decoration-style: wavy;
-	text-decoration-thickness: 0.11em;
+	text-decoration: underline wavy;
 	text-underline-offset: 0.16em;
-	text-decoration-color: currentColor;
 }
 
 .epub-paragraph-overlay__text .weave-paragraph-annotation[data-has-comment="true"]::after {
@@ -1536,8 +1525,15 @@ body.weave-epub-immersive-paragraph-mode .workspace .mod-root .workspace-leaf-co
 }
 
 .epub-left-inline-toolbar-btn {
-	all: unset;
+	appearance: none;
+	-webkit-appearance: none;
 	box-sizing: border-box;
+	margin: 0;
+	font: inherit;
+	line-height: inherit;
+	text-align: inherit;
+	text-decoration: none;
+	outline: none;
 	width: 34px;
 	height: 34px;
 	min-width: 34px;
@@ -1842,13 +1838,13 @@ body.weave-epub-immersive-paragraph-mode .workspace .mod-root .workspace-leaf-co
 }
 
 .epub-scrolled-chapter-action {
-	all: unset;
-	box-sizing: border-box;
 	appearance: none;
 	-webkit-appearance: none;
+	box-sizing: border-box;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+	margin: 0;
 	padding: 0;
 	border: none !important;
 	background: transparent !important;
