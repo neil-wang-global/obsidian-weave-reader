@@ -272,6 +272,8 @@ Weave EPUB Reader 采用“基础功能免费，高级能力付费”的模式�
 
 - [隐私说明](./PRIVACY.md)
 - [高级版说明](./PREMIUM_TERMS.md)
+- [支持说明](./SUPPORT.md)
+- [安全说明](./SECURITY.md)
 
 ## 作者与反馈
 
@@ -279,3 +281,5 @@ Weave EPUB Reader 采用“基础功能免费，高级能力付费”的模式�
 - GitHub: https://github.com/zhuzhige123
 - Privacy: [PRIVACY.md](./PRIVACY.md)
 - Premium: [PREMIUM_TERMS.md](./PREMIUM_TERMS.md)
+- Support: [SUPPORT.md](./SUPPORT.md)
+- Security: [SECURITY.md](./SECURITY.md)

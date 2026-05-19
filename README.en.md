@@ -271,6 +271,8 @@ Related public notes:
 
 - [Privacy notice](./PRIVACY.md)
 - [Premium terms overview](./PREMIUM_TERMS.md)
+- [Support guide](./SUPPORT.md)
+- [Security policy](./SECURITY.md)
 
 ## Author and Feedback
 
@@ -278,3 +280,5 @@ Related public notes:
 - GitHub: https://github.com/zhuzhige123
 - Privacy: [PRIVACY.md](./PRIVACY.md)
 - Premium: [PREMIUM_TERMS.md](./PREMIUM_TERMS.md)
+- Support: [SUPPORT.md](./SUPPORT.md)
+- Security: [SECURITY.md](./SECURITY.md)
