@@ -109,6 +109,50 @@ jobs:
             gh release edit "$TAG" --title "$TAG"
           fi
 
+      - name: Verify remote release metadata
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          node - <<'EOF' "$TAG"
+          (async () => {
+            const [tag] = process.argv.slice(2);
+            const token = process.env.GITHUB_TOKEN;
+            const repo = process.env.GITHUB_REPOSITORY;
+
+            if (!tag || !token || !repo) {
+              console.error("Missing tag, token, or repository context for release metadata verification.");
+              process.exit(1);
+            }
+
+            const url = `https://api.github.com/repos/${repo}/releases/tags/${tag}`;
+            const response = await fetch(url, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/vnd.github+json",
+                "User-Agent": "weave-epub-reader-release-check",
+              },
+            });
+
+            if (!response.ok) {
+              console.error(`Failed to fetch release metadata for ${tag}: ${response.status} ${response.statusText}`);
+              process.exit(1);
+            }
+
+            const release = await response.json();
+            if (release.name !== tag) {
+              console.error(`Release title mismatch for ${tag}: expected "${tag}", got "${release.name ?? ""}"`);
+              process.exit(1);
+            }
+
+            console.log(`Verified release title for ${tag}`);
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          EOF
+
       - name: Attest release assets
         uses: actions/attest-build-provenance@v2
         with:
