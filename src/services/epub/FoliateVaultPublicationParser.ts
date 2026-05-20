@@ -342,7 +342,10 @@ export class FoliateVaultPublicationParser {
 		await this.buildMetadata();
 		this.buildTocItems();
 		await this.buildSectionDescriptors();
-		await this.hydrateTocPageNumbers();
+		// TOC page numbers are non-critical for first paint; hydrate in the background.
+		void this.hydrateTocPageNumbers().catch((error) => {
+			logger.warn("[FoliateVaultPublicationParser] Failed to hydrate TOC page numbers:", error);
+		});
 
 		return {
 			filePath,

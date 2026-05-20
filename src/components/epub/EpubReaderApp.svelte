@@ -1307,12 +1307,61 @@
 		return true;
 	}
 
+	async function finalizeBookLoad(
+		loadToken: number,
+		loadedBook: EpubBook,
+		targetFilePath: string,
+		reusableBook: EpubBook | null
+	): Promise<void> {
+		if (isStaleBookLoad(loadToken)) {
+			return;
+		}
+
+		try {
+			const sourceEntry = await storageService.ensureSourceIdentity(targetFilePath, {
+				preferredSourceId: reusableBook?.sourceId,
+			});
+			if (isStaleBookLoad(loadToken)) {
+				return;
+			}
+
+			if (sourceEntry) {
+				loadedBook.sourceId = sourceEntry.sourceId;
+				loadedBook.sourceFingerprint = sourceEntry.sourceFingerprint;
+				loadedBook.sourceSize = sourceEntry.sourceSize;
+				loadedBook.sourceMtime = sourceEntry.sourceMtime;
+				loadedBook.filePath = sourceEntry.filePath;
+			} else if (reusableBook?.sourceId) {
+				loadedBook.sourceId = reusableBook.sourceId;
+			}
+
+			await storageService.saveBook(loadedBook);
+			if (isStaleBookLoad(loadToken)) {
+				return;
+			}
+
+			await refreshReadingReferencePointState(loadedBook.id);
+			if (isStaleBookLoad(loadToken)) {
+				return;
+			}
+
+			await initCanvasBinding();
+			if (isStaleBookLoad(loadToken)) {
+				return;
+			}
+
+			void reloadHighlights();
+		} catch (error) {
+			logger.warn('[EpubReaderApp] Deferred book persistence failed:', error);
+		}
+	}
+
 	async function loadBook() {
 		const loadToken = ++activeBookLoadToken;
 		const targetFilePath = filePath;
 		const previousBook = book;
 		if (previousBook?.id) {
-			await persistCurrentReadingProgress(previousBook);
+			void persistCurrentReadingProgress(previousBook);
 		}
 		loading = true;
 		errorMsg = '';
@@ -1370,17 +1419,6 @@
 			} else if (hasReadingProgressCapability() && reusableBook?.currentPosition) {
 				loadedBook.currentPosition = reusableBook.currentPosition;
 				await readerService.setRestoredPosition?.(reusableBook.currentPosition);
-			}
-
-			const sourceEntry = await storageService.ensureSourceIdentity(targetFilePath, {
-				preferredSourceId: reusableBook?.sourceId,
-			});
-			if (sourceEntry) {
-				loadedBook.sourceId = sourceEntry.sourceId;
-				loadedBook.sourceFingerprint = sourceEntry.sourceFingerprint;
-				loadedBook.sourceSize = sourceEntry.sourceSize;
-				loadedBook.sourceMtime = sourceEntry.sourceMtime;
-				loadedBook.filePath = sourceEntry.filePath;
 			} else if (reusableBook?.sourceId) {
 				loadedBook.sourceId = reusableBook.sourceId;
 			}
@@ -1390,22 +1428,13 @@
 			updateSessionReadingStartPercent(loadedBook.currentPosition?.percent ?? 0);
 			showNextChapterAction = false;
 			bookmarkRevision = 0;
-			await storageService.saveBook(loadedBook);
-			if (isStaleBookLoad(loadToken)) {
-				return;
-			}
 			onTitleChange?.(loadedBook.metadata.title);
-			await refreshReadingReferencePointState(loadedBook.id);
-			if (isStaleBookLoad(loadToken)) {
-				return;
-			}
 			epubActiveDocumentStore.setSharedState({ filePath: targetFilePath, book: loadedBook });
 			syncAsActiveEpubDocument();
-			await initCanvasBinding();
-			if (isStaleBookLoad(loadToken)) {
-				return;
-			}
-			void reloadHighlights();
+
+			// Unblock the reader shell as soon as the engine can render.
+			loading = false;
+			void finalizeBookLoad(loadToken, loadedBook, targetFilePath, reusableBook);
 		} catch (error) {
 			if (isStaleBookLoad(loadToken)) {
 				return;
@@ -3857,7 +3886,7 @@
 		componentDisposed = false;
 		setupScrolledNavMetricsObserver();
 		window.addEventListener('resize', scheduleScrolledNavLayoutSync);
-		void (async () => {
+		const loadReaderPreferences = async (): Promise<void> => {
 			try {
 				const [savedExcerptSettings, savedReaderSettings] = await Promise.all([
 					storageService.loadExcerptSettings(),
@@ -3882,7 +3911,12 @@
 			} catch (error) {
 				logger.warn('[EpubReaderApp] Failed to load reader settings:', error);
 			}
+		};
+		const readerPreferencesReady = loadReaderPreferences();
+
+		void (async () => {
 			if (!filePath) {
+				await readerPreferencesReady;
 				book = null;
 				loading = false;
 				errorMsg = '';
@@ -3892,6 +3926,9 @@
 				scheduleScrolledNavLayoutSync();
 				return;
 			}
+
+			// Apply persisted flow/layout (and related reader prefs) before first render.
+			await readerPreferencesReady;
 			await loadBook();
 		})();
 

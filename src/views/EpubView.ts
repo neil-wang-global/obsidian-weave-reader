@@ -1268,6 +1268,12 @@ export class EpubView extends ItemView {
 			},
 			onActionsReady: (actions: typeof this.actionHandlers) => {
 				this.actionHandlers = actions;
+				const readerSettings = actions.getReaderSettings?.();
+				if (readerSettings) {
+					this.layoutMode = readerSettings.layoutMode;
+					this.flowMode = readerSettings.flowMode;
+					this.paragraphModeEnabled = Boolean(readerSettings.paragraphModeEnabled);
+				}
 				this.refreshAllActionButtons();
 			},
 			onSwitchBook: async (newFilePath: string) => {
