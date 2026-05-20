@@ -19,6 +19,7 @@ import type {
 	ReaderRemainingTimeEstimate,
 	ReaderRenderOptions,
 	ReaderSelectionChange,
+	ReaderViewportGeometry,
 } from "./reader-engine-types";
 import type {
 	EpubBook,
@@ -1191,6 +1192,18 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return null;
 		}
 		return this.buildHighlightClickInfo(highlight, geometry, interactionTarget);
+	}
+
+	getSelectionViewportGeometry(cfiRange: string): ReaderViewportGeometry | null {
+		const geometry = this.getCurrentHighlightViewportGeometry(cfiRange);
+		if (!geometry?.rect) {
+			return null;
+		}
+		return {
+			rect: geometry.rect,
+			rects: geometry.rects,
+			anchorPoint: this.createAnchorPointFromRect(geometry.rect),
+		};
 	}
 
 	async refreshHighlights(): Promise<void> {

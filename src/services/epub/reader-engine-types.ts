@@ -59,6 +59,12 @@ export interface ReaderAnchorPoint {
 	y: number;
 }
 
+export interface ReaderViewportGeometry {
+	rect: ReaderViewportRect;
+	rects?: ReaderViewportRect[];
+	anchorPoint?: ReaderAnchorPoint;
+}
+
 export interface HighlightClickInfo {
 	cfiRange: string;
 	color: string;
@@ -278,6 +284,7 @@ export interface EpubReaderEngine {
 			anchorPoint?: HighlightClickInfo["anchorPoint"];
 		}
 	): HighlightClickInfo | null;
+	getSelectionViewportGeometry?(cfiRange: string): ReaderViewportGeometry | null;
 	onFootnotePreview(callback: (info: ReaderFootnotePreviewInfo | null) => void): () => void;
 	onSelectionChange(callback: (event: ReaderSelectionChange) => void): () => void;
 	onHighlightClick(callback: (info: HighlightClickInfo) => void): () => void;

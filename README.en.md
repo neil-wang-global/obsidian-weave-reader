@@ -5,7 +5,7 @@
 <div align="center">
 
 ![Weave EPUB Reader](https://img.shields.io/badge/Obsidian-EPUB%20Reader-8a5cf6?style=for-the-badge)
-![Version](https://img.shields.io/badge/version-0.6.1-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-0.6.3-green?style=for-the-badge)
 ![Min Obsidian](https://img.shields.io/badge/Obsidian-1.7.0+-purple?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange?style=for-the-badge)
 
@@ -273,6 +273,21 @@ Related public notes:
 - [Premium terms overview](./PREMIUM_TERMS.md)
 - [Support guide](./SUPPORT.md)
 - [Security policy](./SECURITY.md)
+
+## Obsidian community review and releases
+
+Before submitting to the Obsidian community plugin directory, run:
+
+```bash
+npm run verify:public-repo
+npm run lint:obsidian
+npm run build
+npm run verify:release
+```
+
+Each GitHub Release **title** must match its tag exactly (for example `0.6.3`). An empty title can make ObsidianReviewBot report names such as `0.6.1manifest.json`. Edit older releases (for example `0.6.1`, `0.6.2`) if their titles are blank.
+
+The repository ships the full [GPL-3.0-or-later](./LICENSE) text so GitHub and the review bot can recognize the license.
 
 ## Author and Feedback
 

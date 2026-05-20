@@ -149,12 +149,22 @@ export function dedupeLicenses(licenses: LicenseInfo[]): LicenseInfo[] {
 	return result;
 }
 
+function hasActivatedLegacyLicense(legacyLicense: Partial<LicenseInfo> | null | undefined): boolean {
+	if (!hasMeaningfulLicense(legacyLicense)) {
+		return false;
+	}
+
+	const normalized = normalizeLicenseInfo(legacyLicense);
+	return Boolean(normalized.activationCode && normalized.isActivated);
+}
+
 export function normalizeLicenseStore(
 	legacyLicense: Partial<LicenseInfo> | null | undefined,
 	rawStore: Partial<LicenseStore> | null | undefined
 ): LicenseStore {
 	const hasExplicitLocalLicenses = Array.isArray(rawStore?.localLicenses);
 	const hasPersistedStoreMarker = typeof rawStore?.updatedAt === "string";
+	const wasExplicitlyCleared = typeof rawStore?.localLicensesClearedAt === "string";
 	const rawLicenses: Partial<LicenseInfo>[] = hasExplicitLocalLicenses
 		? rawStore.localLicenses ?? []
 		: [];
@@ -162,11 +172,31 @@ export function normalizeLicenseStore(
 		rawLicenses.map((license) => normalizeLicenseInfo(license))
 	);
 
-	if (normalizedLicenses.length > 0 || (hasExplicitLocalLicenses && hasPersistedStoreMarker)) {
+	if (normalizedLicenses.length > 0) {
 		return {
 			localLicenses: normalizedLicenses,
 			updatedAt: typeof rawStore?.updatedAt === "string" ? rawStore.updatedAt : undefined,
 		};
+	}
+
+	if (hasExplicitLocalLicenses && hasPersistedStoreMarker) {
+		if (wasExplicitlyCleared || !hasActivatedLegacyLicense(legacyLicense)) {
+			return {
+				localLicenses: [],
+				updatedAt: rawStore?.updatedAt,
+				localLicensesClearedAt: rawStore?.localLicensesClearedAt,
+			};
+		}
+	}
+
+	if (hasActivatedLegacyLicense(legacyLicense)) {
+		const migrated = normalizeLicenseInfo(legacyLicense);
+		if (migrated.activationCode) {
+			return {
+				localLicenses: [migrated],
+				updatedAt: new Date().toISOString(),
+			};
+		}
 	}
 
 	if (hasMeaningfulLicense(legacyLicense)) {

@@ -48,6 +48,7 @@
 	import { openFileWithExistingLeaf } from '../../utils/workspace-navigation';
 	import { getSourceLocateOverlayService } from '../../services/ui/SourceLocateOverlayService';
 	import { SourceNavigationService } from '../../services/ui/SourceNavigationService';
+	import { resolveReadingViewportLockTarget } from '../../utils/mobile-reading-viewport-lock';
 	import { buildEpubMarkdownLocateCandidates } from '../../services/ui/source-locate-candidates';
 	import { attachExternalHighlightSyncReload } from './external-highlight-sync-reload';
 	import {
@@ -225,11 +226,13 @@
 	let paragraphModeAnchorParagraphId = '';
 	let rootEl = $state<HTMLDivElement | null>(null);
 	let viewportEl = $state<HTMLDivElement | null>(null);
+	let readingViewportLockEl = $derived(resolveReadingViewportLockTarget(rootEl));
 	let topStickerRailEl = $state<HTMLDivElement | null>(null);
 	let exportNotesPopoverEl = $state<HTMLDivElement | null>(null);
 	let exportNotesPopoverOpen = $state(false);
 	let exportNotesSubmitting = $state(false);
 	let typographyPopoverOpen = $state(false);
+	let paragraphModeNavBottomOffset = $state(0);
 	let readerReady = $state(false);
 	let scrolledNavSyncFrame = 0;
 	let scrolledNavResizeObserver: ResizeObserver | null = null;
@@ -4262,6 +4265,9 @@
 				onToggleImmersive={toggleParagraphModeImmersive}
 				onClose={() => void closeParagraphMode()}
 				onSelectionChange={handleParagraphOverlaySelectionChange}
+				onNavMetricsChange={({ bottomDockOffset }) => {
+					paragraphModeNavBottomOffset = bottomDockOffset;
+				}}
 			/>
 
 			<EpubHighlightToolbar
@@ -4287,6 +4293,7 @@
 				info={hasExcerptNotesCapability() ? commentEditorInfo : null}
 				{readerService}
 				boundsEl={viewportEl}
+				readingLockEl={readingViewportLockEl}
 				draftText={commentEditorDraft}
 				saving={commentEditorSaving}
 				onDraftTextChange={(value) => commentEditorDraft = value}
@@ -4318,6 +4325,7 @@
 				{book}
 				{readerVersion}
 				boundsEl={viewportEl}
+				mobileDockBottomOffset={settings.paragraphModeEnabled ? paragraphModeNavBottomOffset : 0}
 				externalSelection={settings.paragraphModeEnabled ? paragraphModeSelection : null}
 				{autoInsert}
 				{canvasMode}

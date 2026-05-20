@@ -35,6 +35,8 @@ export interface ToolbarPositionOptions {
 	toolbarWidth: number;
 	toolbarHeight: number;
 	mobile: boolean;
+	insetTop?: number;
+	insetBottom?: number;
 	edgeMargin?: number;
 	gap?: number;
 	arrowPadding?: number;
@@ -76,10 +78,12 @@ function chooseFloatingSide(
 	toolbarHeight: number,
 	gap: number,
 	edgeMargin: number,
+	insetTop: number,
+	insetBottom: number,
 	preferredSide: FloatingSidePreference
 ): "top" | "bottom" {
-	const availableAbove = anchorRect.top - gap - edgeMargin;
-	const availableBelow = containerHeight - anchorRect.bottom - gap - edgeMargin;
+	const availableAbove = anchorRect.top - gap - edgeMargin - insetTop;
+	const availableBelow = containerHeight - insetBottom - anchorRect.bottom - gap - edgeMargin;
 
 	if (preferredSide === "bottom") {
 		return availableBelow >= toolbarHeight || availableBelow >= availableAbove ? "bottom" : "top";
@@ -139,53 +143,76 @@ function getAnchorX(rect: ToolbarRect, anchorPoint: ToolbarPoint | undefined, al
 	return getRectCenterX(rect);
 }
 
-export function computeToolbarPosition({
-	anchorRect,
-	anchorRects,
-	anchorPoint,
-	containerWidth,
+function toolbarOverlapsAnchor(
+	top: number,
+	toolbarHeight: number,
+	anchorRect: ToolbarRect,
+	gap: number
+): boolean {
+	const toolbarBottom = top + toolbarHeight;
+	return toolbarBottom > anchorRect.top - gap && top < anchorRect.bottom + gap;
+}
+
+function floatingClearsAnchor(
+	top: number,
+	toolbarHeight: number,
+	anchorRect: ToolbarRect,
+	gap: number,
+	isBelowAnchor: boolean
+): boolean {
+	if (isBelowAnchor) {
+		return top >= anchorRect.bottom + gap - 0.5;
+	}
+	return top + toolbarHeight <= anchorRect.top - gap + 0.5;
+}
+
+function createDockedPosition(left: number, activeAnchorRect: ToolbarRect): ToolbarPositionResult {
+	return {
+		top: 0,
+		left,
+		arrowOffset: 0,
+		isBelowAnchor: true,
+		mode: "docked",
+		anchorRect: activeAnchorRect,
+	};
+}
+
+interface FloatingPlacementInput {
+	activeAnchorRect: ToolbarRect;
+	anchorX: number;
+	left: number;
+	side: "top" | "bottom";
+	containerHeight: number;
+	toolbarWidth: number;
+	toolbarHeight: number;
+	insetTop: number;
+	insetBottom: number;
+	edgeMargin: number;
+	gap: number;
+	arrowPadding: number;
+}
+
+function computeFloatingPlacement({
+	activeAnchorRect,
+	anchorX,
+	left,
+	side,
 	containerHeight,
 	toolbarWidth,
 	toolbarHeight,
-	mobile,
-	edgeMargin = TOOLBAR_EDGE_MARGIN,
-	gap = TOOLBAR_GAP,
-	arrowPadding = TOOLBAR_ARROW_PADDING,
-	preferredSide = "top",
-	align = "center",
-}: ToolbarPositionOptions): ToolbarPositionResult {
-	const normalizedRects = normalizeAnchorRects(anchorRect, anchorRects);
-	const side = chooseFloatingSide(anchorRect, containerHeight, toolbarHeight, gap, edgeMargin, preferredSide);
-	const activeAnchorRect = chooseAnchorRectForSide(normalizedRects, side, anchorPoint);
-
-	if (mobile) {
-		const minLeft = edgeMargin;
-		const maxLeft = containerWidth - edgeMargin - toolbarWidth;
-		return {
-			top: 0,
-			left: clamp((containerWidth - toolbarWidth) / 2, minLeft, maxLeft),
-			arrowOffset: 0,
-			isBelowAnchor: true,
-			mode: "docked",
-			anchorRect: activeAnchorRect,
-		};
-	}
-
-	const anchorX = getAnchorX(activeAnchorRect, anchorPoint, align);
-	const minLeft = edgeMargin;
-	const maxLeft = containerWidth - edgeMargin - toolbarWidth;
-	const idealLeft = align === "center"
-		? anchorX - toolbarWidth / 2
-		: align === "end"
-			? anchorX - toolbarWidth
-			: anchorX;
-	const left = clamp(idealLeft, minLeft, maxLeft);
+	insetTop,
+	insetBottom,
+	edgeMargin,
+	gap,
+	arrowPadding,
+}: FloatingPlacementInput): ToolbarPositionResult {
 	const isBelowAnchor = side === "bottom";
 	const preferredTop = isBelowAnchor
 		? activeAnchorRect.bottom + gap
 		: activeAnchorRect.top - toolbarHeight - gap;
-	const maxTop = containerHeight - toolbarHeight - edgeMargin;
-	const top = clamp(preferredTop, edgeMargin, maxTop);
+	const minTop = edgeMargin + insetTop;
+	const maxTop = containerHeight - insetBottom - toolbarHeight - edgeMargin;
+	const top = clamp(preferredTop, minTop, maxTop);
 	const arrowLimit = Math.max(0, toolbarWidth / 2 - arrowPadding);
 
 	return {
@@ -196,6 +223,108 @@ export function computeToolbarPosition({
 		mode: "floating",
 		anchorRect: activeAnchorRect,
 	};
+}
+
+function shouldUseMobileDockedFallback(
+	floating: ToolbarPositionResult,
+	toolbarHeight: number,
+	anchorRect: ToolbarRect,
+	gap: number
+): boolean {
+	if (
+		!floatingClearsAnchor(
+			floating.top,
+			toolbarHeight,
+			anchorRect,
+			gap,
+			floating.isBelowAnchor
+		)
+	) {
+		return true;
+	}
+
+	return toolbarOverlapsAnchor(floating.top, toolbarHeight, anchorRect, gap);
+}
+
+export function computeToolbarPosition({
+	anchorRect,
+	anchorRects,
+	anchorPoint,
+	containerWidth,
+	containerHeight,
+	toolbarWidth,
+	toolbarHeight,
+	mobile,
+	insetTop = 0,
+	insetBottom = 0,
+	edgeMargin = TOOLBAR_EDGE_MARGIN,
+	gap = TOOLBAR_GAP,
+	arrowPadding = TOOLBAR_ARROW_PADDING,
+	preferredSide = "top",
+	align = "center",
+}: ToolbarPositionOptions): ToolbarPositionResult {
+	const normalizedRects = normalizeAnchorRects(anchorRect, anchorRects);
+	const sideSelectionBounds =
+		normalizedRects.length > 1
+			? {
+				top: Math.min(...normalizedRects.map((rect) => rect.top)),
+				left: Math.min(...normalizedRects.map((rect) => rect.left)),
+				bottom: Math.max(...normalizedRects.map((rect) => rect.bottom)),
+				right: Math.max(...normalizedRects.map((rect) => rect.right)),
+				width: 0,
+				height: 0,
+			}
+			: anchorRect;
+	if (normalizedRects.length > 1) {
+		sideSelectionBounds.width = sideSelectionBounds.right - sideSelectionBounds.left;
+		sideSelectionBounds.height = sideSelectionBounds.bottom - sideSelectionBounds.top;
+	}
+	const resolvedPreferredSide: FloatingSidePreference = mobile ? "auto" : preferredSide;
+	const side = chooseFloatingSide(
+		sideSelectionBounds,
+		containerHeight,
+		toolbarHeight,
+		gap,
+		edgeMargin,
+		insetTop,
+		insetBottom,
+		resolvedPreferredSide
+	);
+	const activeAnchorRect = chooseAnchorRectForSide(normalizedRects, side, anchorPoint);
+	const anchorX = getAnchorX(activeAnchorRect, anchorPoint, align);
+	const minLeft = edgeMargin;
+	const maxLeft = containerWidth - edgeMargin - toolbarWidth;
+	const idealLeft = align === "center"
+		? anchorX - toolbarWidth / 2
+		: align === "end"
+			? anchorX - toolbarWidth
+			: anchorX;
+	const left = clamp(idealLeft, minLeft, maxLeft);
+
+	const floating = computeFloatingPlacement({
+		activeAnchorRect,
+		anchorX,
+		left,
+		side,
+		containerHeight,
+		toolbarWidth,
+		toolbarHeight,
+		insetTop,
+		insetBottom,
+		edgeMargin,
+		gap,
+		arrowPadding,
+	});
+
+	if (!mobile) {
+		return floating;
+	}
+
+	if (shouldUseMobileDockedFallback(floating, toolbarHeight, activeAnchorRect, gap)) {
+		return createDockedPosition(left, activeAnchorRect);
+	}
+
+	return floating;
 }
 
 export function createEventBinder() {

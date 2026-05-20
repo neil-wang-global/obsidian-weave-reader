@@ -274,6 +274,10 @@ scripts/*
 !scripts/kill-vite.cjs
 !scripts/verify-release-assets.cjs
 !scripts/verify-public-repo-safety.cjs
+!scripts/obsidian-lint-targets.cjs
+!scripts/run-obsidian-lint.cjs
+!scripts/lint-obsidian-strict.cjs
+!scripts/check-mojibake.cjs
 
 # 测试文件
 test/

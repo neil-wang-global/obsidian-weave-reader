@@ -111,6 +111,25 @@ export function upsertPluginLocalLicense(
 	syncPluginLicenseSettings(plugin);
 }
 
+export function markPluginLocalLicensesCleared(
+	plugin: LicenseCapablePluginLike | null | undefined
+): void {
+	if (!plugin?.settings) {
+		return;
+	}
+
+	const clearedAt = new Date().toISOString();
+	plugin.settings.license = {
+		...DEFAULT_LICENSE_INFO,
+	};
+	plugin.settings.licenseState = {
+		localLicenses: [],
+		updatedAt: clearedAt,
+		localLicensesClearedAt: clearedAt,
+	};
+	syncPluginLicenseSettings(plugin);
+}
+
 export function getPluginActivationRemovalKind(
 	plugin: LicenseCapablePluginLike | null | undefined,
 	options?: RemovePluginActivationOptions
@@ -174,16 +193,5 @@ export function removePluginActivation(
 export function clearPluginLocalLicenses(
 	plugin: LicenseCapablePluginLike | null | undefined
 ): void {
-	if (!plugin?.settings) {
-		return;
-	}
-
-	plugin.settings.license = {
-		...DEFAULT_LICENSE_INFO,
-	};
-	plugin.settings.licenseState = {
-		localLicenses: [],
-		updatedAt: new Date().toISOString(),
-	};
-	syncPluginLicenseSettings(plugin);
+	markPluginLocalLicensesCleared(plugin);
 }

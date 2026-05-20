@@ -1,6 +1,8 @@
 /**
  * 许可证相关类型定义
  * 这是唯一的权威类型定义，所有其他地方必须导入使用此类型
+ *
+ * 多插件授权架构见 docs/LICENSE_MULTI_PLUGIN.md
  */
 
 export type LicensedProduct = "weave" | "weave-epub-reader";
@@ -102,6 +104,8 @@ export interface ActivationCodeData {
 export interface LicenseStore {
 	localLicenses: LicenseInfo[];
 	updatedAt?: string;
+	/** Set when the user explicitly removes local activation; blocks legacy license revival. */
+	localLicensesClearedAt?: string;
 }
 
 export interface EffectiveLicenseState {

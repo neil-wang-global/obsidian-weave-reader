@@ -46,6 +46,7 @@
 		onToggleImmersive?: () => void;
 		onClose?: () => void;
 		onSelectionChange?: (info: OverlaySelectionInfo | null) => void;
+		onNavMetricsChange?: (metrics: { bottomDockOffset: number }) => void;
 	}
 
 	let {
@@ -68,6 +69,7 @@
 		onToggleImmersive,
 		onClose,
 		onSelectionChange,
+		onNavMetricsChange,
 	}: Props = $props();
 
 	let t = $derived($tr);
@@ -82,6 +84,7 @@
 	let settingsPanelOpen = $state(false);
 	let settingsButtonEl = $state<HTMLElement | null>(null);
 	let settingsPanelEl = $state<HTMLElement | null>(null);
+	let navSlotEl = $state<HTMLElement | null>(null);
 	let renderedParagraph = $state<ReaderParagraph | null>(null);
 	let renderedParagraphIndex = $state(0);
 	let paragraphTransitionDirection = $state<'forward' | 'backward'>('forward');
@@ -191,6 +194,12 @@
 			return;
 		}
 		void onTransitionStyleChange?.(style);
+	}
+
+	function emitNavMetrics(): void {
+		onNavMetricsChange?.({
+			bottomDockOffset: active && navSlotEl ? navSlotEl.offsetHeight : 0,
+		});
 	}
 
 	function registerCurrentText(node: HTMLElement): { destroy: () => void } {
@@ -489,8 +498,28 @@
 				paragraphTransitionToken += 1;
 				clearSelection();
 				onFootnoteDismiss?.({ unpin: true });
+				emitNavMetrics();
 			});
 		}
+	});
+
+	$effect(() => {
+		const currentNavSlotEl = navSlotEl;
+		const activeState = active;
+		void activeState;
+		queueMicrotask(() => {
+			emitNavMetrics();
+		});
+		if (!currentNavSlotEl) {
+			return;
+		}
+		const resizeObserver = new ResizeObserver(() => {
+			emitNavMetrics();
+		});
+		resizeObserver.observe(currentNavSlotEl);
+		return () => {
+			resizeObserver.disconnect();
+		};
 	});
 
 	$effect(() => {
@@ -732,7 +761,7 @@
 			</div>
 		</div>
 
-		<div class="epub-paragraph-overlay__nav-slot">
+		<div class="epub-paragraph-overlay__nav-slot" bind:this={navSlotEl}>
 			<div class="epub-paragraph-overlay__nav">
 				<button type="button" class="epub-paragraph-overlay__nav-btn" onclick={() => {
 					void navigateWithinParagraph(-1).then((handled) => {

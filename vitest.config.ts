@@ -27,7 +27,13 @@ export default defineConfig({
       'src/views/**/*.test.ts',
       'src/services/epub/__tests__/**/*.{test,spec}.{js,ts}',
       'src/utils/__tests__/source-path-matcher.epub-links.test.ts',
-      'src/utils/__tests__/yaml-utils.epub-source.test.ts'
+      'src/utils/__tests__/yaml-utils.epub-source.test.ts',
+      'src/utils/__tests__/license-sync-bridge.test.ts',
+      'src/utils/__tests__/license-state.test.ts',
+      'src/utils/__tests__/plugin-license.test.ts',
+      'src/utils/__tests__/mobile-edit-viewport.test.ts',
+      'src/utils/__tests__/mobile-floating-viewport.test.ts',
+      'src/utils/__tests__/mobile-reading-viewport-lock.test.ts'
     ],
     exclude: ['node_modules', 'dist'],
     coverage: {

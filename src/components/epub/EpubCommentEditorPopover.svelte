@@ -1,16 +1,23 @@
 <script lang="ts">
- 	import { Platform } from 'obsidian';
- 	import { onMount, tick, untrack } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { tr } from '../../utils/i18n';
-	import EnhancedModal from '../ui/EnhancedModal.svelte';
- 	import type { EpubReaderEngine, HighlightClickInfo } from '../../services/epub';
- 	import { computeToolbarPosition } from './toolbar-positioning';
+	import type { EpubReaderEngine, HighlightClickInfo } from '../../services/epub';
+	import { computeToolbarPosition, TOOLBAR_EDGE_MARGIN } from './toolbar-positioning';
+	import {
+		bindMobileFloatingViewport,
+		computeKeyboardAnchoredFixedRect,
+		getVisualViewportLayout,
+		isMobileFloatingEditorTarget,
+		mapBoundsRelativeToFixed,
+	} from '../../utils/mobile-floating-viewport';
+	import { applyReadingViewportLock } from '../../utils/mobile-reading-viewport-lock';
 
- 	interface Props {
+	interface Props {
 		open: boolean;
 		info: HighlightClickInfo | null;
 		readerService?: EpubReaderEngine | null;
 		boundsEl?: HTMLElement | null;
+		readingLockEl?: HTMLElement | null;
 		draftText: string;
 		saving?: boolean;
 		onDraftTextChange: (value: string) => void;
@@ -23,6 +30,7 @@
 		info,
 		readerService = null,
 		boundsEl = null,
+		readingLockEl = null,
 		draftText,
 		saving = false,
 		onDraftTextChange,
@@ -32,15 +40,94 @@
 	let t = $derived($tr);
 
 	let popoverEl: HTMLDivElement | undefined = $state(undefined);
- 	let textareaEl: HTMLTextAreaElement | undefined = $state(undefined);
- 	let posTop = $state(0);
- 	let posLeft = $state(0);
- 	let popoverWidth = $state(340);
- 	let preferBelow = $state(true);
- 	let mobileMode = $state(false);
+	let textareaEl: HTMLTextAreaElement | undefined = $state(undefined);
+	let posTop = $state(0);
+	let posLeft = $state(0);
+	let popoverWidth = $state(340);
+	let preferBelow = $state(true);
+	let useFixedLayer = $state(false);
+	let keyboardDocked = $state(false);
+	let mobileMode = $state(false);
 	let pendingFocusFrame = 0;
 	let pendingFocusTimeout = 0;
 	let hasFocusedCurrentSession = false;
+	let teardownViewportTracking: (() => void) | null = null;
+	let readingLockCleanup: (() => void) | null = null;
+
+	const KEYBOARD_ACTIVE_BODY_CLASS = 'epub-comment-keyboard-active';
+
+	function shouldLockReadingSurface(): boolean {
+		if (!mobileMode || !open || !readingLockEl) {
+			return false;
+		}
+		const layout = getVisualViewportLayout();
+		return layout.keyboardVisible || document.activeElement === textareaEl;
+	}
+
+	function syncReadingSurfaceLock() {
+		const shouldLock = shouldLockReadingSurface();
+		document.body.classList.toggle(KEYBOARD_ACTIVE_BODY_CLASS, shouldLock);
+
+		if (!readingLockEl) {
+			releaseReadingSurfaceLock();
+			return;
+		}
+
+		if (shouldLock) {
+			if (!readingLockCleanup) {
+				readingLockCleanup = applyReadingViewportLock(readingLockEl);
+			}
+			return;
+		}
+
+		releaseReadingSurfaceLock();
+	}
+
+	function releaseReadingSurfaceLock() {
+		document.body.classList.remove(KEYBOARD_ACTIVE_BODY_CLASS);
+		readingLockCleanup?.();
+		readingLockCleanup = null;
+	}
+
+	function portalToBody(node: HTMLElement) {
+		if (typeof document === 'undefined' || !document.body) {
+			return;
+		}
+
+		document.body.appendChild(node);
+
+		return {
+			destroy() {
+				if (node.isConnected) {
+					node.remove();
+				}
+			},
+		};
+	}
+
+	function optionalPortal(node: HTMLElement, enabled: boolean) {
+		let cleanup: (() => void) | undefined;
+
+		const sync = (shouldPortal: boolean) => {
+			cleanup?.();
+			cleanup = undefined;
+			if (shouldPortal) {
+				const teardown = portalToBody(node);
+				cleanup = () => teardown?.destroy();
+			}
+		};
+
+		sync(enabled);
+
+		return {
+			update(nextEnabled: boolean) {
+				sync(nextEnabled);
+			},
+			destroy() {
+				cleanup?.();
+			},
+		};
+	}
 
 	function clearPendingFocus() {
 		if (pendingFocusFrame) {
@@ -64,77 +151,93 @@
 		};
 	}
 
-	function isMobileCommentEditor(): boolean {
-		return Platform.isMobile
-			|| document.body.classList.contains('is-mobile')
-			|| document.body.classList.contains('is-phone');
+	function applyFixedRect(rect: { top: number; left: number; width: number }) {
+		posTop = rect.top;
+		posLeft = rect.left;
+		popoverWidth = rect.width;
 	}
 
- 	function focusTextareaIfNeeded() {
- 		if (!textareaEl || saving) {
- 			return;
- 		}
- 		if (document.activeElement === textareaEl) {
- 			hasFocusedCurrentSession = true;
- 			return;
- 		}
+	function focusTextareaIfNeeded() {
+		if (!textareaEl || saving) {
+			return;
+		}
+		if (document.activeElement === textareaEl) {
+			hasFocusedCurrentSession = true;
+			return;
+		}
 
- 		const applyFocus = () => {
- 			if (!open || !textareaEl || saving) {
- 				return;
- 			}
- 			try {
- 				textareaEl.focus({ preventScroll: true });
- 			} catch {
- 				textareaEl.focus();
- 			}
- 			textareaEl.setSelectionRange(draftText.length, draftText.length);
- 			hasFocusedCurrentSession = true;
- 		};
+		const applyFocus = () => {
+			if (!open || !textareaEl || saving) {
+				return;
+			}
+			try {
+				textareaEl.focus({ preventScroll: true });
+			} catch {
+				textareaEl.focus();
+			}
+			textareaEl.setSelectionRange(draftText.length, draftText.length);
+			hasFocusedCurrentSession = true;
+		};
 
- 		if (mobileMode) {
- 			if (hasFocusedCurrentSession) {
- 				return;
- 			}
- 			clearPendingFocus();
- 			pendingFocusFrame = window.requestAnimationFrame(() => {
- 				pendingFocusFrame = 0;
- 				pendingFocusTimeout = window.setTimeout(() => {
- 					pendingFocusTimeout = 0;
- 					applyFocus();
- 				}, 40);
- 			});
- 			return;
- 		}
+		if (mobileMode) {
+			if (hasFocusedCurrentSession) {
+				return;
+			}
+			clearPendingFocus();
+			pendingFocusFrame = window.requestAnimationFrame(() => {
+				pendingFocusFrame = 0;
+				pendingFocusTimeout = window.setTimeout(() => {
+					pendingFocusTimeout = 0;
+					applyFocus();
+				}, 40);
+			});
+			return;
+		}
 
- 		applyFocus();
- 	}
+		applyFocus();
+	}
 
- 	async function positionPopover() {
+	async function positionPopover() {
 		if (!open || !info) {
 			mobileMode = false;
+			useFixedLayer = false;
+			keyboardDocked = false;
 			clearPendingFocus();
 			hasFocusedCurrentSession = false;
+			releaseReadingSurfaceLock();
 			return;
 		}
+
 		await tick();
-		mobileMode = isMobileCommentEditor();
-		if (mobileMode) {
-			focusTextareaIfNeeded();
-			return;
-		}
+		mobileMode = isMobileFloatingEditorTarget();
+		useFixedLayer = mobileMode;
+
 		if (!popoverEl) {
 			return;
 		}
+
+		const height = popoverEl.offsetHeight || 220;
+		const layout = getVisualViewportLayout();
+
+		if (mobileMode && layout.keyboardVisible) {
+			applyFixedRect(computeKeyboardAnchoredFixedRect(height, TOOLBAR_EDGE_MARGIN, layout));
+			keyboardDocked = true;
+			preferBelow = false;
+			focusTextareaIfNeeded();
+			return;
+		}
+
+		keyboardDocked = false;
+
 		const currentInfo = readerService?.getHighlightClickInfo?.(
 			info.cfiRange,
 			info.interactionTarget || 'highlight'
 		) || info;
 		const boundsRect = getFallbackBoundsRect();
-		const width = Math.min(360, Math.max(260, (boundsRect.width || window.innerWidth || 0) - 24));
-		popoverWidth = width;
- 		const height = popoverEl.offsetHeight || 220;
- 		const toRelativeRect = (rect: HighlightClickInfo['rect']) => ({
+		const width = mobileMode
+			? Math.max(220, boundsRect.width - TOOLBAR_EDGE_MARGIN * 2)
+			: Math.min(360, Math.max(260, (boundsRect.width || window.innerWidth || 0) - 24));
+		const toRelativeRect = (rect: HighlightClickInfo['rect']) => ({
 			top: rect.top - boundsRect.top,
 			left: rect.left - boundsRect.left,
 			bottom: rect.bottom - boundsRect.top,
@@ -155,144 +258,156 @@
 			containerHeight: boundsRect.height || window.innerHeight || 0,
 			toolbarWidth: width,
 			toolbarHeight: height,
-			mobile: false,
+			mobile: mobileMode,
 			preferredSide: 'bottom',
 			align: 'center',
 		});
-		popoverWidth = width;
-		posLeft = position.left;
-		posTop = position.top;
+
+		if (mobileMode && boundsEl) {
+			applyFixedRect(mapBoundsRelativeToFixed(position.top, position.left, width, boundsEl));
+		} else {
+			popoverWidth = width;
+			posTop = position.top;
+			posLeft = position.left;
+		}
+
 		preferBelow = position.isBelowAnchor;
 		focusTextareaIfNeeded();
+		syncReadingSurfaceLock();
 	}
 
- 	function handlePointerDownOutside(event: MouseEvent) {
- 		if (!open || !popoverEl) {
- 			return;
- 		}
- 		if (mobileMode) {
- 			return;
- 		}
- 		if (popoverEl.contains(event.target as Node)) {
+	function startViewportTracking() {
+		stopViewportTracking();
+		if (!mobileMode) {
+			return;
+		}
+		teardownViewportTracking = bindMobileFloatingViewport(() => {
+			syncReadingSurfaceLock();
+			void positionPopover();
+		});
+	}
+
+	function stopViewportTracking() {
+		teardownViewportTracking?.();
+		teardownViewportTracking = null;
+		releaseReadingSurfaceLock();
+	}
+
+	function handlePointerDownOutside(event: MouseEvent) {
+		if (!open || !popoverEl || mobileMode) {
+			return;
+		}
+		if (popoverEl.contains(event.target as Node)) {
 			return;
 		}
 		onClose();
 	}
 
- 	function handleKeydown(event: KeyboardEvent) {
- 		if (!open) {
- 			return;
- 		}
- 		if (event.key === 'Escape') {
- 			event.preventDefault();
- 			onClose();
- 			return;
- 		}
- 		if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
- 			event.preventDefault();
- 			onSave();
- 		}
- 	}
+	function handleKeydown(event: KeyboardEvent) {
+		if (!open) {
+			return;
+		}
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			onClose();
+			return;
+		}
+		if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+			event.preventDefault();
+			onSave();
+		}
+	}
 
- 	$effect(() => {
+	function handleTextareaFocus() {
+		if (!mobileMode) {
+			return;
+		}
+		syncReadingSurfaceLock();
+		void positionPopover();
+		window.setTimeout(() => {
+			syncReadingSurfaceLock();
+			void positionPopover();
+		}, 120);
+	}
+
+	$effect(() => {
 		const currentOpen = open;
 		const currentInfo = info;
 		const currentReaderService = readerService;
 		const currentBoundsEl = boundsEl;
- 		void currentInfo;
+		void currentInfo;
 		void currentReaderService;
 		void currentBoundsEl;
 		untrack(() => {
-			mobileMode = currentOpen ? isMobileCommentEditor() : false;
+			mobileMode = currentOpen ? isMobileFloatingEditorTarget() : false;
 		});
 		if (!currentOpen) {
 			untrack(() => {
 				clearPendingFocus();
 				hasFocusedCurrentSession = false;
+				stopViewportTracking();
 			});
+			return;
 		}
-		if (currentOpen) {
-			untrack(() => {
-				void positionPopover();
-			});
-		}
+		untrack(() => {
+			if (mobileMode) {
+				startViewportTracking();
+			} else {
+				stopViewportTracking();
+			}
+			void positionPopover();
+		});
 	});
 
- 	onMount(() => {
- 		document.addEventListener('mousedown', handlePointerDownOutside);
+	function handleWindowLayoutChange() {
+		void positionPopover();
+	}
+
+	onMount(() => {
+		document.addEventListener('mousedown', handlePointerDownOutside);
 		document.addEventListener('touchstart', handlePointerDownOutside as unknown as EventListener);
- 		window.addEventListener('resize', positionPopover);
- 		window.addEventListener('scroll', positionPopover, true);
- 		window.addEventListener('keydown', handleKeydown);
+		window.addEventListener('resize', handleWindowLayoutChange);
+		window.addEventListener('scroll', handleWindowLayoutChange, true);
+		window.addEventListener('keydown', handleKeydown);
 		return () => {
 			clearPendingFocus();
+			stopViewportTracking();
 			document.removeEventListener('mousedown', handlePointerDownOutside);
 			document.removeEventListener('touchstart', handlePointerDownOutside as unknown as EventListener);
-			window.removeEventListener('resize', positionPopover);
-			window.removeEventListener('scroll', positionPopover, true);
- 			window.removeEventListener('keydown', handleKeydown);
+			window.removeEventListener('resize', handleWindowLayoutChange);
+			window.removeEventListener('scroll', handleWindowLayoutChange, true);
+			window.removeEventListener('keydown', handleKeydown);
 		};
 	});
 </script>
 
 {#if open && info}
-	{#if mobileMode}
-		<EnhancedModal
-			open={open}
-			onClose={onClose}
-			size="md"
-			width="min(100%, 560px)"
-			centered={false}
-			closable={false}
-			mask={true}
-			maskClosable={true}
-			destroyOnClose={true}
-			class="epub-comment-editor-modal"
-			accentColor="purple"
-		>
-			{#snippet children()}
-				<div class="epub-comment-editor-modal__content" bind:this={popoverEl}>
-					<textarea
-						class="epub-comment-editor__textarea epub-comment-editor__textarea--modal"
-						bind:this={textareaEl}
-						value={draftText}
-						placeholder={t('epub.reader.commentEditor.placeholder')}
-						aria-label={t('epub.reader.commentEditor.ariaLabel')}
-						disabled={saving}
-						oninput={(event) => onDraftTextChange((event.currentTarget as HTMLTextAreaElement).value)}
-					></textarea>
-				</div>
-			{/snippet}
-
-			{#snippet footer()}
-				<div class="epub-comment-editor__actions epub-comment-editor__actions--modal">
-					<button type="button" class="epub-comment-editor__cancel" disabled={saving} onclick={onClose}>{t('epub.reader.commentEditor.cancel')}</button>
-					<button type="button" class="mod-cta" disabled={saving} onclick={onSave}>{saving ? t('epub.reader.commentEditor.saving') : t('epub.reader.commentEditor.save')}</button>
-				</div>
-			{/snippet}
-		</EnhancedModal>
-	{:else}
-		<div
-			class="epub-comment-editor epub-glass-panel"
-			class:epub-comment-editor--below={preferBelow}
-			style={`top: ${posTop}px; left: ${posLeft}px; width: ${popoverWidth}px;`}
-			bind:this={popoverEl}
-		>
-			<textarea
-				class="epub-comment-editor__textarea"
-				bind:this={textareaEl}
-				value={draftText}
-				placeholder={t('epub.reader.commentEditor.placeholder')}
-				aria-label={t('epub.reader.commentEditor.ariaLabel')}
-				disabled={saving}
-				oninput={(event) => onDraftTextChange((event.currentTarget as HTMLTextAreaElement).value)}
-			></textarea>
-			<div class="epub-comment-editor__actions">
-				<button type="button" class="epub-comment-editor__cancel" disabled={saving} onclick={onClose}>{t('epub.reader.commentEditor.cancel')}</button>
-				<button type="button" class="mod-cta" disabled={saving} onclick={onSave}>{saving ? t('epub.reader.commentEditor.saving') : t('epub.reader.commentEditor.save')}</button>
-			</div>
+	{@const isMobileEditor = isMobileFloatingEditorTarget()}
+	<div
+		class="epub-comment-editor epub-glass-panel"
+		class:epub-comment-editor--below={preferBelow}
+		class:epub-comment-editor--mobile={isMobileEditor}
+		class:epub-comment-editor--viewport-fixed={useFixedLayer}
+		class:epub-comment-editor--keyboard-docked={keyboardDocked}
+		style={`top: ${posTop}px; left: ${posLeft}px; width: ${popoverWidth}px;`}
+		bind:this={popoverEl}
+		use:optionalPortal={isMobileEditor}
+	>
+		<textarea
+			class="epub-comment-editor__textarea"
+			bind:this={textareaEl}
+			value={draftText}
+			placeholder={t('epub.reader.commentEditor.placeholder')}
+			aria-label={t('epub.reader.commentEditor.ariaLabel')}
+			disabled={saving}
+			onfocus={handleTextareaFocus}
+			oninput={(event) => onDraftTextChange((event.currentTarget as HTMLTextAreaElement).value)}
+		></textarea>
+		<div class="epub-comment-editor__actions">
+			<button type="button" class="epub-comment-editor__cancel" disabled={saving} onclick={onClose}>{t('epub.reader.commentEditor.cancel')}</button>
+			<button type="button" class="mod-cta" disabled={saving} onclick={onSave}>{saving ? t('epub.reader.commentEditor.saving') : t('epub.reader.commentEditor.save')}</button>
 		</div>
-	{/if}
+	</div>
 {/if}
 
 <style>
@@ -309,6 +424,19 @@
 		box-shadow: var(--shadow-s);
 	}
 
+	.epub-comment-editor--viewport-fixed {
+		position: fixed;
+		z-index: calc(var(--epub-z-popover, 300) + 64);
+	}
+
+	.epub-comment-editor--mobile {
+		max-width: none;
+	}
+
+	.epub-comment-editor--keyboard-docked {
+		box-shadow: var(--shadow-l);
+	}
+
 	.epub-comment-editor__textarea {
 		min-height: 116px;
 		max-height: 220px;
@@ -322,16 +450,26 @@
 		line-height: 1.7;
 	}
 
-	.epub-comment-editor__textarea--modal {
+	.epub-comment-editor--mobile .epub-comment-editor__textarea,
+	.epub-comment-editor--keyboard-docked .epub-comment-editor__textarea {
 		width: 100%;
-		min-height: min(320px, 46vh);
-		max-height: none;
+		min-height: min(180px, 34vh);
+		max-height: min(240px, 42vh);
 		resize: none;
 		box-sizing: border-box;
 	}
 
 	.epub-comment-editor__textarea::placeholder {
 		color: var(--text-faint);
+	}
+
+	.epub-comment-editor--mobile .epub-comment-editor__textarea:focus {
+		animation: epub-comment-editor-ios-keyboard-fix 0.1s forwards;
+	}
+
+	@keyframes epub-comment-editor-ios-keyboard-fix {
+		from { opacity: 0.999; }
+		to { opacity: 1; }
 	}
 
 	.epub-comment-editor__actions {
@@ -343,29 +481,6 @@
 	.epub-comment-editor__actions button {
 		border: 0;
 		box-shadow: none;
-	}
-
-	.epub-comment-editor__actions--modal {
-		width: 100%;
-		padding-bottom: env(safe-area-inset-bottom, 0px);
-	}
-
-	:global(.epub-comment-editor-modal) {
-		max-width: min(100%, 560px);
-	}
-
-	:global(.epub-comment-editor-modal .weave-modal__body) {
-		padding-top: 18px;
-		padding-bottom: 12px;
-	}
-
-	:global(.epub-comment-editor-modal .weave-modal__footer) {
-		padding-top: 12px;
-	}
-
-	.epub-comment-editor-modal__content {
-		display: flex;
-		flex-direction: column;
 	}
 
 	.epub-comment-editor__cancel {

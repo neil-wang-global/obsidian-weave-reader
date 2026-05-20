@@ -6,6 +6,7 @@
     getPluginActivationRemovalKind,
     removePluginActivation,
   } from "../../utils/plugin-license";
+  import { emitWeaveLicenseChanged } from "../../utils/license-sync-bridge";
   import { createSafeNotice } from "../../utils/obsidian-api-safe";
   import { showObsidianConfirm } from "../../utils/obsidian-confirm";
   import { showNotification } from "../../utils/notifications";
@@ -104,6 +105,7 @@
     try {
       const result = removePluginActivation(plugin, { disableInheritedLicenses: true });
       await plugin.saveSettings();
+      emitWeaveLicenseChanged(plugin.app);
 
       const nextState = result.nextState;
       refreshSnapshot();

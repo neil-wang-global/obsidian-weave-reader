@@ -62,10 +62,13 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          # Release title must equal the tag (e.g. "0.6.3"). An empty title makes
+          # ObsidianReviewBot report names like "0.6.1manifest.json".
           name: ${{ steps.version.outputs.tag }}
           tag_name: ${{ steps.version.outputs.tag }}
           draft: false
           prerelease: false
+          generate_release_notes: false
           files: |
             dist/main.js
             dist/manifest.json

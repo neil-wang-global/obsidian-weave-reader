@@ -1,7 +1,7 @@
 {
   "id": "weave-epub-reader",
   "name": "Weave EPUB Reader",
-  "version": "0.6.1",
+  "version": "0.6.3",
   "minAppVersion": "1.7.0",
   "description": "Standalone EPUB reader with bookshelf, deep links, and reading state persistence.",
   "author": "Rabbit (zhuzhige)",

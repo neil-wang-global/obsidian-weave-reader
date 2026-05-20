@@ -6,7 +6,14 @@
 	import { tr } from '../../utils/i18n';
 	import { isWeaveMainPluginEnabled } from '../../utils/weave-reader-access';
 	import { logger } from '../../utils/logger';
-	import type { EpubBook, EpubHighlightStyle, EpubReaderEngine, ReaderFrame } from '../../services/epub';
+	import type {
+		EpubBook,
+		EpubHighlightStyle,
+		EpubReaderEngine,
+		ReaderAnchorPoint,
+		ReaderFrame,
+		ReaderViewportRect,
+	} from '../../services/epub';
 	import { computeToolbarPosition, createEventBinder, isEventOutsideToolbar } from './toolbar-positioning';
 
 	type ExternalSelectionState = {
@@ -29,6 +36,7 @@
 		showPremiumFeaturePreviewEnabled?: boolean;
 		onRequestPremiumFeaturePreview?: (featureId: string) => void;
 		boundsEl?: HTMLElement | null;
+		mobileDockBottomOffset?: number;
 		externalSelection?: ExternalSelectionState | null;
 		onInsertToNote?: (text: string, cfiRange: string, color?: string, style?: EpubHighlightStyle) => void;
 		onAutoInsert?: (text: string, cfiRange: string, color?: string, style?: EpubHighlightStyle) => void;
@@ -49,6 +57,7 @@
 		showPremiumFeaturePreviewEnabled = false,
 		onRequestPremiumFeaturePreview,
 		boundsEl = null,
+		mobileDockBottomOffset = 0,
 		externalSelection = null,
 		onInsertToNote,
 		onAutoInsert,
@@ -125,14 +134,70 @@
 			|| (document.querySelector('.epub-content-wrapper') as HTMLElement | null);
 	}
 
-	function toAbsoluteViewportRect(rect: DOMRect, viewportEl: HTMLElement): DOMRect {
-		const viewportRect = viewportEl.getBoundingClientRect();
-		return new DOMRect(
-			rect.left + viewportRect.left,
-			rect.top + viewportRect.top,
-			rect.width,
-			rect.height
-		);
+	function viewportRectToDOMRect(rect: ReaderViewportRect): DOMRect {
+		return new DOMRect(rect.left, rect.top, rect.width, rect.height);
+	}
+
+	function resolveSelectionGeometry(
+		cfiRange: string,
+		frame: ReaderFrame,
+		selection: Selection
+	): {
+		rect: DOMRect;
+		rects: DOMRect[];
+		anchorPoint?: ReaderAnchorPoint;
+	} | null {
+		const geometry = readerService.getSelectionViewportGeometry?.(cfiRange);
+		if (geometry?.rect) {
+			const rects = (geometry.rects?.length ? geometry.rects : [geometry.rect]).map(viewportRectToDOMRect);
+			return {
+				rect: viewportRectToDOMRect(geometry.rect),
+				rects,
+				anchorPoint: geometry.anchorPoint,
+			};
+		}
+
+		const rangeRect = getSelectionRect(selection);
+		const rangeRects = getSelectionRects(selection);
+		const iframe = getFrameElement(frame);
+		if (rangeRect && iframe) {
+			const iframeRect = iframe.getBoundingClientRect();
+			return {
+				rect: new DOMRect(
+					rangeRect.left + iframeRect.left,
+					rangeRect.top + iframeRect.top,
+					rangeRect.width,
+					rangeRect.height
+				),
+				rects: rangeRects.map(
+					(rect) =>
+						new DOMRect(
+							rect.left + iframeRect.left,
+							rect.top + iframeRect.top,
+							rect.width,
+							rect.height
+						)
+				),
+			};
+		}
+		if (rangeRect) {
+			return {
+				rect: rangeRect,
+				rects: rangeRects,
+			};
+		}
+
+		const navigationRect = readerService.getNavigationTargetRect({
+			cfi: cfiRange,
+			text: selection.toString().trim(),
+		});
+		if (!navigationRect) {
+			return null;
+		}
+		return {
+			rect: navigationRect,
+			rects: [navigationRect],
+		};
 	}
 
 	function clearPendingSync() {
@@ -307,7 +372,12 @@
 		return rect.width || rect.height ? [new DOMRect(rect.left, rect.top, rect.width, rect.height)] : [];
 	}
 
-	async function positionToolbar(anchorRect: DOMRect, containerEl: HTMLElement, anchorRects: DOMRect[] = []) {
+	async function positionToolbar(
+		anchorRect: DOMRect,
+		containerEl: HTMLElement,
+		anchorRects: DOMRect[] = [],
+		anchorPoint?: ReaderAnchorPoint
+	) {
 		isVisible = true;
 		await tick();
 
@@ -325,10 +395,16 @@
 		const position = computeToolbarPosition({
 			anchorRect: toRelativeRect(anchorRect),
 			anchorRects: anchorRects.map((rect) => toRelativeRect(rect)),
+			anchorPoint: anchorPoint
+				? {
+					x: anchorPoint.x - containerRect.left,
+					y: anchorPoint.y - containerRect.top,
+				}
+				: undefined,
 			containerWidth: containerEl.clientWidth,
 			containerHeight: containerEl.clientHeight,
-			toolbarWidth: toolbarEl.offsetWidth || 280,
-			toolbarHeight: toolbarEl.offsetHeight || 72,
+			toolbarWidth: toolbarEl.offsetWidth || 296,
+			toolbarHeight: toolbarEl.offsetHeight || 78,
 			mobile: isMobileToolbar,
 		});
 
@@ -416,39 +492,14 @@
 			currentCfiRange = resolvedCfiRange;
 			activeClearSelection = null;
 
-			const rangeRect = getSelectionRect(selection);
-			const rangeRects = getSelectionRects(selection);
-			const iframe = getFrameElement(frame);
-			let adjustedRect: DOMRect | null = null;
-			let adjustedRects: DOMRect[] = [];
-			if (rangeRect && iframe) {
-				const iframeRect = iframe.getBoundingClientRect();
-				adjustedRect = new DOMRect(
-					rangeRect.left + iframeRect.left,
-					rangeRect.top + iframeRect.top,
-					rangeRect.width,
-					rangeRect.height
-				);
-				adjustedRects = rangeRects.map((rect) =>
-					new DOMRect(rect.left + iframeRect.left, rect.top + iframeRect.top, rect.width, rect.height)
-				);
-			} else if (rangeRect) {
-				adjustedRect = rangeRect;
-				adjustedRects = rangeRects;
-			} else {
-				const navigationRect = readerService.getNavigationTargetRect({ cfi: resolvedCfiRange, text });
-				if (navigationRect) {
-					adjustedRect = toAbsoluteViewportRect(navigationRect, viewportEl);
-					adjustedRects = [adjustedRect];
-				}
-			}
-			if (!adjustedRect) {
+			const geometry = resolveSelectionGeometry(resolvedCfiRange, frame, selection);
+			if (!geometry) {
 				hideToolbar();
 				return;
 			}
 
 			startPositionTracking(frame);
-			await positionToolbar(adjustedRect, viewportEl, adjustedRects);
+			await positionToolbar(geometry.rect, viewportEl, geometry.rects, geometry.anchorPoint);
 		} catch (e) {
 			logger.warn('[SelectionToolbar] Failed to sync selection:', e);
 			hideToolbar();
@@ -557,7 +608,7 @@
 	class:visible={isVisible}
 	class:below-selection={isBelowSelection}
 	class:mobile-docked={toolbarMode === 'docked'}
-	style={`top: ${posTop}px; left: ${posLeft}px; --toolbar-arrow-offset: ${arrowOffset}px;`}
+	style={`top: ${posTop}px; left: ${posLeft}px; --toolbar-arrow-offset: ${arrowOffset}px; --toolbar-bottom-offset: ${Math.max(0, mobileDockBottomOffset)}px;`}
 	bind:this={toolbarEl}
 >
 	<div class="selection-main-row">

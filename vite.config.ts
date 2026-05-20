@@ -113,8 +113,10 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: [
         {
+          // Use the browser bundle; lib/index pulls Node "stream" and breaks Obsidian load
+          // (Vite CJS interop hits inherited enumerable keys on stream).
           find: /^jszip$/,
-          replacement: path.resolve(process.cwd(), "node_modules/jszip/lib/index.js"),
+          replacement: path.resolve(process.cwd(), "node_modules/jszip/dist/jszip.min.js"),
         },
         {
           find: /^setimmediate$/,

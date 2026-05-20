@@ -5,7 +5,7 @@
 <div align="center">
 
 ![Weave EPUB Reader](https://img.shields.io/badge/Obsidian-EPUB%20Reader-8a5cf6?style=for-the-badge)
-![Version](https://img.shields.io/badge/version-0.6.1-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-0.6.3-green?style=for-the-badge)
 ![Min Obsidian](https://img.shields.io/badge/Obsidian-1.7.0+-purple?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange?style=for-the-badge)
 
@@ -112,6 +112,8 @@ Weave EPUB Reader 采用“基础功能免费，高级能力付费”的模式�
 ### 边界说明
 
 - 是否需要激活，以插件当前版本的实际界面与功能开关为准
+- 已安装 **Weave 主插件** 且主插件已激活时，阅读器可继承主插件授权，无需重复输入同一激活码；也可使用 **EPUB 独立激活码**（仅解锁本阅读器）
+- 多插件授权架构说明见 [docs/LICENSE_MULTI_PLUGIN.md](./docs/LICENSE_MULTI_PLUGIN.md)
 - AI 相关功能通常还需要你自行配置第三方 AI 服务的 API Key
 - 即使启用了高级能力，用户自己的 EPUB、Markdown、Canvas 与 Vault 数据仍由用户自己控制
 
@@ -131,6 +133,35 @@ Weave EPUB Reader 采用“基础功能免费，高级能力付费”的模式�
 
 3. 重启 Obsidian
 4. 在社区插件页面启用 `Weave EPUB Reader`
+
+## 开发命令
+
+### 桌面热重载
+
+- `npm run dev`
+
+### 手机 ADB 热重载
+
+先在 `.env` 中配置以下任一项：
+
+- `WEAVE_MOBILE_PLUGIN_DIR=/storage/emulated/0/Documents/obsidian luman/.obsidian/plugins/weave-epub-reader`
+- 或 `WEAVE_MOBILE_VAULT_ROOT=/storage/emulated/0/Documents/obsidian luman`
+
+如有需要还可补充：
+
+- `WEAVE_MOBILE_ADB_PATH=C:/Android/platform-tools/adb.exe`
+- `WEAVE_MOBILE_ADB_SERIAL=<你的设备 serial>`
+
+常用命令：
+
+- `npm run dev:mobile`
+  - 构建一次开发版并立即通过 ADB 推送到手机插件目录
+- `npm run dev:mobile:watch`
+  - 持续监听构建输出，自动推送 `.mobile-hot-reload` 中的运行时文件到手机
+- `npm run deploy:mobile`
+  - 将当前 mobile 热重载输出重新推送到手机
+- `npm run build:mobile`
+  - 生产构建后立即推送到手机
 
 ## 推荐使用方式
 
@@ -270,10 +301,26 @@ Weave EPUB Reader 采用“基础功能免费，高级能力付费”的模式�
 
 相关公开说明：
 
+- [多插件授权架构（开发者）](./docs/LICENSE_MULTI_PLUGIN.md)
 - [隐私说明](./PRIVACY.md)
 - [高级版说明](./PREMIUM_TERMS.md)
 - [支持说明](./SUPPORT.md)
 - [安全说明](./SECURITY.md)
+
+## Obsidian 社区审核与发布
+
+本仓库面向 Obsidian 社区插件市场审核，发布前建议本地执行：
+
+```bash
+npm run verify:public-repo
+npm run lint:obsidian
+npm run build
+npm run verify:release
+```
+
+GitHub Release 的**标题**必须与标签完全一致（例如 `0.6.3`）。若标题留空，ObsidianReviewBot 可能把标题误报为 `0.6.1manifest.json` 这类拼接名称。请检查并修正历史 Release（如 `0.6.1`、`0.6.2`）的标题字段。
+
+许可证文件使用完整的 [GPL-3.0-or-later](./LICENSE) 正文，以便 GitHub 与审核机器人正确识别。
 
 ## 作者与反馈
 

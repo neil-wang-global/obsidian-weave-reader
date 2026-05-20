@@ -22,6 +22,7 @@ export type {
 	ReaderParagraphSelectionResolution,
 	ReaderRenderOptions,
 	ReaderSelectionChange,
+	ReaderViewportGeometry,
 } from "./reader-engine-types";
 export { EpubStorageService } from "./EpubStorageService";
 export type {

@@ -59,9 +59,9 @@ import {
 	normalizeLicenseStore,
 	resolveEffectiveLicenseState,
 } from "./utils/license-state";
+import { registerLicenseSyncBridge } from "./utils/license-sync-bridge";
 import { logger } from "./utils/logger";
 import { initI18n, i18n, syncI18nWithObsidianLanguage } from "./utils/i18n";
-import { initWeaveSettingsLayoutClasses } from "./utils/weave-settings-layout-classes";
 import type { AIConfig } from "./types/plugin-settings";
 import {
 	DEFAULT_BOOKSHELF_DISPLAY_MODE,
@@ -157,13 +157,23 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		});
 	}
 
-	private syncLicenseSettings(): void {
+	private syncLicenseSettings(): boolean {
+		const previousSnapshot = JSON.stringify({
+			license: this.settings.license,
+			licenseState: this.settings.licenseState,
+		});
 		const normalizedStore = normalizeLicenseStore(
 			this.settings.license,
 			this.settings.licenseState
 		);
 		this.settings.licenseState = normalizedStore;
 		this.settings.license = getLegacyPrimaryLicense(normalizedStore.localLicenses);
+		return (
+			JSON.stringify({
+				license: this.settings.license,
+				licenseState: this.settings.licenseState,
+			}) !== previousSnapshot
+		);
 	}
 
 	private syncDebugSettings(): void {
@@ -286,19 +296,22 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 					? localUiMemory.lastSelectedIRDeckId
 					: localUiMemory.lastSelectedIRDeckId || this.settings.lastSelectedIRDeckId || ""
 			).trim();
-		this.syncLicenseSettings();
+		const licenseSettingsChanged = this.syncLicenseSettings();
 		this.syncDebugSettings();
 		this.syncPremiumPreviewSettings();
 		this.syncBookshelfDisplaySettings();
 		this.syncReadingPositionAutoSaveSettings();
-		if (this.hasLegacyRememberedUiKeys(loadedData)) {
-			await this.getEpubStorageService().savePluginUiMemory(this.getRememberedUiMemory());
+		if (licenseSettingsChanged || this.hasLegacyRememberedUiKeys(loadedData)) {
+			if (this.hasLegacyRememberedUiKeys(loadedData)) {
+				await this.getEpubStorageService().savePluginUiMemory(this.getRememberedUiMemory());
+			}
 			await this.persistSettingsData();
 		}
 	}
 
 	async saveSettings(): Promise<void> {
 		this.syncLicenseSettings();
+
 		this.syncDebugSettings();
 		this.syncPremiumPreviewSettings();
 		this.syncBookshelfDisplaySettings();
@@ -503,8 +516,6 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 	async onload(): Promise<void> {
 		await this.loadSettings();
 		initI18n();
-		const destroyWeaveSettingsLayoutClasses = initWeaveSettingsLayoutClasses();
-		this.register(destroyWeaveSettingsLayoutClasses);
 		registerEpubHost(this.app, this);
 		aiConfigStore.initialize(this as WeavePlugin);
 		this.addSettingTab(new EpubSettingsTab(this.app, this));
@@ -513,6 +524,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			localLicenses: this.getLocalLicenses(),
 			inheritedLicenses: this.getInheritedLicenses(),
 		});
+		registerLicenseSyncBridge(this, this);
 		this.registerWorkspaceViews();
 		registerEpubMarkdownPostProcessor(this, this.app);
 		registerEpubProtocolHandler(this, this.app, "[Standalone EPUB Protocol]");

@@ -127,7 +127,25 @@ describe("license-state dual product rules", () => {
     expect(effectiveState.activeLicenses).toHaveLength(0);
   });
 
-  it("treats a persisted empty local store as authoritative instead of reviving legacy license data", () => {
+  it("treats a persisted empty local store as authoritative when explicitly cleared", () => {
+    const legacyLicense = createLicense({
+      activationCode: "legacy-epub-license",
+      entitlements: ["epub-premium"],
+      issuedProductId: "weave-epub-reader",
+    });
+
+    const normalizedStore = normalizeLicenseStore(legacyLicense, {
+      localLicenses: [],
+      updatedAt: "2026-05-08T12:00:00.000Z",
+      localLicensesClearedAt: "2026-05-08T12:00:00.000Z",
+    });
+
+    expect(normalizedStore.localLicenses).toEqual([]);
+    expect(normalizedStore.updatedAt).toBe("2026-05-08T12:00:00.000Z");
+    expect(normalizedStore.localLicensesClearedAt).toBe("2026-05-08T12:00:00.000Z");
+  });
+
+  it("migrates stale empty local store when legacy activation is still present", () => {
     const legacyLicense = createLicense({
       activationCode: "legacy-epub-license",
       entitlements: ["epub-premium"],
@@ -139,8 +157,8 @@ describe("license-state dual product rules", () => {
       updatedAt: "2026-05-08T12:00:00.000Z",
     });
 
-    expect(normalizedStore.localLicenses).toEqual([]);
-    expect(normalizedStore.updatedAt).toBe("2026-05-08T12:00:00.000Z");
+    expect(normalizedStore.localLicenses).toHaveLength(1);
+    expect(normalizedStore.localLicenses[0]?.activationCode).toBe("legacy-epub-license");
   });
 
   it("still migrates legacy license data when no explicit local store exists yet", () => {

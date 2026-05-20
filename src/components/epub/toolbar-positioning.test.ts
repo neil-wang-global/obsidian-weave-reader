@@ -1,7 +1,7 @@
 import { computeToolbarPosition, createEventBinder, isEventOutsideToolbar } from './toolbar-positioning';
 
 describe('toolbar-positioning', () => {
-	it('returns docked placement for mobile toolbars', () => {
+	it('floats mobile toolbars beside the selection when space allows', () => {
 		const result = computeToolbarPosition({
 			anchorRect: { top: 20, left: 40, bottom: 36, right: 96, width: 56, height: 16 },
 			containerWidth: 320,
@@ -11,14 +11,43 @@ describe('toolbar-positioning', () => {
 			mobile: true,
 		});
 
-		expect(result).toEqual({
-			top: 0,
-			left: 20,
-			arrowOffset: 0,
-			isBelowAnchor: true,
-			mode: 'docked',
-			anchorRect: { top: 20, left: 40, bottom: 36, right: 96, width: 56, height: 16 },
+		expect(result.mode).toBe('floating');
+		expect(result.isBelowAnchor).toBe(true);
+		expect(result.top).toBe(48);
+		expect(result.left).toBe(12);
+		expect(result.anchorRect).toEqual({ top: 20, left: 40, bottom: 36, right: 96, width: 56, height: 16 });
+	});
+
+	it('anchors floating mobile toolbars to the selection center when space allows', () => {
+		const result = computeToolbarPosition({
+			anchorRect: { top: 120, left: 140, bottom: 144, right: 204, width: 64, height: 24 },
+			containerWidth: 390,
+			containerHeight: 720,
+			toolbarWidth: 220,
+			toolbarHeight: 72,
+			mobile: true,
 		});
+
+		expect(result.mode).toBe('floating');
+		expect(result.isBelowAnchor).toBe(false);
+		expect(result.top).toBe(36);
+		expect(result.left).toBe(62);
+	});
+
+	it('docks mobile toolbars when floating would overlap the selection', () => {
+		const result = computeToolbarPosition({
+			anchorRect: { top: 10, left: 40, bottom: 25, right: 96, width: 56, height: 15 },
+			containerWidth: 320,
+			containerHeight: 100,
+			toolbarWidth: 280,
+			toolbarHeight: 72,
+			mobile: true,
+		});
+
+		expect(result.mode).toBe('docked');
+		expect(result.top).toBe(0);
+		expect(result.left).toBe(12);
+		expect(result.arrowOffset).toBe(0);
 	});
 
 	it('places floating toolbars above the anchor when space is available', () => {
@@ -95,6 +124,21 @@ describe('toolbar-positioning', () => {
 		expect(result.left).toBe(110);
 		expect(result.top).toBe(148);
 		expect(result.arrowOffset).toBe(0);
+	});
+
+	it('keeps floating toolbars above reserved bottom insets', () => {
+		const result = computeToolbarPosition({
+			anchorRect: { top: 220, left: 110, bottom: 244, right: 174, width: 64, height: 24 },
+			containerWidth: 360,
+			containerHeight: 320,
+			toolbarWidth: 160,
+			toolbarHeight: 72,
+			mobile: false,
+			insetBottom: 68,
+		});
+
+		expect(result.isBelowAnchor).toBe(false);
+		expect(result.top).toBe(136);
 	});
 
 	it('disposes bound listeners together', () => {

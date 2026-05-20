@@ -21,6 +21,7 @@
     removePluginActivation,
     upsertPluginLocalLicense
   } from '../../../utils/plugin-license';
+  import { emitWeaveLicenseChanged } from '../../../utils/license-sync-bridge';
 
   import type { EffectiveLicenseState } from '../../../types/license';
   import { createSafeNotice } from '../../../utils/obsidian-api-safe';
@@ -184,6 +185,7 @@
       if (result.success && result.licenseInfo) {
         upsertPluginLocalLicense(plugin, result.licenseInfo);
         await onSave();
+        emitWeaveLicenseChanged(plugin.app);
         
         // 显示成功状态
         activationSuccess = true;

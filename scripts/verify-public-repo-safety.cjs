@@ -18,6 +18,14 @@ const FORBIDDEN_TRACKED_PATH_RULES = [
 		],
 	},
 	{
+		name: "legacy weave styles outside the standalone EPUB surface",
+		patterns: [/^src\/styles\/(?!epub\/|obsidian-confirm\.css$).+/],
+	},
+	{
+		name: "legacy weave view styles",
+		patterns: [/^src\/components\/views\/styles\/.+/],
+	},
+	{
 		name: "design prototypes and promo assets",
 		patterns: [
 			/^app\.css$/,
