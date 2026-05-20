@@ -5,7 +5,7 @@
 <div align="center">
 
 ![Weave EPUB Reader](https://img.shields.io/badge/Obsidian-EPUB%20Reader-8a5cf6?style=for-the-badge)
-![Version](https://img.shields.io/badge/version-0.6.4-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-0.6.3-green?style=for-the-badge)
 ![Min Obsidian](https://img.shields.io/badge/Obsidian-1.7.0+-purple?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange?style=for-the-badge)
 
@@ -276,7 +276,9 @@ Related public notes:
 
 ## Obsidian community review and releases
 
-Before submitting to the Obsidian community plugin directory, run:
+In your **obsidian-releases** pull request, use **Preview branch scan** to run the automated review against a branch, tag, or commit SHA. You do **not** need to bump the version or create a new GitHub Release for every fix iteration.
+
+Before submitting, run locally:
 
 ```bash
 npm run verify:public-repo

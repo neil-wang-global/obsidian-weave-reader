@@ -5,7 +5,7 @@
 <div align="center">
 
 ![Weave EPUB Reader](https://img.shields.io/badge/Obsidian-EPUB%20Reader-8a5cf6?style=for-the-badge)
-![Version](https://img.shields.io/badge/version-0.6.4-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-0.6.3-green?style=for-the-badge)
 ![Min Obsidian](https://img.shields.io/badge/Obsidian-1.7.0+-purple?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange?style=for-the-badge)
 
@@ -309,7 +309,9 @@ Weave EPUB Reader 采用“基础功能免费，高级能力付费”的模式�
 
 ## Obsidian 社区审核与发布
 
-本仓库面向 Obsidian 社区插件市场审核，发布前建议本地执行：
+本仓库面向 Obsidian 社区插件市场审核。在 **obsidian-releases** 的 PR 中可使用「**预览分支扫描**」：对指定分支、标签或提交 SHA 运行自动审查，**无需为每次修复 bump 版本号或新建 Release**。
+
+提交审核前，建议在本地执行：
 
 ```bash
 npm run verify:public-repo
@@ -318,7 +320,7 @@ npm run build
 npm run verify:release
 ```
 
-GitHub Release 的**标题**必须与标签完全一致（例如 `0.6.3`）。若标题留空，ObsidianReviewBot 可能把标题误报为 `0.6.1manifest.json` 这类拼接名称。请检查并修正历史 Release（如 `0.6.1`、`0.6.2`）的标题字段。
+正式发布时，GitHub Release 的**标题**必须与标签完全一致（例如 `0.6.3`）。若标题留空，ObsidianReviewBot 可能把标题误报为 `0.6.1manifest.json` 这类拼接名称。
 
 许可证文件使用完整的 [GPL-3.0](./LICENSE) 正文（版权说明见 [COPYRIGHT](./COPYRIGHT)），以便 GitHub 与审核机器人正确识别。审核说明见 [PLUGIN_AUDIT.md](./PLUGIN_AUDIT.md)。
 
