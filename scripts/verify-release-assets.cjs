@@ -123,11 +123,23 @@ function verifySensitiveContent() {
 	}
 }
 
+function verifyNoDynamicScriptInjection() {
+	const mainJsPath = path.join(DIST_DIR, "main.js");
+	const source = fs.readFileSync(mainJsPath, "utf8");
+	const pattern = /createElement\(\s*["']script["']\s*\)/gi;
+	if (pattern.test(source)) {
+		fail(
+			"dist/main.js contains dynamic <script> element creation (ObsidianReviewBot code obfuscation error)"
+		);
+	}
+}
+
 function main() {
 	const expectedVersion = verifyRootVersionConsistency();
 	verifyDistFileSet();
 	verifyDistManifestVersion(expectedVersion);
 	verifySensitiveContent();
+	verifyNoDynamicScriptInjection();
 	console.log("[verify-release] release assets verified");
 }
 

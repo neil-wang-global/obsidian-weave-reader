@@ -5,7 +5,7 @@
 <div align="center">
 
 ![Weave EPUB Reader](https://img.shields.io/badge/Obsidian-EPUB%20Reader-8a5cf6?style=for-the-badge)
-![Version](https://img.shields.io/badge/version-0.6.3-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-0.6.4-green?style=for-the-badge)
 ![Min Obsidian](https://img.shields.io/badge/Obsidian-1.7.0+-purple?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange?style=for-the-badge)
 
@@ -287,7 +287,7 @@ npm run verify:release
 
 Each GitHub Release **title** must match its tag exactly (for example `0.6.3`). An empty title can make ObsidianReviewBot report names such as `0.6.1manifest.json`. Edit older releases (for example `0.6.1`, `0.6.2`) if their titles are blank.
 
-The repository ships the full [GPL-3.0-or-later](./LICENSE) text so GitHub and the review bot can recognize the license.
+The repository ships the standard [GPL-3.0](./LICENSE) text (see [COPYRIGHT](./COPYRIGHT) for the notice) so GitHub and the review bot can recognize the license. See [PLUGIN_AUDIT.md](./PLUGIN_AUDIT.md) for review-bot capability notes.
 
 ## Author and Feedback
 

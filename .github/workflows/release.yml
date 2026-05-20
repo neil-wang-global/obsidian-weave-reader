@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -53,24 +55,63 @@ jobs:
 
           node -e "const versions=require('./versions.json'); const version=process.argv[1]; if (!versions[version]) { console.error('versions.json missing version ' + version); process.exit(1); }" "$TAG_VERSION"
 
+      - name: Prepare release notes
+        id: notes
+        shell: bash
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          NOTES_FILE=".github/release-notes/${TAG}.md"
+          if [ -f "$NOTES_FILE" ]; then
+            cp "$NOTES_FILE" /tmp/release-notes.md
+          else
+            {
+              echo "## ${TAG}"
+              echo ""
+              echo "Automated release for the Obsidian community plugin directory."
+            } > /tmp/release-notes.md
+          fi
+          echo "path=/tmp/release-notes.md" >> "$GITHUB_OUTPUT"
+
       - name: Build plugin
         run: npm run build
 
       - name: Verify release assets
         run: npm run verify:release
 
+      - name: Verify bundle has no dynamic script injection
+        run: node scripts/verify-no-dynamic-script.cjs dist/main.js
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          # Release title must equal the tag (e.g. "0.6.3"). An empty title makes
-          # ObsidianReviewBot report names like "0.6.1manifest.json".
           name: ${{ steps.version.outputs.tag }}
           tag_name: ${{ steps.version.outputs.tag }}
           draft: false
           prerelease: false
           generate_release_notes: false
+          body_path: ${{ steps.notes.outputs.path }}
           files: |
             dist/main.js
             dist/manifest.json
             dist/styles.css
             dist/versions.json
+
+      - name: Ensure release title and notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          NOTES_FILE="${{ steps.notes.outputs.path }}"
+          if [ -n "$NOTES_FILE" ] && [ -f "$NOTES_FILE" ]; then
+            gh release edit "$TAG" --title "$TAG" --notes-file "$NOTES_FILE"
+          else
+            gh release edit "$TAG" --title "$TAG"
+          fi
+
+      - name: Attest release assets
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/main.js
+            dist/styles.css

@@ -278,6 +278,7 @@ scripts/*
 !scripts/run-obsidian-lint.cjs
 !scripts/lint-obsidian-strict.cjs
 !scripts/check-mojibake.cjs
+!scripts/verify-no-dynamic-script.cjs
 
 # 测试文件
 test/

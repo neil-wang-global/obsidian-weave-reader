@@ -113,14 +113,17 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: [
         {
-          // Use the browser bundle; lib/index pulls Node "stream" and breaks Obsidian load
-          // (Vite CJS interop hits inherited enumerable keys on stream).
+          // Bundle from source so setimmediate/lie aliases apply (min.js inlines script-tag polyfills).
           find: /^jszip$/,
-          replacement: path.resolve(process.cwd(), "node_modules/jszip/dist/jszip.min.js"),
+          replacement: path.resolve(process.cwd(), "node_modules/jszip/lib/index.js"),
         },
         {
           find: /^setimmediate$/,
           replacement: path.resolve(process.cwd(), "src/shims/setimmediate-safe.js"),
+        },
+        {
+          find: /^immediate$/,
+          replacement: path.resolve(process.cwd(), "src/shims/immediate-safe.js"),
         },
         {
           find: /^lie$/,

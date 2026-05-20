@@ -5,7 +5,7 @@
 <div align="center">
 
 ![Weave EPUB Reader](https://img.shields.io/badge/Obsidian-EPUB%20Reader-8a5cf6?style=for-the-badge)
-![Version](https://img.shields.io/badge/version-0.6.3-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-0.6.4-green?style=for-the-badge)
 ![Min Obsidian](https://img.shields.io/badge/Obsidian-1.7.0+-purple?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange?style=for-the-badge)
 
@@ -320,7 +320,7 @@ npm run verify:release
 
 GitHub Release 的**标题**必须与标签完全一致（例如 `0.6.3`）。若标题留空，ObsidianReviewBot 可能把标题误报为 `0.6.1manifest.json` 这类拼接名称。请检查并修正历史 Release（如 `0.6.1`、`0.6.2`）的标题字段。
 
-许可证文件使用完整的 [GPL-3.0-or-later](./LICENSE) 正文，以便 GitHub 与审核机器人正确识别。
+许可证文件使用完整的 [GPL-3.0](./LICENSE) 正文（版权说明见 [COPYRIGHT](./COPYRIGHT)），以便 GitHub 与审核机器人正确识别。审核说明见 [PLUGIN_AUDIT.md](./PLUGIN_AUDIT.md)。
 
 ## 作者与反馈
 
