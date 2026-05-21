@@ -6,7 +6,9 @@ import { safeReadJson } from "../../utils/safe-json-io";
 import { extractBodyContent, parseYAMLFromContent, setCardProperty } from "../../utils/yaml-utils";
 import { logger } from "../../utils/logger";
 import { EpubLinkService } from "./EpubLinkService";
-import { EpubStorageService } from "./EpubStorageService";
+import type { EpubStorageService } from "./EpubStorageService";
+import { getEpubStorageService } from "./epub-storage-access";
+import { epubVaultPathsReferToSameBook, resolveEpubVaultPath } from "./epub-vault-path";
 import { resolveEpubHost } from "./epub-host";
 import { getEpubRuntime } from "./epub-runtime";
 import type { HighlightSourceLocator } from "./reader-engine-types";
@@ -124,6 +126,7 @@ interface EpubBacklinkHighlightsCacheManifest {
 
 interface EpubBacklinkHighlightsCacheEntry {
 	manifestFingerprint: string;
+	manifest?: EpubBacklinkHighlightsCacheManifest;
 	savedAt: string;
 	highlights: BacklinkHighlight[];
 }
@@ -191,7 +194,7 @@ export class EpubBacklinkHighlightService {
 
 	constructor(app: App) {
 		this.app = app;
-		this.storageService = new EpubStorageService(app);
+		this.storageService = getEpubStorageService(app);
 		this.localPluginId = getEpubRuntime().pluginDirName;
 		this.setupSourceIndexFileWatchers();
 	}
@@ -211,35 +214,117 @@ export class EpubBacklinkHighlightService {
 		this.touchedSourceIndexPaths.clear();
 	}
 
+	async invalidateHighlightsCacheForEpub(
+		epubFilePath: string,
+		boundCanvasPath?: string | null
+	): Promise<void> {
+		try {
+			const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
+			const cacheKey = this.buildCacheKey(targetIdentity, boundCanvasPath);
+			const store = this.diskCacheLoaded
+				? this.diskCacheStore || this.createEmptyDiskCacheStore()
+				: await this.loadDiskCacheStore();
+			if (!store.entries[cacheKey]) {
+				return;
+			}
+			const nextEntries = { ...store.entries };
+			delete nextEntries[cacheKey];
+			const nextStore: EpubBacklinkHighlightsCacheStore = {
+				...store,
+				version: EPUB_BACKLINK_HIGHLIGHTS_CACHE_VERSION,
+				lastUpdated: new Date().toISOString(),
+				entries: nextEntries,
+			};
+			const previousWrite = this.inflightDiskCacheWrite ?? Promise.resolve();
+			const writePromise = previousWrite
+				.catch(() => undefined)
+				.then(async () => {
+					await DirectoryUtils.ensureDirForFile(this.app.vault.adapter, this.getDiskCachePath());
+					await this.app.vault.adapter.write(this.getDiskCachePath(), JSON.stringify(nextStore));
+					this.diskCacheStore = nextStore;
+					this.diskCacheLoaded = true;
+				});
+			this.inflightDiskCacheWrite = writePromise;
+			try {
+				await writePromise;
+			} finally {
+				if (this.inflightDiskCacheWrite === writePromise) {
+					this.inflightDiskCacheWrite = null;
+				}
+			}
+		} catch (error) {
+			logger.warn("[EpubBacklinkHighlightService] Failed to invalidate highlight cache:", error);
+		}
+	}
+
 	async collectHighlights(
 		epubFilePath: string,
 		boundCanvasPath?: string | null
 	): Promise<BacklinkHighlight[]> {
 		const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
-		const sourceIndex = await this.ensureSourceIndexSnapshotUpToDate();
-		const manifest = this.buildHighlightSourceManifestFromSourceIndex(
-			sourceIndex,
-			targetIdentity,
-			boundCanvasPath
-		);
-		const cachedHighlights = await this.readCachedHighlights(
-			targetIdentity,
-			manifest,
-			boundCanvasPath
-		);
-		if (cachedHighlights) {
+		const fastCached = await this.tryReadValidBookCacheFast(targetIdentity, boundCanvasPath);
+		if (fastCached) {
 			logger.debug(
-				`[EpubBacklinkHighlightService] Cache hit for ${epubFilePath} ` +
-					`(markdown=${manifest.markdownSources.length}, canvas=${manifest.canvasSources.length}, cardData=${manifest.cardDataSources.length})`
+				`[EpubBacklinkHighlightService] Fast cache hit for ${epubFilePath} (${fastCached.length})`
 			);
-			return cachedHighlights;
+			return fastCached;
 		}
 
-		const highlights = this.collectHighlightsFromSourceIndexSnapshot(
-			sourceIndex,
-			targetIdentity,
-			boundCanvasPath
-		);
+		const store = await this.loadDiskCacheStore();
+		const cacheKey = this.buildCacheKey(targetIdentity, boundCanvasPath);
+		const priorManifest = store.entries[cacheKey]?.manifest;
+		const sourcePathSet = new Set(this.discoverLinkingSourcePaths(targetIdentity));
+		if (priorManifest) {
+			for (const stamp of [
+				...priorManifest.markdownSources,
+				...priorManifest.canvasSources,
+				...priorManifest.cardDataSources,
+			]) {
+				sourcePathSet.add(stamp.path);
+			}
+			if (priorManifest.boundCanvasPath) {
+				sourcePathSet.add(normalizePath(priorManifest.boundCanvasPath));
+			}
+		}
+		const normalizedBoundCanvasPath = normalizePath(String(boundCanvasPath || "").trim());
+		if (normalizedBoundCanvasPath) {
+			sourcePathSet.add(normalizedBoundCanvasPath);
+		}
+
+		let highlights: BacklinkHighlight[];
+		let manifest: EpubBacklinkHighlightsCacheManifest;
+		if (sourcePathSet.size > 0) {
+			const collected = await this.collectHighlightsFromSourcePaths(
+				targetIdentity,
+				Array.from(sourcePathSet),
+				boundCanvasPath
+			);
+			highlights = collected.highlights;
+			manifest = collected.manifest;
+		} else {
+			highlights = [];
+			manifest = {
+				markdownSources: [],
+				canvasSources: [],
+				cardDataSources: [],
+				...(normalizedBoundCanvasPath ? { boundCanvasPath: normalizedBoundCanvasPath } : {}),
+			};
+		}
+
+		if (highlights.length === 0) {
+			const sourceIndex = await this.ensureSourceIndexSnapshotUpToDate();
+			highlights = this.collectHighlightsFromSourceIndexSnapshot(
+				sourceIndex,
+				targetIdentity,
+				boundCanvasPath
+			);
+			manifest = this.buildHighlightSourceManifestFromSourceIndex(
+				sourceIndex,
+				targetIdentity,
+				boundCanvasPath
+			);
+		}
+
 		const normalizedHighlights = this.cloneHighlightsForCache(highlights);
 		await this.persistCachedHighlights(
 			targetIdentity,
@@ -253,6 +338,186 @@ export class EpubBacklinkHighlightService {
 				`(markdown=${manifest.markdownSources.length}, canvas=${manifest.canvasSources.length}, cardData=${manifest.cardDataSources.length})`
 		);
 		return normalizedHighlights;
+	}
+
+	private async tryReadValidBookCacheFast(
+		targetIdentity: EpubTargetIdentity,
+		boundCanvasPath?: string | null
+	): Promise<BacklinkHighlight[] | null> {
+		const cacheKey = this.buildCacheKey(targetIdentity, boundCanvasPath);
+		const store = await this.loadDiskCacheStore();
+		const entry = store.entries[cacheKey];
+		if (!entry?.manifest || !Array.isArray(entry.highlights) || entry.highlights.length === 0) {
+			return null;
+		}
+		const refreshedManifest = await this.refreshManifestStamps(
+			this.normalizeCacheManifest(entry.manifest),
+			boundCanvasPath
+		);
+		if (!refreshedManifest) {
+			return null;
+		}
+		const manifestFingerprint = this.hashStableValue(refreshedManifest);
+		if (entry.manifestFingerprint !== manifestFingerprint) {
+			return null;
+		}
+		return this.cloneHighlightsForCache(entry.highlights);
+	}
+
+	private normalizeCacheManifest(
+		manifest: EpubBacklinkHighlightsCacheManifest
+	): EpubBacklinkHighlightsCacheManifest {
+		const boundCanvasPath = normalizePath(String(manifest.boundCanvasPath || "").trim());
+		return {
+			markdownSources: manifest.markdownSources.map((stamp) => ({ ...stamp })),
+			canvasSources: manifest.canvasSources.map((stamp) => ({ ...stamp })),
+			cardDataSources: manifest.cardDataSources.map((stamp) => ({ ...stamp })),
+			...(boundCanvasPath ? { boundCanvasPath } : {}),
+		};
+	}
+
+	private async refreshManifestStamps(
+		manifest: EpubBacklinkHighlightsCacheManifest,
+		boundCanvasPath?: string | null
+	): Promise<EpubBacklinkHighlightsCacheManifest | null> {
+		const refreshBucket = async (
+			stamps: HighlightSourceFileStamp[]
+		): Promise<HighlightSourceFileStamp[] | null> => {
+			const refreshed: HighlightSourceFileStamp[] = [];
+			for (const stamp of stamps) {
+				const current = await this.buildFileStamp(stamp.path);
+				if (!current || current.mtime !== stamp.mtime || current.size !== stamp.size) {
+					return null;
+				}
+				refreshed.push(current);
+			}
+			return refreshed;
+		};
+
+		const markdownSources = await refreshBucket(manifest.markdownSources);
+		if (markdownSources === null) {
+			return null;
+		}
+		const canvasSources = await refreshBucket(manifest.canvasSources);
+		if (canvasSources === null) {
+			return null;
+		}
+		const cardDataSources = await refreshBucket(manifest.cardDataSources);
+		if (cardDataSources === null) {
+			return null;
+		}
+
+		const normalizedBoundCanvasPath = normalizePath(
+			String(boundCanvasPath || manifest.boundCanvasPath || "").trim()
+		);
+		return this.normalizeCacheManifest({
+			markdownSources,
+			canvasSources,
+			cardDataSources,
+			...(normalizedBoundCanvasPath ? { boundCanvasPath: normalizedBoundCanvasPath } : {}),
+		});
+	}
+
+	private discoverLinkingSourcePaths(targetIdentity: EpubTargetIdentity): string[] {
+		const paths = new Set<string>();
+		const epubPath = targetIdentity.filePath;
+		const fileName = targetIdentity.fileName;
+		const resolvedLinks = this.app.metadataCache.resolvedLinks || {};
+		for (const [sourcePath, targets] of Object.entries(resolvedLinks)) {
+			if (!targets || typeof targets !== "object") {
+				continue;
+			}
+			if (targets[epubPath] || (fileName && targets[fileName])) {
+				paths.add(normalizePath(sourcePath));
+			}
+		}
+
+		const epubFile = this.app.vault.getAbstractFileByPath(epubPath);
+		if (epubFile && this.isTFile(epubFile)) {
+			const metadataCache = this.app.metadataCache as typeof this.app.metadataCache & {
+				getBacklinksForFile?: (file: TFile) => { data?: Map<string, unknown> } | null;
+			};
+			if (typeof metadataCache.getBacklinksForFile === "function") {
+				try {
+					const backlinks = metadataCache.getBacklinksForFile(epubFile);
+					if (backlinks?.data instanceof Map) {
+						for (const key of backlinks.data.keys()) {
+							paths.add(normalizePath(String(key)));
+						}
+					}
+				} catch {
+					// Obsidian backlink API is optional/undocumented.
+				}
+			}
+		}
+
+		return Array.from(paths).filter((path) => this.isPotentialSourceIndexPath(path));
+	}
+
+	private resolveSourcePathKind(file: TFile): EpubBacklinkSourceIndexFileKind | null {
+		if (file.extension === "md") {
+			return "markdown";
+		}
+		if (file.extension === "canvas") {
+			return "canvas";
+		}
+		if (this.isRelevantCardDataFile(file)) {
+			return "cardData";
+		}
+		return null;
+	}
+
+	private async collectHighlightsFromSourcePaths(
+		targetIdentity: EpubTargetIdentity,
+		sourcePaths: string[],
+		boundCanvasPath?: string | null
+	): Promise<{ highlights: BacklinkHighlight[]; manifest: EpubBacklinkHighlightsCacheManifest }> {
+		const recordsByPath = new Map<string, EpubBacklinkSourceIndexFileRecord>();
+		for (const path of sourcePaths) {
+			const normalizedPath = normalizePath(String(path || "").trim());
+			if (!normalizedPath || !this.isPotentialSourceIndexPath(normalizedPath)) {
+				continue;
+			}
+			const file = this.app.vault.getAbstractFileByPath(normalizedPath);
+			if (!(file && this.isTFile(file))) {
+				continue;
+			}
+			const kind = this.resolveSourcePathKind(file);
+			if (!kind) {
+				continue;
+			}
+			const stamp = await this.buildFileStamp(normalizedPath);
+			if (!stamp) {
+				continue;
+			}
+			const record = await this.readSourceIndexFileRecord(
+				file,
+				kind,
+				stamp.mtime,
+				stamp.size
+			);
+			recordsByPath.set(normalizedPath, record);
+		}
+
+		const scopedIndex: EpubBacklinkSourceIndexSnapshot = {
+			version: EPUB_BACKLINK_SOURCE_INDEX_VERSION,
+			updatedAt: new Date().toISOString(),
+			files: Array.from(recordsByPath.values()).sort((left, right) =>
+				left.path.localeCompare(right.path, "zh-CN")
+			),
+		};
+		return {
+			highlights: this.collectHighlightsFromSourceIndexSnapshot(
+				scopedIndex,
+				targetIdentity,
+				boundCanvasPath
+			),
+			manifest: this.buildHighlightSourceManifestFromSourceIndex(
+				scopedIndex,
+				targetIdentity,
+				boundCanvasPath
+			),
+		};
 	}
 
 	async mayFileAffectHighlights(
@@ -307,10 +572,14 @@ export class EpubBacklinkHighlightService {
 			? this.diskCacheStore || this.createEmptyDiskCacheStore()
 			: await this.loadDiskCacheStore();
 		const cachedSnapshot = store.sourceIndex;
-		if (cachedSnapshot && this.sourceIndexPrimed && this.sourceIndexVaultEventRefs.length > 0) {
+		if (
+			cachedSnapshot?.version === EPUB_BACKLINK_SOURCE_INDEX_VERSION &&
+			this.sourceIndexVaultEventRefs.length > 0
+		) {
 			const incrementallyUpdated =
 				await this.updateSourceIndexSnapshotIncrementally(cachedSnapshot);
 			if (incrementallyUpdated) {
+				this.sourceIndexPrimed = true;
 				return incrementallyUpdated;
 			}
 		}
@@ -453,7 +722,18 @@ export class EpubBacklinkHighlightService {
 			if (cachedPaths.has(candidate.file.path) || touchedSet.has(candidate.file.path)) {
 				continue;
 			}
-			return null;
+			const currentStamp = await this.buildFileStamp(candidate.file.path);
+			if (!currentStamp) {
+				continue;
+			}
+			nextFiles.push(
+				await this.readSourceIndexFileRecord(
+					candidate.file,
+					candidate.kind,
+					currentStamp.mtime,
+					currentStamp.size
+				)
+			);
 		}
 
 		nextFiles.sort((left, right) => left.path.localeCompare(right.path, "zh-CN"));
@@ -676,7 +956,7 @@ export class EpubBacklinkHighlightService {
 		}
 		const results: IndexedBacklinkHighlightEntry[] = [];
 		for (const callout of this.extractEpubCallouts(content)) {
-			const resolvedLink = this.resolveCalloutLink(callout);
+			const resolvedLink = this.resolveCalloutLink(callout, sourceFile);
 			if (!resolvedLink) continue;
 			const text = this.normalizeQuotedHighlightText(
 				callout.quotedText
@@ -789,12 +1069,13 @@ export class EpubBacklinkHighlightService {
 		target: IndexedBacklinkTargetIdentity,
 		targetIdentity: EpubTargetIdentity
 	): boolean {
-		if (target.sourceId && targetIdentity.sourceId) {
-			if (target.sourceId === targetIdentity.sourceId) {
-				return true;
-			}
+		if (
+			target.sourceId &&
+			targetIdentity.sourceIds.some((sourceId) => sourceId === target.sourceId)
+		) {
+			return true;
 		}
-		return normalizePath(target.filePath || "") === targetIdentity.filePath;
+		return epubVaultPathsReferToSameBook(target.filePath, targetIdentity.filePath);
 	}
 
 	private collectHighlightsFromSourceIndexSnapshot(
@@ -901,7 +1182,7 @@ export class EpubBacklinkHighlightService {
 			}
 		}
 
-		return {
+		return this.normalizeCacheManifest({
 			markdownSources: Array.from(markdownSources.values()).sort((left, right) =>
 				left.path.localeCompare(right.path)
 			),
@@ -911,8 +1192,8 @@ export class EpubBacklinkHighlightService {
 			cardDataSources: Array.from(cardDataSources.values()).sort((left, right) =>
 				left.path.localeCompare(right.path)
 			),
-			boundCanvasPath: normalizedBoundCanvasPath || undefined,
-		};
+			...(normalizedBoundCanvasPath ? { boundCanvasPath: normalizedBoundCanvasPath } : {}),
+		});
 	}
 
 	private addRecordToHighlightManifestBucket(
@@ -1353,7 +1634,7 @@ export class EpubBacklinkHighlightService {
 		try {
 			const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
 			const changed = await this.processVaultTextFile(sourceFile, (content) =>
-				this.removeCallout(content, cfiRange, targetIdentity, excerptId)
+				this.removeCallout(content, cfiRange, targetIdentity, excerptId, sourceFile)
 			);
 			if (changed) {
 				await this.notifyLinkedSourceMutation(sourceFile, "update", sourceRef);
@@ -1462,7 +1743,7 @@ export class EpubBacklinkHighlightService {
 		try {
 			const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
 			const changed = await this.processVaultTextFile(sourceFile, (content) =>
-				this.updateCalloutColor(content, cfiRange, targetIdentity, newColor, excerptId)
+				this.updateCalloutColor(content, cfiRange, targetIdentity, newColor, excerptId, sourceFile)
 			);
 			if (changed) {
 				await this.notifyLinkedSourceMutation(sourceFile, "update", sourceRef);
@@ -1514,7 +1795,8 @@ export class EpubBacklinkHighlightService {
 					undefined,
 					newStyle,
 					excerptId,
-					true
+					true,
+					sourceFile
 				)
 			);
 			if (changed) {
@@ -1569,7 +1851,8 @@ export class EpubBacklinkHighlightService {
 					targetIdentity,
 					commentText,
 					excerptId,
-					hasCommentDivider
+					hasCommentDivider,
+					sourceFile
 				)
 			);
 			if (changed) {
@@ -2863,6 +3146,9 @@ export class EpubBacklinkHighlightService {
 				const store = this.normalizeDiskCacheStore(JSON.parse(content));
 				this.diskCacheStore = store;
 				this.diskCacheLoaded = true;
+				if (store.sourceIndex?.version === EPUB_BACKLINK_SOURCE_INDEX_VERSION) {
+					this.sourceIndexPrimed = true;
+				}
 				return store;
 			} catch (error) {
 				logger.warn("[EpubBacklinkHighlightService] 读取高亮汇总缓存失败", error);
@@ -2907,6 +3193,7 @@ export class EpubBacklinkHighlightService {
 	): Promise<void> {
 		try {
 			const cacheKey = this.buildCacheKey(targetIdentity, boundCanvasPath);
+			const normalizedManifest = this.normalizeCacheManifest(manifest);
 			const store = this.diskCacheLoaded
 				? this.diskCacheStore || this.createEmptyDiskCacheStore()
 				: await this.loadDiskCacheStore();
@@ -2917,7 +3204,8 @@ export class EpubBacklinkHighlightService {
 				entries: {
 					...store.entries,
 					[cacheKey]: {
-						manifestFingerprint: this.hashStableValue(manifest),
+						manifestFingerprint: this.hashStableValue(normalizedManifest),
+						manifest: normalizedManifest,
 						savedAt: new Date().toISOString(),
 						highlights: this.cloneHighlightsForCache(highlights),
 					},
@@ -3043,12 +3331,13 @@ export class EpubBacklinkHighlightService {
 		content: string,
 		cfiRange: string,
 		targetIdentity: EpubTargetIdentity,
-		excerptId?: string
+		excerptId?: string,
+		sourceMarkdownPath?: string
 	): string {
 		let result = content;
 		const normalizedTargetCfi = EpubLinkService.normalizeCfi(cfiRange);
 		for (const callout of this.extractEpubCallouts(content)) {
-			const resolvedLink = this.resolveCalloutLink(callout);
+			const resolvedLink = this.resolveCalloutLink(callout, sourceMarkdownPath);
 			if (!resolvedLink || !this.isSameEpubTarget(resolvedLink, targetIdentity)) continue;
 			if (this.isSameExcerptTarget(resolvedLink, normalizedTargetCfi, excerptId)) {
 				result = result.replace(callout.fullMatch, "");
@@ -3065,7 +3354,8 @@ export class EpubBacklinkHighlightService {
 		cfiRange: string,
 		targetIdentity: EpubTargetIdentity,
 		newColor: string,
-		excerptId?: string
+		excerptId?: string,
+		sourceMarkdownPath?: string
 	): string {
 		const normalizedTargetCfi = EpubLinkService.normalizeCfi(cfiRange);
 		return this.updateCalloutAppearance(
@@ -3074,7 +3364,9 @@ export class EpubBacklinkHighlightService {
 			targetIdentity,
 			newColor,
 			undefined,
-			excerptId
+			excerptId,
+			false,
+			sourceMarkdownPath
 		);
 	}
 
@@ -3085,11 +3377,12 @@ export class EpubBacklinkHighlightService {
 		newColor?: string,
 		newStyle?: EpubHighlightStyle,
 		excerptId?: string,
-		applyStyle = false
+		applyStyle = false,
+		sourceMarkdownPath?: string
 	): string {
 		const normalizedTargetCfi = EpubLinkService.normalizeCfi(cfiRange);
 		for (const callout of this.extractEpubCallouts(content)) {
-			const resolvedLink = this.resolveCalloutLink(callout);
+			const resolvedLink = this.resolveCalloutLink(callout, sourceMarkdownPath);
 			if (!resolvedLink || !this.isSameEpubTarget(resolvedLink, targetIdentity)) continue;
 			if (this.isSameExcerptTarget(resolvedLink, normalizedTargetCfi, excerptId)) {
 				const oldCalloutBlock = callout.fullMatch;
@@ -3124,11 +3417,12 @@ export class EpubBacklinkHighlightService {
 		targetIdentity: EpubTargetIdentity,
 		commentText: string,
 		excerptId?: string,
-		hasCommentDivider = true
+		hasCommentDivider = true,
+		sourceMarkdownPath?: string
 	): string {
 		const normalizedTargetCfi = EpubLinkService.normalizeCfi(cfiRange);
 		for (const callout of this.extractEpubCallouts(content)) {
-			const resolvedLink = this.resolveCalloutLink(callout);
+			const resolvedLink = this.resolveCalloutLink(callout, sourceMarkdownPath);
 			if (!resolvedLink || !this.isSameEpubTarget(resolvedLink, targetIdentity)) continue;
 			if (this.isSameExcerptTarget(resolvedLink, normalizedTargetCfi, excerptId)) {
 				const oldCalloutBlock = callout.fullMatch;
@@ -3438,17 +3732,24 @@ export class EpubBacklinkHighlightService {
 		return title || undefined;
 	}
 
-	private resolveCalloutLink(callout: ParsedEpubCallout): ResolvedCalloutLink | null {
+	private resolveCalloutLink(
+		callout: ParsedEpubCallout,
+		sourceMarkdownPath?: string
+	): ResolvedCalloutLink | null {
 		const parsed = EpubLinkService.parseLinkMarkup(callout.linkMarkup);
-		return parsed?.cfi
-			? {
-					filePath: parsed.filePath,
-					cfi: parsed.cfi,
-					chapter: parsed.chapter,
-					sourceId: parsed.sourceId,
-					excerptId: parsed.excerptId,
-			  }
-			: null;
+		if (!parsed?.cfi) {
+			return null;
+		}
+		const rawFilePath = String(parsed.filePath || "").trim();
+		const resolvedFilePath =
+			resolveEpubVaultPath(this.app, rawFilePath, sourceMarkdownPath) || rawFilePath;
+		return {
+			filePath: resolvedFilePath,
+			cfi: parsed.cfi,
+			chapter: parsed.chapter,
+			sourceId: parsed.sourceId,
+			excerptId: parsed.excerptId,
+		};
 	}
 
 	private isSameEpubTarget(link: ResolvedCalloutLink, targetIdentity: EpubTargetIdentity): boolean {
@@ -3456,7 +3757,7 @@ export class EpubBacklinkHighlightService {
 			return true;
 		}
 
-		return normalizePath(link.filePath || "") === targetIdentity.filePath;
+		return epubVaultPathsReferToSameBook(link.filePath, targetIdentity.filePath);
 	}
 
 	private textMayReferenceTarget(text: string, targetIdentity: EpubTargetIdentity): boolean {

@@ -13,6 +13,7 @@ import {
 	isPdfBookmarkTaskId,
 } from "./IRPdfBookmarkTaskService";
 import { IRPointTagService, normalizeReadingPointTags } from "./IRPointTagService";
+import { invalidateIRDataCaches } from "./IRScheduleRefreshService";
 import { IRStorageService } from "./IRStorageService";
 
 export type IRPointWriteKind = "block" | "chunk" | "pdf" | "epub";
@@ -126,19 +127,25 @@ export class IRPointWriteService {
 
 	async createPdfPoint(input: IRPdfPointCreateInput): Promise<IRPdfBookmarkTask> {
 		await this.pdfService.initialize();
-		return await this.pdfService.createTask(input);
+		const task = await this.pdfService.createTask(input);
+		invalidateIRDataCaches(this.app);
+		return task;
 	}
 
 	async createEpubPoint(input: IREpubPointCreateInput): Promise<IREpubBookmarkTask> {
 		await this.epubService.initialize();
-		return await this.epubService.createTask(input);
+		const task = await this.epubService.createTask(input);
+		invalidateIRDataCaches(this.app);
+		return task;
 	}
 
 	async batchCreateEpubPoints(
 		inputs: IREpubBatchPointCreateInput[]
 	): Promise<IREpubBookmarkTask[]> {
 		await this.epubService.initialize();
-		return await this.epubService.batchCreateTasks(inputs);
+		const tasks = await this.epubService.batchCreateTasks(inputs);
+		invalidateIRDataCaches(this.app);
+		return tasks;
 	}
 
 	async deletePointsByDeckIdentifiers(deckIds: string[]): Promise<number> {
@@ -152,6 +159,9 @@ export class IRPointWriteService {
 			this.pdfService.deleteTasksByDeckIdentifiers(normalizedDeckIds),
 			this.epubService.deleteTasksByDeckIdentifiers(normalizedDeckIds),
 		]);
+		if (deletedPdf + deletedEpub > 0) {
+			invalidateIRDataCaches(this.app);
+		}
 		return deletedPdf + deletedEpub;
 	}
 
@@ -168,7 +178,11 @@ export class IRPointWriteService {
 		}
 
 		await this.pdfService.initialize();
-		return await this.pdfService.deleteTasksByPdfPaths(normalizedPaths);
+		const deleted = await this.pdfService.deleteTasksByPdfPaths(normalizedPaths);
+		if (deleted > 0) {
+			invalidateIRDataCaches(this.app);
+		}
+		return deleted;
 	}
 
 	async deleteEpubPointsByPaths(epubPaths: string[]): Promise<number> {
@@ -184,7 +198,11 @@ export class IRPointWriteService {
 		}
 
 		await this.epubService.initialize();
-		return await this.epubService.deleteTasksByEpubPaths(normalizedPaths);
+		const deleted = await this.epubService.deleteTasksByEpubPaths(normalizedPaths);
+		if (deleted > 0) {
+			invalidateIRDataCaches(this.app);
+		}
+		return deleted;
 	}
 
 	async deleteCard(card: Card): Promise<boolean> {
@@ -201,31 +219,31 @@ export class IRPointWriteService {
 	async deletePoint(input: IRPointDeleteInput): Promise<boolean> {
 		if (isPdfBookmarkTaskId(input.id)) {
 			await this.pdfService.initialize();
-			return await this.pdfService.deleteTask(input.id);
+			await this.pdfService.deleteTask(input.id);
+			return true;
 		}
 
 		if (isEpubBookmarkTaskId(input.id)) {
 			await this.epubService.initialize();
-			return await this.epubService.deleteTask(input.id);
+			await this.epubService.deleteTask(input.id);
+			return true;
 		}
 
 		await this.storage.initialize();
 
 		if (input.kind === "chunk") {
 			const chunk = await this.storage.getChunkData(input.id);
-			if (!chunk) {
-				return false;
+			if (chunk) {
+				await this.storage.deleteChunkData(input.id);
 			}
-			await this.storage.deleteChunkData(input.id);
 			return true;
 		}
 
 		if (input.kind === "block") {
 			const allBlocks = await this.storage.getAllBlocks();
-			if (!allBlocks[input.id]) {
-				return false;
+			if (allBlocks[input.id]) {
+				await this.storage.deleteBlock(input.id);
 			}
-			await this.storage.deleteBlock(input.id);
 			return true;
 		}
 
@@ -241,7 +259,7 @@ export class IRPointWriteService {
 			return true;
 		}
 
-		return false;
+		return true;
 	}
 
 	async updatePointTags(

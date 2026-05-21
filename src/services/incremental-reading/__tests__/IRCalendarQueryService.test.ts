@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { IRCalendarQueryService } from "../IRCalendarQueryService";
+import {
+	getIRDataMutationGeneration,
+	invalidateIRDataCaches,
+} from "../IRScheduleRefreshService";
 
 describe("IRCalendarQueryService cache title normalization", () => {
-	it("normalizes stale cached pdf and epub items when attaching runtime context", () => {
+	it("normalizes stale cached pdf and epub items when attaching runtime context", async () => {
 		const service = new IRCalendarQueryService({} as any);
 		const stalePdfItem = {
 			id: "pdf-1",
@@ -39,7 +43,7 @@ describe("IRCalendarQueryService cache title normalization", () => {
 			sourceType: "legacy-block",
 		} as any;
 
-		const result = (service as any).attachRuntimeContext(
+		const result = await (service as any).attachRuntimeContext(
 			{
 				workspaceData: { generatedAt: 1 } as any,
 				readingMaterials: [],
@@ -95,7 +99,25 @@ describe("IRCalendarQueryService cache title normalization", () => {
 			},
 		});
 
-		expect(normalized.version).toBe("1.1.0");
+		expect(normalized.version).toBe("1.2.0");
 		expect(normalized.entries).toEqual({});
+	});
+
+	it("rejects disk cache entries from a previous mutation generation", () => {
+		const app = {} as any;
+		const service = new IRCalendarQueryService(app);
+		invalidateIRDataCaches(app);
+		const generation = getIRDataMutationGeneration();
+		expect(generation).toBeGreaterThan(0);
+		expect(
+			(service as any).diskCacheEntryMatchesMutation({
+				dataMutationGeneration: generation - 1,
+			})
+		).toBe(false);
+		expect(
+			(service as any).diskCacheEntryMatchesMutation({
+				dataMutationGeneration: generation,
+			})
+		).toBe(true);
 	});
 });

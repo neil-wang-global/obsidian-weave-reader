@@ -137,16 +137,24 @@ export function createEpubLinkPostProcessor(app: App) {
 					e.preventDefault();
 					e.stopImmediatePropagation();
 					const linkService = new EpubLinkService(app);
+					const sourceMarkdownPath = String(ctx?.sourcePath || "").trim() || undefined;
 					if (parsed.sourceId) {
 						await linkService.navigateToEpubLocation(
 							filePath,
 							parsed.cfi,
 							parsed.text,
-							parsed.sourceId
+							parsed.sourceId,
+							sourceMarkdownPath
 						);
 						return;
 					}
-					await linkService.navigateToEpubLocation(filePath, parsed.cfi, parsed.text);
+					await linkService.navigateToEpubLocation(
+						filePath,
+						parsed.cfi,
+						parsed.text,
+						undefined,
+						sourceMarkdownPath
+					);
 				};
 				linkEl.addEventListener("click", boundLinkEl.__weaveEpubClickHandler);
 				return;

@@ -122,6 +122,15 @@ type ParagraphExtractionSource = {
 	chapterHref: string;
 };
 
+type ParagraphExtractionCandidateSource = "visible" | "processed" | "raw" | "embedded";
+
+const PARAGRAPH_EXTRACTION_SOURCE_PRIORITY: Record<ParagraphExtractionCandidateSource, number> = {
+	raw: 3,
+	processed: 2,
+	embedded: 1,
+	visible: 0,
+};
+
 const PARAGRAPH_TAG_NAMES = new Set([
 	"P",
 	"LI",
@@ -2401,12 +2410,15 @@ export class FoliateReaderService implements EpubReaderEngine {
 			chapterHref: string;
 			nonBoilerplateLength: number;
 			readableLength: number;
+			explicitParagraphCount: number;
+			sourcePriority: number;
 		}> = [];
 
 		const pushCandidate = (
 			doc: Document | null | undefined,
 			sourceChapterIndex: number,
-			sourceHref: string
+			sourceHref: string,
+			sourceKind: ParagraphExtractionCandidateSource
 		) => {
 			if (!doc?.body) {
 				return;
@@ -2418,23 +2430,25 @@ export class FoliateReaderService implements EpubReaderEngine {
 				chapterHref: sourceHref,
 				readableLength: this.getParagraphReadableBodyTextLength(root),
 				nonBoilerplateLength: this.getNonBoilerplateReadableBodyTextLength(root),
+				explicitParagraphCount: this.countMeaningfulExplicitParagraphElements(root),
+				sourcePriority: PARAGRAPH_EXTRACTION_SOURCE_PRIORITY[sourceKind],
 			});
 		};
 
 		const visibleFrame = this.getVisibleFramesWithIndex().find(
 			(frame) => frame.index === chapterIndex
 		);
-		pushCandidate(visibleFrame?.document, chapterIndex, defaultHref);
+		pushCandidate(visibleFrame?.document, chapterIndex, defaultHref, "visible");
 
 		const processed = await this.parser.getProcessedDocumentByIndex(chapterIndex);
-		pushCandidate(processed, chapterIndex, defaultHref);
+		pushCandidate(processed, chapterIndex, defaultHref, "processed");
 
 		const raw = await this.parser.getRawDocumentByIndex(chapterIndex);
-		pushCandidate(raw, chapterIndex, defaultHref);
+		pushCandidate(raw, chapterIndex, defaultHref, "raw");
 
 		if (raw) {
 			for (const embedded of await this.loadEmbeddedParagraphSources(raw, chapterIndex, defaultHref)) {
-				pushCandidate(embedded.doc, embedded.chapterIndex, embedded.chapterHref);
+				pushCandidate(embedded.doc, embedded.chapterIndex, embedded.chapterHref, "embedded");
 			}
 		}
 
@@ -2443,8 +2457,20 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 
 		candidates.sort((left, right) => {
-			if (right.nonBoilerplateLength !== left.nonBoilerplateLength) {
+			const lengthBaseline = Math.max(
+				left.nonBoilerplateLength,
+				right.nonBoilerplateLength,
+				1
+			);
+			const lengthGap = Math.abs(right.nonBoilerplateLength - left.nonBoilerplateLength);
+			if (lengthGap / lengthBaseline > 0.08) {
 				return right.nonBoilerplateLength - left.nonBoilerplateLength;
+			}
+			if (right.explicitParagraphCount !== left.explicitParagraphCount) {
+				return right.explicitParagraphCount - left.explicitParagraphCount;
+			}
+			if (right.sourcePriority !== left.sourcePriority) {
+				return right.sourcePriority - left.sourcePriority;
 			}
 			return right.readableLength - left.readableLength;
 		});
@@ -2524,9 +2550,24 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (!cached?.length) {
 			return;
 		}
-		const cachedLength = this.getNonBoilerplateParagraphRecordsTextLength(cached);
 		const root = liveDoc.body || liveDoc.documentElement;
+		if (root && this.isUnderSegmentedParagraphExtraction(cached, root)) {
+			this.dropParagraphCacheForChapter(chapterIndex);
+			return;
+		}
+		const cachedLength = this.getNonBoilerplateParagraphRecordsTextLength(cached);
 		const liveLength = root ? this.getNonBoilerplateReadableBodyTextLength(root) : 0;
+		const liveExplicitCount = root ? this.countMeaningfulExplicitParagraphElements(root) : 0;
+		const cachedNonBoilerplateCount = cached.filter(
+			(record) => !this.isParagraphBoilerplate(record.text)
+		).length;
+		if (
+			liveExplicitCount >= 2 &&
+			cachedNonBoilerplateCount < Math.min(liveExplicitCount, Math.max(2, Math.ceil(liveExplicitCount * 0.55)))
+		) {
+			this.dropParagraphCacheForChapter(chapterIndex);
+			return;
+		}
 		if (liveLength > cachedLength + 80) {
 			this.dropParagraphCacheForChapter(chapterIndex);
 		}
@@ -2609,7 +2650,14 @@ export class FoliateReaderService implements EpubReaderEngine {
 	): ReaderParagraphRecord[] {
 		let resolved = this.filterParagraphBoilerplateRecords(primary, root);
 		if (!this.shouldExpandParagraphExtraction(resolved, root)) {
-			return resolved;
+			return this.applyGranularParagraphFallbackIfNeeded(
+				doc,
+				root,
+				resolved,
+				chapterIndex,
+				chapterHref,
+				chapterTitle
+			);
 		}
 
 		const expanded: ReaderParagraphRecord[] = [];
@@ -2691,7 +2739,14 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 
 		if (this.getNonBoilerplateParagraphRecordsTextLength(resolved) > 0) {
-			return resolved;
+			return this.applyGranularParagraphFallbackIfNeeded(
+				doc,
+				root,
+				resolved,
+				chapterIndex,
+				chapterHref,
+				chapterTitle
+			);
 		}
 
 		const fallbackCandidates = this.collectFallbackParagraphElements(root);
@@ -2732,6 +2787,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 		return this.filterParagraphBoilerplateRecords(blockFallback, root);
 	}
 
+	private normalizeParagraphTagName(tagName: string): string {
+		return String(tagName || "").toUpperCase();
+	}
+
 	private collectParagraphCandidateElements(root: Element): HTMLElement[] {
 		const elements = [
 			...Array.from(root.querySelectorAll<HTMLElement>(PARAGRAPH_EXPLICIT_SELECTOR)),
@@ -2752,7 +2811,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (this.isParagraphReadingExcludedElement(element)) {
 			return false;
 		}
-		const tagName = element.tagName;
+		const tagName = this.normalizeParagraphTagName(element.tagName);
 		if (PARAGRAPH_TAG_NAMES.has(tagName)) {
 			const explicitLength = this.getElementNormalizedTextLength(element);
 			return explicitLength >= 2 && explicitLength <= PARAGRAPH_EXPLICIT_MAX_LENGTH;
@@ -2837,15 +2896,16 @@ export class FoliateReaderService implements EpubReaderEngine {
 			if (!(descendant instanceof HTMLElement)) {
 				continue;
 			}
-			if (descendant.tagName === "BR") {
+			const descendantTagName = this.normalizeParagraphTagName(descendant.tagName);
+			if (descendantTagName === "BR") {
 				continue;
 			}
-			if (PARAGRAPH_TAG_NAMES.has(descendant.tagName)) {
+			if (PARAGRAPH_TAG_NAMES.has(descendantTagName)) {
 				return false;
 			}
 			if (
 				["DIV", "SECTION", "ARTICLE", "UL", "OL", "TABLE", "ASIDE", "MAIN"].includes(
-					descendant.tagName
+					descendantTagName
 				)
 			) {
 				return false;
@@ -2966,9 +3026,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 			current = current.parentElement;
 		}
 		while (current instanceof Element) {
+			const currentTagName = this.normalizeParagraphTagName(current.tagName);
 			if (
-				PARAGRAPH_TAG_NAMES.has(current.tagName) ||
-				["DIV", "SECTION", "ARTICLE", "MAIN"].includes(current.tagName)
+				PARAGRAPH_TAG_NAMES.has(currentTagName) ||
+				["DIV", "SECTION", "ARTICLE", "MAIN"].includes(currentTagName)
 			) {
 				return current;
 			}
@@ -3078,6 +3139,99 @@ export class FoliateReaderService implements EpubReaderEngine {
 			.reduce((total, record) => total + record.text.length, 0);
 	}
 
+	private countMeaningfulExplicitParagraphElements(root: Element): number {
+		let count = 0;
+		for (const element of Array.from(root.querySelectorAll<HTMLElement>(PARAGRAPH_EXPLICIT_SELECTOR))) {
+			if (this.isParagraphReadingExcludedElement(element)) {
+				continue;
+			}
+			const text = this.normalizeParagraphTextFragment(element.textContent || "", true);
+			if (text.length >= PARAGRAPH_MIN_MEANINGFUL_LENGTH) {
+				count += 1;
+			}
+		}
+		return count;
+	}
+
+	private isUnderSegmentedParagraphExtraction(
+		records: ReaderParagraphRecord[],
+		root: Element
+	): boolean {
+		const filtered = records.filter((record) => !this.isParagraphBoilerplate(record.text));
+		if (filtered.length === 0) {
+			return true;
+		}
+		const bodyLength = this.getParagraphReadableBodyTextLength(root);
+		if (bodyLength < 200) {
+			return false;
+		}
+		if (
+			filtered.some((record) => record.text.length > PARAGRAPH_CONTAINER_MAX_LENGTH)
+		) {
+			return true;
+		}
+		const explicitCount = this.countMeaningfulExplicitParagraphElements(root);
+		const expectedMinimum = Math.min(
+			explicitCount,
+			Math.max(2, Math.ceil(explicitCount * 0.55))
+		);
+		if (explicitCount >= 2 && filtered.length < expectedMinimum) {
+			return true;
+		}
+		if (filtered.length === 1 && explicitCount >= 2) {
+			return filtered[0].text.length / bodyLength >= 0.55;
+		}
+		return false;
+	}
+
+	private collectGranularExplicitParagraphElements(root: Element): HTMLElement[] {
+		const elements = Array.from(root.querySelectorAll<HTMLElement>(PARAGRAPH_EXPLICIT_SELECTOR));
+		const unique = new Set<HTMLElement>();
+		const results: HTMLElement[] = [];
+		for (const element of elements) {
+			if (unique.has(element) || this.isParagraphReadingExcludedElement(element)) {
+				continue;
+			}
+			const text = this.normalizeParagraphTextFragment(element.textContent || "", true);
+			if (text.length < PARAGRAPH_MIN_MEANINGFUL_LENGTH) {
+				continue;
+			}
+			unique.add(element);
+			results.push(element);
+		}
+		return results;
+	}
+
+	private applyGranularParagraphFallbackIfNeeded(
+		doc: Document,
+		root: Element,
+		resolved: ReaderParagraphRecord[],
+		chapterIndex: number,
+		chapterHref: string,
+		chapterTitle: string
+	): ReaderParagraphRecord[] {
+		if (!this.isUnderSegmentedParagraphExtraction(resolved, root)) {
+			return resolved;
+		}
+		const granular = this.buildParagraphRecordsForElements(
+			doc,
+			root,
+			this.collectGranularExplicitParagraphElements(root),
+			chapterIndex,
+			chapterHref,
+			chapterTitle
+		);
+		const granularFiltered = this.filterParagraphBoilerplateRecords(granular, root);
+		if (
+			granularFiltered.length > 0 &&
+			(this.isStrongerParagraphExtraction(granularFiltered, resolved, root) ||
+				granularFiltered.length > resolved.length)
+		) {
+			return granularFiltered;
+		}
+		return resolved;
+	}
+
 	private shouldExpandParagraphExtraction(
 		records: ReaderParagraphRecord[],
 		root: Element
@@ -3094,6 +3248,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return true;
 		}
 		if (records.every((record) => this.isParagraphBoilerplate(record.text))) {
+			return true;
+		}
+		if (this.isUnderSegmentedParagraphExtraction(records, root)) {
 			return true;
 		}
 		return nonBoilerplateLength / bodyLength < PARAGRAPH_BODY_COVERAGE_THRESHOLD;
@@ -3162,7 +3319,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			}
 			if (
 				element.querySelector(PARAGRAPH_CHILD_BLOCK_SELECTOR) &&
-				element.tagName !== "P"
+				this.normalizeParagraphTagName(element.tagName) !== "P"
 			) {
 				continue;
 			}
@@ -3316,7 +3473,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 			const blockChildren = Array.from(container.children).filter(
 				(child): child is HTMLElement =>
 					child instanceof HTMLElement &&
-					["DIV", "SECTION", "ARTICLE", "P"].includes(child.tagName)
+					["DIV", "SECTION", "ARTICLE", "P"].includes(
+						this.normalizeParagraphTagName(child.tagName)
+					)
 			);
 			if (blockChildren.length < 2) {
 				continue;
@@ -3329,7 +3488,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 				if (textLength < 18 || textLength > PARAGRAPH_EXPLICIT_MAX_LENGTH) {
 					continue;
 				}
-				if (child.querySelector(PARAGRAPH_CHILD_BLOCK_SELECTOR) && child.tagName !== "P") {
+				if (
+					child.querySelector(PARAGRAPH_CHILD_BLOCK_SELECTOR) &&
+					this.normalizeParagraphTagName(child.tagName) !== "P"
+				) {
 					continue;
 				}
 				seen.add(child);

@@ -43,7 +43,7 @@ export interface EpubHighlightSnapshotContextInput {
 
 export interface EpubHighlightSnapshotRevalidateInput
 	extends EpubHighlightSnapshotContextInput {
-	annotationService: EpubAnnotationService;
+	annotationService?: EpubAnnotationService;
 	backlinkService?: EpubBacklinkHighlightService;
 	readerService?: EpubReaderEngine | null;
 	highlightRevision?: number;
@@ -73,6 +73,69 @@ export class EpubHighlightViewSnapshotService {
 	): EpubHighlightRenderSnapshot | null {
 		const entry = this.snapshotCache.get(this.buildContextKey(input));
 		return entry?.snapshot ? this.cloneSnapshot(entry.snapshot) : null;
+	}
+
+	publishFromHighlights(input: {
+		bookId: string;
+		filePath: string;
+		showStrikethroughHighlights?: boolean;
+		revision: number;
+		highlights: ReaderHighlight[];
+		readerService?: EpubReaderEngine | null;
+	}): EpubHighlightRenderSnapshot {
+		const contextKey = this.buildContextKey(input);
+		const entry = this.getOrCreateEntry(contextKey);
+		const normalizedRevision = this.normalizeRevision(input.revision);
+		const previousPageLabels = new Map<string, string>();
+		for (const highlight of entry.snapshot?.highlights || []) {
+			if (highlight.pageLabel) {
+				previousPageLabels.set(highlight.cfiRange, highlight.pageLabel);
+			}
+		}
+
+		const highlights = input.highlights
+			.filter((highlight) =>
+				this.shouldDisplayHighlight(highlight, Boolean(input.showStrikethroughHighlights))
+			)
+			.map((highlight) =>
+				this.mapDisplayHighlight(
+					highlight,
+					previousPageLabels.get(String(highlight.cfiRange || ""))
+				)
+			)
+			.sort((left, right) => (right.createdTime || 0) - (left.createdTime || 0));
+
+		const snapshot: EpubHighlightRenderSnapshot = {
+			contextKey,
+			bookId: String(input.bookId || "").trim(),
+			filePath: String(input.filePath || "").trim(),
+			showStrikethroughHighlights: Boolean(input.showStrikethroughHighlights),
+			revision: normalizedRevision,
+			updatedAt: Date.now(),
+			pageLabelsResolved:
+				!input.readerService ||
+				highlights.every((highlight) => !highlight.cfiRange || Boolean(highlight.pageLabel)),
+			highlights,
+		};
+
+		entry.snapshot = snapshot;
+		entry.dirty = false;
+		entry.version += 1;
+		entry.inflightRevalidate = null;
+
+		if (input.readerService && !snapshot.pageLabelsResolved) {
+			setTimeout(() => {
+				void this.hydratePageLabels({
+					bookId: input.bookId,
+					filePath: input.filePath,
+					showStrikethroughHighlights: input.showStrikethroughHighlights,
+					readerService: input.readerService,
+					highlightRevision: normalizedRevision,
+				});
+			}, 0);
+		}
+
+		return this.cloneSnapshot(snapshot);
 	}
 
 	invalidate(bookId?: string, filePath?: string): void {
@@ -121,7 +184,7 @@ export class EpubHighlightViewSnapshotService {
 
 		const revalidatePromise = (async () => {
 			const allHighlights =
-				input.backlinkService && input.filePath
+				input.annotationService && input.backlinkService && input.filePath
 					? await input.annotationService.collectAllHighlights(
 							input.bookId,
 							input.filePath,

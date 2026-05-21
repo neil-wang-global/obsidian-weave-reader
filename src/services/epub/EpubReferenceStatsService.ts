@@ -85,10 +85,47 @@ export class EpubReferenceStatsService {
 			return cached;
 		}
 
-		// 收集所有高亮
 		const highlights = await this.backlinkService.collectHighlights(epubFilePath, boundCanvasPath);
+		return this.computeReferenceStatsFromHighlights(
+			highlights,
+			epubFilePath,
+			boundCanvasPath,
+			filter
+		);
+	}
 
-		// 按 CFI 分组统计
+	computeReferenceStatsFromHighlights(
+		highlights: BacklinkHighlight[],
+		epubFilePath: string,
+		boundCanvasPath?: string | null,
+		filter?: { minCreatedTime?: number } | null
+	): Map<string, ReferenceStats> {
+		const minCreatedTime =
+			typeof filter?.minCreatedTime === "number" &&
+			Number.isFinite(filter.minCreatedTime) &&
+			filter.minCreatedTime > 0
+				? filter.minCreatedTime
+				: undefined;
+
+		const cached = this.getCachedStats(epubFilePath, boundCanvasPath, minCreatedTime);
+		if (cached) {
+			return cached;
+		}
+
+		const statsByCfi = this.buildStatsMapFromHighlights(
+			highlights,
+			epubFilePath,
+			minCreatedTime
+		);
+		this.setCachedStats(epubFilePath, statsByCfi, boundCanvasPath, minCreatedTime);
+		return statsByCfi;
+	}
+
+	private buildStatsMapFromHighlights(
+		highlights: BacklinkHighlight[],
+		epubFilePath: string,
+		minCreatedTime?: number
+	): Map<string, ReferenceStats> {
 		const statsByCfi = new Map<string, ReferenceStats>();
 
 		for (const highlight of highlights) {
@@ -125,15 +162,11 @@ export class EpubReferenceStatsService {
 			}
 		}
 
-		// 计算热度分数
 		for (const stats of statsByCfi.values()) {
 			stats.sources = this.sortSources(stats.sources);
 			stats.referenceHeat = this.calculateReferenceHeat(stats);
 			stats.summary = this.buildSummary(stats.sources);
 		}
-
-		// 缓存结果
-		this.setCachedStats(epubFilePath, statsByCfi, boundCanvasPath, minCreatedTime);
 
 		logger.debug(
 			`[EpubReferenceStatsService] Computed stats for ${epubFilePath}: ${statsByCfi.size} unique highlights`

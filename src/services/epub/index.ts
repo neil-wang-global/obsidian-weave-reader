@@ -25,6 +25,13 @@ export type {
 	ReaderViewportGeometry,
 } from "./reader-engine-types";
 export { EpubStorageService } from "./EpubStorageService";
+export { getEpubStorageService } from "./epub-storage-access";
+export {
+	BOOKSHELF_GRID_PAINT_OPTIMIZATION_THRESHOLD,
+	BOOKSHELF_LIST_VIRTUAL_SCROLL_THRESHOLD,
+	shouldUseBookshelfGridPaintOptimization,
+	shouldUseBookshelfListVirtualScroll,
+} from "./bookshelf-display-performance";
 export type {
 	EpubBookshelfSettings,
 	EpubBookshelfIndexEntry,

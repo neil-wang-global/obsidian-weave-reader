@@ -1,4 +1,4 @@
-import { App, TFile } from "obsidian";
+import { App, TFile, normalizePath } from "obsidian";
 import type { EpubHighlightStyle } from "./types";
 import { inflateRaw } from "pako";
 import { openEpubInPreferredLeaf } from "../../utils/epub-leaf-utils";
@@ -7,6 +7,7 @@ import { EPUB_RUNTIME } from "./epub-runtime";
 import { i18n } from "../../utils/i18n";
 import { PREMIUM_FEATURES } from "../premium/PremiumFeatureGuard";
 import { ensureEpubFileAccess, ensureEpubPremiumFeature } from "./epub-premium";
+import { resolveEpubVaultPath } from "./epub-vault-path";
 
 export interface EpubLinkParams {
 	filePath: string;
@@ -478,8 +479,8 @@ export class EpubLinkService {
 		const baseContent = normalized.content;
 		let updatedLinks = normalized.updatedLinks;
 
-		const { EpubStorageService } = await import("./EpubStorageService");
-		const storageService = new EpubStorageService(this.app);
+		const { getEpubStorageService } = await import("./epub-storage-access");
+		const storageService = getEpubStorageService(this.app);
 		const ranges = EpubLinkService.collectEpubLinkMarkupRanges(baseContent);
 		if (ranges.length === 0) {
 			return {
@@ -853,7 +854,8 @@ export class EpubLinkService {
 		filePath: string,
 		cfi: string,
 		text: string,
-		sourceId?: string
+		sourceId?: string,
+		sourceMarkdownPath?: string
 	): Promise<void> {
 		try {
 			if (
@@ -865,15 +867,21 @@ export class EpubLinkService {
 			) {
 				return;
 			}
-			const { EpubStorageService } = await import("./EpubStorageService");
-			const resolvedFilePath = await new EpubStorageService(this.app).resolveSourceFilePath(
+			const normalizedLinkPath = normalizePath(String(filePath || "").trim());
+			const vaultPath =
+				resolveEpubVaultPath(this.app, normalizedLinkPath, sourceMarkdownPath) ||
+				normalizedLinkPath;
+			const { getEpubStorageService } = await import("./epub-storage-access");
+			const resolvedFilePath = await getEpubStorageService(this.app).resolveSourceFilePath(
 				sourceId,
-				filePath
+				vaultPath
 			);
 			if (!resolvedFilePath) {
 				logger.warn("[EpubLinkService] Unable to resolve EPUB source:", {
-					filePath,
+					filePath: normalizedLinkPath,
+					vaultPath,
 					sourceId,
+					sourceMarkdownPath,
 				});
 				return;
 			}

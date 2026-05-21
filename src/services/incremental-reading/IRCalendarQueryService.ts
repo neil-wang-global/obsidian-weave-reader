@@ -7,7 +7,8 @@ import {
 	getCompatibleIncrementalReadingSettings,
 	getCompatibleReadingMaterialManager,
 } from "../../utils/plugin-access";
-import { EpubStorageService } from "../epub/EpubStorageService";
+import type { EpubStorageService } from "../epub/EpubStorageService";
+import { getEpubStorageService } from "../epub/epub-storage-access";
 import {
 	buildProjectedDayLoadMap,
 	getProjectedScheduleSummary,
@@ -20,6 +21,7 @@ import {
 	type RecomputeOptions,
 	type ScheduleRecomputeReason,
 } from "./IRScheduleKernel";
+import { getIRDataMutationGeneration } from "./IRScheduleRefreshService";
 import {
 	buildScheduleItemFromChunkData,
 	buildScheduleItemFromEpubTask,
@@ -34,6 +36,13 @@ import {
 	type IRWorkspaceDataSnapshot,
 } from "./IRWorkspaceSnapshotService";
 import { ReadingMaterialStorage } from "./ReadingMaterialStorage";
+import {
+	buildWorkspaceCacheManifest,
+	hashWorkspaceCacheManifest,
+	normalizeWorkspaceCacheManifest,
+	refreshWorkspaceCacheManifest,
+	type IRWorkspaceCacheManifest,
+} from "./ir-workspace-manifest";
 
 export interface IRCalendarQueryOptions extends RecomputeOptions {
 	forceRecompute?: boolean;
@@ -59,11 +68,12 @@ export interface IRCalendarQueryResult {
 interface IRCalendarQueryCacheEntry {
 	stateKey: string;
 	workspaceFingerprint: string;
+	workspaceManifest?: IRWorkspaceCacheManifest;
 	settingsFingerprint: string;
-	result: IRCalendarQueryResult;
+	result: Omit<IRCalendarQueryResult, "workspaceData" | "readingMaterials">;
 }
 
-const IR_CALENDAR_DISK_CACHE_VERSION = "1.1.0";
+const IR_CALENDAR_DISK_CACHE_VERSION = "1.2.0";
 
 type SerializedScheduleItem = Omit<ScheduleItem, "nextReviewDate"> & {
 	nextReviewDate: string | null;
@@ -94,7 +104,9 @@ interface SerializedIRCalendarQueryResult {
 
 interface IRCalendarDiskCacheEntry {
 	workspaceFingerprint: string;
+	workspaceManifest?: IRWorkspaceCacheManifest;
 	settingsFingerprint: string;
+	dataMutationGeneration?: number;
 	savedAt: string;
 	result: SerializedIRCalendarQueryResult;
 }
@@ -136,58 +148,86 @@ export class IRCalendarQueryService {
 	invalidate(): void {
 		this.memoryCache.clear();
 		this.inflightQueries.clear();
+		this.resetDiskCacheStore();
+	}
+
+	private resetDiskCacheStore(): void {
+		this.diskCacheStore = this.createEmptyDiskCacheStore();
+		this.diskCacheLoaded = true;
+		this.inflightDiskCacheLoad = null;
+		this.inflightDiskCacheWrite = null;
+	}
+
+	private diskCacheEntryMatchesMutation(entry: IRCalendarDiskCacheEntry): boolean {
+		const currentGeneration = getIRDataMutationGeneration();
+		if (currentGeneration === 0) {
+			return true;
+		}
+		return entry.dataMutationGeneration === currentGeneration;
 	}
 
 	async getCalendarQueryResult(options: IRCalendarQueryOptions = {}): Promise<IRCalendarQueryResult> {
+		const settingsFingerprint = this.buildSettingsFingerprint();
+		const preliminaryScope = this.buildPreliminaryQueryScope(options);
+		const cacheKey = preliminaryScope.cacheKey;
+
+		if (!options.forceRecompute) {
+			const memoryHit = await this.tryReadMemoryCalendarCache(
+				cacheKey,
+				settingsFingerprint,
+				preliminaryScope
+			);
+			if (memoryHit) {
+				return memoryHit;
+			}
+
+			const diskHit = await this.tryReadFastDiskCalendarCache(
+				cacheKey,
+				settingsFingerprint,
+				preliminaryScope
+			);
+			if (diskHit) {
+				return diskHit;
+			}
+		}
+
 		const workspaceData = await getSharedIRWorkspaceSnapshotService(this.app).getWorkspaceData();
 		const queryScope = this.buildQueryScope(workspaceData, options);
-		const workspaceFingerprint = this.buildWorkspaceFingerprint(workspaceData);
-		const settingsFingerprint = this.buildSettingsFingerprint();
-		const cacheKey = queryScope.cacheKey;
+		const workspaceManifest = await buildWorkspaceCacheManifest(this.app);
+		const workspaceFingerprint = hashWorkspaceCacheManifest(workspaceManifest);
 		const cached = !options.forceRecompute ? this.memoryCache.get(cacheKey) : null;
 		if (
 			cached &&
 			cached.workspaceFingerprint === workspaceFingerprint &&
 			cached.settingsFingerprint === settingsFingerprint
 		) {
-			const readingMaterials = await this.getReadingMaterials();
-			const runtimeResult = this.attachRuntimeContext(
-				cached.result,
-				workspaceData,
-				readingMaterials,
-				queryScope
-			);
-			cached.result = runtimeResult;
-			cached.stateKey = runtimeResult.scope.stateKey;
-			return runtimeResult;
+			return await this.attachRuntimeContext(cached.result, workspaceData, queryScope);
 		}
 
 		if (!options.forceRecompute) {
 			const diskEntry = await this.readDiskCacheEntry(cacheKey);
 			if (
 				diskEntry &&
-				diskEntry.workspaceFingerprint === workspaceFingerprint &&
-				diskEntry.settingsFingerprint === settingsFingerprint
+				diskEntry.settingsFingerprint === settingsFingerprint &&
+				this.diskCacheEntryMatchesMutation(diskEntry) &&
+				(await this.diskEntryMatchesWorkspace(diskEntry, workspaceFingerprint))
 			) {
-				const readingMaterials = await this.getReadingMaterials();
-				const hydratedResult = this.attachRuntimeContext(
-					this.hydrateDiskCacheResult(workspaceData, diskEntry.result),
-					workspaceData,
-					readingMaterials,
-					queryScope
-				);
+				const hydratedCore = this.hydrateDiskCacheResult(workspaceData, diskEntry.result);
 				this.memoryCache.set(cacheKey, {
-					stateKey: hydratedResult.scope.stateKey,
+					stateKey: hydratedCore.scope.stateKey,
 					workspaceFingerprint,
+					workspaceManifest: diskEntry.workspaceManifest
+						? normalizeWorkspaceCacheManifest(diskEntry.workspaceManifest)
+						: undefined,
 					settingsFingerprint,
-					result: hydratedResult,
+					result: hydratedCore,
 				});
-				logger.debug("[IRCalendarQueryService] disk cache hit", {
+				logger.debug("[IRCalendarQueryService] disk cache hit after workspace load", {
 					deckIds: queryScope.deckIds,
 					horizonDays: queryScope.horizonDays,
-					generatedAt: hydratedResult.schedule.generatedAt,
+					generatedAt: hydratedCore.schedule.generatedAt,
 				});
-				return hydratedResult;
+				return await this.attachRuntimeContext(hydratedCore, workspaceData, queryScope);
 			}
 		}
 
@@ -200,10 +240,9 @@ export class IRCalendarQueryService {
 		const queryPromise = (async () => {
 			const readingMaterials = await this.getReadingMaterials();
 			const schedule = await this.getSchedule(options, queryScope);
-			const result = await this.buildCalendarQueryResult(
+			const resultCore = await this.buildCalendarQueryResultCore(
 				workspaceData,
 				schedule,
-				readingMaterials,
 				options,
 				{
 					...queryScope,
@@ -211,18 +250,21 @@ export class IRCalendarQueryService {
 				}
 			);
 			this.memoryCache.set(cacheKey, {
-				stateKey: result.scope.stateKey,
+				stateKey: resultCore.scope.stateKey,
 				workspaceFingerprint,
+				workspaceManifest: normalizeWorkspaceCacheManifest(workspaceManifest),
 				settingsFingerprint,
-				result,
+				result: resultCore,
 			});
 			await this.persistDiskCacheEntry(cacheKey, {
 				workspaceFingerprint,
+				workspaceManifest: normalizeWorkspaceCacheManifest(workspaceManifest),
 				settingsFingerprint,
+				dataMutationGeneration: getIRDataMutationGeneration(),
 				savedAt: new Date().toISOString(),
-				result: this.serializeQueryResult(result),
+				result: this.serializeQueryResult(resultCore),
 			});
-			return result;
+			return await this.attachRuntimeContext(resultCore, workspaceData, queryScope);
 		})();
 		this.inflightQueries.set(inflightKey, queryPromise);
 		try {
@@ -234,12 +276,129 @@ export class IRCalendarQueryService {
 		}
 	}
 
-	private attachRuntimeContext(
-		result: IRCalendarQueryResult,
+	private buildPreliminaryQueryScope(
+		options: IRCalendarQueryOptions
+	): Pick<IRCalendarQueryScope, "deckIds" | "horizonDays" | "cacheKey"> {
+		const deckIds = this.normalizeIdentifiers(options.deckIds || []).sort((left, right) =>
+			left.localeCompare(right)
+		);
+		return {
+			deckIds,
+			horizonDays: options.horizonDays,
+			cacheKey: this.buildQueryCacheKey({
+				deckIds,
+				horizonDays: options.horizonDays,
+			}),
+		};
+	}
+
+	private async tryReadMemoryCalendarCache(
+		cacheKey: string,
+		settingsFingerprint: string,
+		preliminaryScope: Pick<IRCalendarQueryScope, "deckIds" | "horizonDays" | "cacheKey">
+	): Promise<IRCalendarQueryResult | null> {
+		const cached = this.memoryCache.get(cacheKey);
+		if (!cached || cached.settingsFingerprint !== settingsFingerprint) {
+			return null;
+		}
+		if (!(await this.memoryEntryMatchesWorkspace(cached))) {
+			return null;
+		}
+		const workspaceData = await getSharedIRWorkspaceSnapshotService(this.app).getWorkspaceData();
+		const queryScope = this.mergeQueryScope(workspaceData, preliminaryScope);
+		return await this.attachRuntimeContext(cached.result, workspaceData, queryScope);
+	}
+
+	private async tryReadFastDiskCalendarCache(
+		cacheKey: string,
+		settingsFingerprint: string,
+		preliminaryScope: Pick<IRCalendarQueryScope, "deckIds" | "horizonDays" | "cacheKey">
+	): Promise<IRCalendarQueryResult | null> {
+		const diskEntry = await this.readDiskCacheEntry(cacheKey);
+		if (!diskEntry || diskEntry.settingsFingerprint !== settingsFingerprint) {
+			return null;
+		}
+		if (!(await this.diskEntryMatchesWorkspace(diskEntry))) {
+			return null;
+		}
+		if (!this.diskCacheEntryMatchesMutation(diskEntry)) {
+			return null;
+		}
+		const serialized = diskEntry.result;
+		if (!serialized?.schedule?.days?.length && !serialized?.materialsByDate?.length) {
+			return null;
+		}
+
+		const workspaceData = await getSharedIRWorkspaceSnapshotService(this.app).getWorkspaceData();
+		const queryScope = this.mergeQueryScope(workspaceData, preliminaryScope, serialized.scope);
+		const hydratedCore = this.hydrateDiskCacheResult(workspaceData, serialized);
+		this.memoryCache.set(cacheKey, {
+			stateKey: hydratedCore.scope.stateKey,
+			workspaceFingerprint: diskEntry.workspaceFingerprint,
+			workspaceManifest: diskEntry.workspaceManifest
+				? normalizeWorkspaceCacheManifest(diskEntry.workspaceManifest)
+				: undefined,
+			settingsFingerprint,
+			result: hydratedCore,
+		});
+		logger.debug("[IRCalendarQueryService] fast disk cache hit", {
+			deckIds: queryScope.deckIds,
+			horizonDays: queryScope.horizonDays,
+			generatedAt: hydratedCore.schedule.generatedAt,
+		});
+		return await this.attachRuntimeContext(hydratedCore, workspaceData, queryScope);
+	}
+
+	private async memoryEntryMatchesWorkspace(entry: IRCalendarQueryCacheEntry): Promise<boolean> {
+		if (entry.workspaceManifest) {
+			return (await refreshWorkspaceCacheManifest(this.app, entry.workspaceManifest)) !== null;
+		}
+		const manifest = await buildWorkspaceCacheManifest(this.app);
+		return hashWorkspaceCacheManifest(manifest) === entry.workspaceFingerprint;
+	}
+
+	private async diskEntryMatchesWorkspace(
+		entry: IRCalendarDiskCacheEntry,
+		workspaceFingerprint?: string
+	): Promise<boolean> {
+		if (entry.workspaceManifest) {
+			const refreshed = await refreshWorkspaceCacheManifest(this.app, entry.workspaceManifest);
+			if (!refreshed) {
+				return false;
+			}
+			const fingerprint = hashWorkspaceCacheManifest(refreshed);
+			return !workspaceFingerprint || fingerprint === workspaceFingerprint || fingerprint === entry.workspaceFingerprint;
+		}
+		if (!workspaceFingerprint) {
+			return false;
+		}
+		const manifest = await buildWorkspaceCacheManifest(this.app);
+		const fingerprint = hashWorkspaceCacheManifest(manifest);
+		return fingerprint === workspaceFingerprint && entry.workspaceFingerprint === workspaceFingerprint;
+	}
+
+	private mergeQueryScope(
 		workspaceData: IRWorkspaceDataSnapshot,
-		readingMaterials: ReadingMaterial[],
+		preliminaryScope: Pick<IRCalendarQueryScope, "deckIds" | "horizonDays" | "cacheKey">,
+		serializedScope?: Omit<IRCalendarQueryScope, "stateKey">
+	): IRCalendarQueryScope {
+		const scoped = this.buildQueryScope(workspaceData, {
+			deckIds:
+				serializedScope?.deckIds?.length ? serializedScope.deckIds : preliminaryScope.deckIds,
+			horizonDays: serializedScope?.horizonDays ?? preliminaryScope.horizonDays,
+		});
+		return {
+			...scoped,
+			cacheKey: preliminaryScope.cacheKey,
+		};
+	}
+
+	private async attachRuntimeContext(
+		result: Omit<IRCalendarQueryResult, "workspaceData" | "readingMaterials">,
+		workspaceData: IRWorkspaceDataSnapshot,
 		scope: Pick<IRCalendarQueryScope, "deckIds" | "horizonDays" | "cacheKey">
-	): IRCalendarQueryResult {
+	): Promise<IRCalendarQueryResult> {
+		const readingMaterials = await this.getReadingMaterials();
 		const normalizedMaterialsByDate = new Map(
 			Array.from(result.materialsByDate.entries(), ([dateKey, items]) => [
 				dateKey,
@@ -264,13 +423,12 @@ export class IRCalendarQueryService {
 		};
 	}
 
-	private async buildCalendarQueryResult(
+	private async buildCalendarQueryResultCore(
 		workspaceData: IRWorkspaceDataSnapshot,
 		schedule: IRPlannedSchedule,
-		readingMaterials: ReadingMaterial[],
 		options: IRCalendarQueryOptions,
 		scope: IRCalendarQueryScope
-	): Promise<IRCalendarQueryResult> {
+	): Promise<Omit<IRCalendarQueryResult, "workspaceData" | "readingMaterials">> {
 		const startedAt = Date.now();
 		const projectedSummary = await getProjectedScheduleSummary(this.app, {
 			schedule,
@@ -305,8 +463,6 @@ export class IRCalendarQueryService {
 			durationMs: Date.now() - startedAt,
 		});
 		return {
-			workspaceData,
-			readingMaterials,
 			materialsByDate,
 			continueReadingSuspendedItemsPool,
 			schedule,
@@ -432,7 +588,7 @@ export class IRCalendarQueryService {
 
 	private getEpubStorageService(): EpubStorageService {
 		if (!this.epubStorageService) {
-			this.epubStorageService = new EpubStorageService(this.app);
+			this.epubStorageService = getEpubStorageService(this.app);
 		}
 		return this.epubStorageService;
 	}
@@ -549,7 +705,9 @@ export class IRCalendarQueryService {
 		}
 	}
 
-	private serializeQueryResult(result: IRCalendarQueryResult): SerializedIRCalendarQueryResult {
+	private serializeQueryResult(
+		result: Omit<IRCalendarQueryResult, "workspaceData" | "readingMaterials">
+	): SerializedIRCalendarQueryResult {
 		return {
 			materialsByDate: Array.from(result.materialsByDate.entries(), ([dateKey, items]) => [
 				dateKey,
@@ -570,11 +728,9 @@ export class IRCalendarQueryService {
 	private hydrateDiskCacheResult(
 		workspaceData: IRWorkspaceDataSnapshot,
 		serialized: SerializedIRCalendarQueryResult
-	): IRCalendarQueryResult {
+	): Omit<IRCalendarQueryResult, "workspaceData" | "readingMaterials"> {
 		const schedule = this.hydratePlannedSchedule(serialized.schedule);
 		return {
-			workspaceData,
-			readingMaterials: [],
 			materialsByDate: new Map(
 				(serialized.materialsByDate || []).map(([dateKey, items]) => [
 					dateKey,
@@ -665,18 +821,6 @@ export class IRCalendarQueryService {
 			deckIds: [...(schedule.deckIds || [])],
 			triggerReason: schedule.triggerReason,
 		};
-	}
-
-	private buildWorkspaceFingerprint(workspaceData: IRWorkspaceDataSnapshot): string {
-		return this.hashStableValue({
-			decksRecord: workspaceData.decksRecord,
-			blocksRecord: workspaceData.blocksRecord,
-			chunksRecord: workspaceData.chunksRecord,
-			sourcesRecord: workspaceData.sourcesRecord,
-			history: workspaceData.history,
-			pdfTasks: workspaceData.pdfTasks,
-			epubTasks: workspaceData.epubTasks,
-		});
 	}
 
 	private buildSettingsFingerprint(): string {

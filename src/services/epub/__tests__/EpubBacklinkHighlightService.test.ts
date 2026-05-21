@@ -249,6 +249,35 @@ describe('EpubBacklinkHighlightService', () => {
 		]);
 	});
 
+	it('collects excerpts that use shortest wikilink paths from the source note context', async () => {
+		const notePath = 'Notes/short-link.md';
+		const noteContent = [
+			'> [!EPUB|yellow] [[demo.epub#weave-cfi=readium%3Ashort-link|Demo]]',
+			'> Short link quote',
+			'',
+		].join('\n');
+		const { app } = createMockApp({
+			[notePath]: noteContent,
+			'Books/demo.epub': 'binary',
+		});
+		app.metadataCache.getFirstLinkpathDest = vi.fn((linkpath: string, sourcePath: string) => {
+			if (linkpath === 'demo.epub' && sourcePath === notePath) {
+				return createFile('Books/demo.epub');
+			}
+			return null;
+		});
+		const service = new EpubBacklinkHighlightService(app);
+
+		await expect(service.collectHighlights('Books/demo.epub')).resolves.toEqual([
+			expect.objectContaining({
+				cfiRange: 'readium:short-link',
+				color: 'yellow',
+				text: 'Short link quote',
+				sourceFile: notePath,
+			}),
+		]);
+	});
+
 	it('reuses the single-file disk cache when the highlight source manifest is unchanged', async () => {
 		const notePath = 'Notes/cache-hit.md';
 		const noteContent = [

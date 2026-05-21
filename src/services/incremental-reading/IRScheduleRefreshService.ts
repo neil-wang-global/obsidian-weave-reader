@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 import { logger } from "../../utils/logger";
 import { getSharedIRWorkspaceSnapshotService } from "./IRWorkspaceSnapshotService";
+import { getSharedIRCalendarQueryService } from "./IRCalendarQueryService";
 import {
 	getSharedIRScheduleKernel,
 	IRScheduleKernel,
@@ -17,6 +18,17 @@ export type UpdatedEventDetail = {
 };
 
 const kernelByApp = new WeakMap<App, IRScheduleKernel>();
+let irDataMutationGeneration = 0;
+
+/** 当前 IR 数据变更世代；磁盘日历/排程缓存写入时会记录，失效后递增。 */
+export function getIRDataMutationGeneration(): number {
+	return irDataMutationGeneration;
+}
+
+function bumpIRDataMutationGeneration(): number {
+	irDataMutationGeneration += 1;
+	return irDataMutationGeneration;
+}
 
 function getKernel(app: App): IRScheduleKernel {
 	let kernel = kernelByApp.get(app);
@@ -25,6 +37,31 @@ function getKernel(app: App): IRScheduleKernel {
 		kernelByApp.set(app, kernel);
 	}
 	return kernel;
+}
+
+/** 阅读点 / 牌组 / 调度数据变更后统一失效各层缓存（workspace、日历、排程内核）。 */
+export function invalidateIRDataCaches(
+	app: App,
+	options?: {
+		invalidateScheduleCache?: boolean;
+		notifyUi?: boolean;
+		reason?: ScheduleRecomputeReason;
+		deckIds?: string[];
+	}
+): void {
+	bumpIRDataMutationGeneration();
+	getSharedIRWorkspaceSnapshotService(app).invalidate();
+	getSharedIRCalendarQueryService(app).invalidate();
+	if (options?.invalidateScheduleCache !== false) {
+		getKernel(app).invalidateScheduleCache();
+	}
+	if (options?.notifyUi !== false) {
+		dispatchIRDataUpdatedEvent({
+			reason: options?.reason ?? "metadata_changed",
+			generatedAt: Date.now(),
+			deckIds: options?.deckIds,
+		});
+	}
 }
 
 function dispatchIRDataUpdatedEvent(detail: UpdatedEventDetail): UpdatedEventDetail {
@@ -45,10 +82,10 @@ export function broadcastIRDataUpdated(
 		invalidateScheduleCache?: boolean;
 	}
 ): UpdatedEventDetail {
-	getSharedIRWorkspaceSnapshotService(app).invalidate();
-	if (options?.invalidateScheduleCache !== false) {
-		getKernel(app).invalidateScheduleCache();
-	}
+	invalidateIRDataCaches(app, {
+		invalidateScheduleCache: options?.invalidateScheduleCache,
+		notifyUi: false,
+	});
 
 	return dispatchIRDataUpdatedEvent({
 		reason: options?.reason ?? "ui_refresh",
@@ -63,9 +100,8 @@ export async function recomputeAndBroadcastIRData(
 	options?: RecomputeOptions
 ): Promise<UpdatedEventDetail> {
 	try {
-		getSharedIRWorkspaceSnapshotService(app).invalidate();
+		invalidateIRDataCaches(app);
 		const kernel = getKernel(app);
-		kernel.invalidateScheduleCache();
 		const schedule = await kernel.recomputeScheduleForDeck(reason, options);
 		const detail: UpdatedEventDetail = {
 			reason,
@@ -74,7 +110,7 @@ export async function recomputeAndBroadcastIRData(
 		};
 		return dispatchIRDataUpdatedEvent(detail);
 	} catch (error) {
-		getSharedIRWorkspaceSnapshotService(app).invalidate();
+		invalidateIRDataCaches(app);
 		logger.error("[IRScheduleRefreshService] 重排并广播失败:", { reason, options, error });
 		const detail: UpdatedEventDetail = {
 			reason,

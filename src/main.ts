@@ -1,3 +1,4 @@
+import "./utils/group-by-compat";
 import { Menu, Notice, Plugin, TAbstractFile, TFile, normalizePath } from "obsidian";
 import { EpubSettingsTab } from "./components/settings/EpubSettingsTab";
 import { isSupportedBookFile, isSupportedBookPath } from "./services/epub/book-format";
@@ -211,7 +212,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			);
 	}
 
-	private getEpubStorageService(): EpubStorageService {
+	getEpubStorageService(): EpubStorageService {
 		if (!this.epubStorageService) {
 			this.epubStorageService = new EpubStorageService(this.app);
 		}

@@ -5,7 +5,7 @@
   import {
     DEFAULT_EPUB_EXCERPT_SETTINGS,
     DEFAULT_EPUB_BOOKMARK_FOLDER,
-    EpubStorageService,
+    getEpubStorageService,
     normalizeEpubBookmarkFolderPath,
   } from "../../services/epub";
   import { EPUB_RUNTIME } from "../../services/epub";
@@ -48,8 +48,8 @@
   const BOOKSHELF_DISPLAY_SETTINGS_CHANGED_EVENT = EPUB_RUNTIME.events.bookshelfDisplaySettingsChanged;
   const EXCERPT_SETTINGS_CHANGED_EVENT = EPUB_RUNTIME.events.excerptSettingsChanged;
 
-	function getStorageService(): EpubStorageService {
-		return new EpubStorageService(plugin.app);
+	function getStorageService() {
+		return getEpubStorageService(plugin.app);
 	}
 
   let tabs = $derived.by<Array<{ id: EpubSettingsTabId; label: string; icon: string }>>(() => [
@@ -140,10 +140,52 @@
 
   let bookmarkFolderInput = $state("");
   let continuousReadingPositionAutoSavePagesInput = $state("");
+  let bookmarkFolderCommitTimer: number | null = null;
+  let autoSavePagesCommitTimer: number | null = null;
 
   async function save(): Promise<void> {
     await plugin.saveSettings();
     stateVersion += 1;
+  }
+
+  function clearBookmarkFolderCommitTimer(): void {
+    if (bookmarkFolderCommitTimer == null || typeof window === "undefined") {
+      return;
+    }
+    window.clearTimeout(bookmarkFolderCommitTimer);
+    bookmarkFolderCommitTimer = null;
+  }
+
+  function clearAutoSavePagesCommitTimer(): void {
+    if (autoSavePagesCommitTimer == null || typeof window === "undefined") {
+      return;
+    }
+    window.clearTimeout(autoSavePagesCommitTimer);
+    autoSavePagesCommitTimer = null;
+  }
+
+  function scheduleBookmarkFolderCommit(commit: () => void): void {
+    clearBookmarkFolderCommitTimer();
+    if (typeof window === "undefined") {
+      commit();
+      return;
+    }
+    bookmarkFolderCommitTimer = window.setTimeout(() => {
+      bookmarkFolderCommitTimer = null;
+      commit();
+    }, 320);
+  }
+
+  function scheduleAutoSavePagesCommit(commit: () => void): void {
+    clearAutoSavePagesCommitTimer();
+    if (typeof window === "undefined") {
+      commit();
+      return;
+    }
+    autoSavePagesCommitTimer = window.setTimeout(() => {
+      autoSavePagesCommitTimer = null;
+      commit();
+    }, 320);
   }
 
 	async function syncAdvancedSettings(): Promise<void> {
@@ -290,6 +332,8 @@
 			stateVersion += 1;
 		});
 		return () => {
+      clearBookmarkFolderCommitTimer();
+      clearAutoSavePagesCommitTimer();
 			unsubscribePremium();
 			unsubscribePreview();
 		};
@@ -358,6 +402,12 @@
         search.setDisabled(readingProgressRestricted);
         search.onChange((value) => {
           bookmarkFolderInput = value;
+          if (readingProgressRestricted) {
+            return;
+          }
+          scheduleBookmarkFolderCommit(() => {
+            void updateBookmarkFolder(search.inputEl.value);
+          });
         });
 
         const inputEl = search.inputEl;
@@ -372,6 +422,7 @@
         };
 
         const handleBlur = () => {
+          clearBookmarkFolderCommitTimer();
           if (readingProgressRestricted) {
             bookmarkFolderInput = bookmarkFolderValue;
             search.setValue(bookmarkFolderValue);
@@ -389,6 +440,7 @@
 
           if (event.key === "Enter") {
             event.preventDefault();
+            clearBookmarkFolderCommitTimer();
             void updateBookmarkFolder(inputEl.value);
             return;
           }
@@ -484,6 +536,12 @@
           text.setDisabled(readingProgressRestricted || !continuousReadingPositionAutoSaveEnabled);
           text.onChange((value) => {
             continuousReadingPositionAutoSavePagesInput = value;
+            if (readingProgressRestricted || !continuousReadingPositionAutoSaveEnabled) {
+              return;
+            }
+            scheduleAutoSavePagesCommit(() => {
+              void updateContinuousReadingPositionAutoSavePages(text.inputEl.value);
+            });
           });
 
           const inputEl = text.inputEl;
@@ -504,6 +562,7 @@
           };
 
           const handleBlur = () => {
+            clearAutoSavePagesCommitTimer();
             commitValue();
           };
 
@@ -516,6 +575,7 @@
 
             if (event.key === "Enter") {
               event.preventDefault();
+              clearAutoSavePagesCommitTimer();
               commitValue();
               return;
             }

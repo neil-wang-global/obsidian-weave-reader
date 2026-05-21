@@ -77,6 +77,49 @@ async function createSampleEpubBuffer(): Promise<ArrayBuffer> {
 	return zip.generateAsync({ type: "arraybuffer" });
 }
 
+async function createMultiParagraphChapterSampleEpubBuffer(): Promise<ArrayBuffer> {
+	const zip = new JSZip();
+	zip.file("mimetype", "application/epub+zip");
+	zip.file(
+		"META-INF/container.xml",
+		`<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+	<rootfiles>
+		<rootfile full-path="OPS/content.opf" media-type="application/oebps-package+xml" />
+	</rootfiles>
+</container>`
+	);
+	zip.file(
+		"OPS/content.opf",
+		`<?xml version="1.0" encoding="UTF-8"?>
+<package version="3.0" unique-identifier="BookId" xmlns="http://www.idpf.org/2007/opf">
+	<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+		<dc:title>Multi Paragraph Sample</dc:title>
+		<dc:language>zh-CN</dc:language>
+	</metadata>
+	<manifest>
+		<item id="chapter-1" href="text/chapter1.xhtml" media-type="application/xhtml+xml" />
+	</manifest>
+	<spine>
+		<itemref idref="chapter-1" />
+	</spine>
+</package>`
+	);
+	zip.file(
+		"OPS/text/chapter1.xhtml",
+		`<html xmlns="http://www.w3.org/1999/xhtml">
+	<head><title>Chapter 1</title></head>
+	<body>
+		<p>第一段：清晨的雾气还未散尽，街市已经醒了。</p>
+		<p>第二段：小贩支起棚子，油锅里的香气先一步飘出来。</p>
+		<p>第三段：行人踩着石板路，鞋底带起细碎的水声。</p>
+		<p>第四段：远处钟楼敲过三下，一天才算真正开始。</p>
+	</body>
+</html>`
+	);
+	return zip.generateAsync({ type: "arraybuffer" });
+}
+
 async function createBrLayoutParagraphSampleEpubBuffer(): Promise<ArrayBuffer> {
 	const zip = new JSZip();
 	zip.file("mimetype", "application/epub+zip");
@@ -1837,6 +1880,22 @@ describe("FoliateReaderService", () => {
 			const paragraphs = await service.getParagraphsForChapter(0);
 			expect(paragraphs.some((item) => item.text.includes("猪肠"))).toBe(true);
 			expect(paragraphs.some((item) => item.text.includes("未经授权禁止转载"))).toBe(false);
+		} finally {
+			service.destroy();
+		}
+	});
+
+	it("segments multi-paragraph chapters instead of collapsing the whole chapter into one paragraph", async () => {
+		const service = new FoliateReaderService(
+			createMockApp(await createMultiParagraphChapterSampleEpubBuffer()) as any
+		);
+		try {
+			await service.loadEpub("Books/multi-paragraph-sample.epub", "multi-paragraph-book");
+			const paragraphs = await service.getParagraphsForChapter(0);
+			const bodyParagraphs = paragraphs.filter((item) => item.text.includes("段："));
+			expect(bodyParagraphs.length).toBeGreaterThanOrEqual(4);
+			expect(bodyParagraphs.some((item) => item.text.includes("第一段"))).toBe(true);
+			expect(bodyParagraphs.some((item) => item.text.includes("第四段"))).toBe(true);
 		} finally {
 			service.destroy();
 		}

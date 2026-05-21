@@ -2,7 +2,6 @@ import { pathToFileURL } from "url";
 import { builtinModules, createRequire } from "module";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { defineConfig } from "vite";
-import commonjs from "vite-plugin-commonjs";
 import path from "path";
 import fs from "fs";
 
@@ -129,6 +128,13 @@ export default defineConfig(({ mode }) => {
           find: /^lie$/,
           replacement: path.resolve(process.cwd(), "src/shims/native-promise.js"),
         },
+        {
+          find: /^readable-stream$/,
+          replacement: path.resolve(
+            process.cwd(),
+            "src/shims/readable-stream-disabled.js"
+          ),
+        },
       ],
       conditions: ["browser", "import", "module", "default"],
       extensions: [".ts", ".tsx", ".svelte", ".mjs", ".js", ".jsx", ".json"],
@@ -154,11 +160,6 @@ export default defineConfig(({ mode }) => {
       : undefined,
     clearScreen: false,
     plugins: [
-      commonjs({
-        filter(id) {
-          return id.includes("node_modules");
-        },
-      }),
       {
         name: "build-monitor",
         handleHotUpdate({ file }) {

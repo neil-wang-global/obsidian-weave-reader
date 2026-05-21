@@ -4,7 +4,8 @@ import { logger } from "../../utils/logger";
 import { IREpubBookmarkTaskService } from "../incremental-reading/IREpubBookmarkTaskService";
 import { EpubBookmarkService } from "./EpubBookmarkService";
 import { EpubLinkService } from "./EpubLinkService";
-import { EpubStorageService } from "./EpubStorageService";
+import type { EpubStorageService } from "./EpubStorageService";
+import { getEpubStorageService } from "./epub-storage-access";
 import { isSupportedBookFile, isSupportedBookPath, SUPPORTED_BOOK_EXTENSIONS } from "./book-format";
 import { EPUB_RUNTIME } from "./epub-runtime";
 
@@ -55,7 +56,7 @@ export class EpubPathSyncService {
 	constructor(app: App) {
 		this.app = app;
 		this.bookmarkService = new EpubBookmarkService(app);
-		this.storageService = new EpubStorageService(app);
+		this.storageService = getEpubStorageService(app);
 		this.irEpubTaskService = new IREpubBookmarkTaskService(app);
 	}
 

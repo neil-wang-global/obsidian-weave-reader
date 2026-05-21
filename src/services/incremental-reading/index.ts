@@ -155,12 +155,21 @@ export {
 export {
 	IR_DATA_UPDATED_EVENT,
 	broadcastIRDataUpdated,
+	getIRDataMutationGeneration,
+	invalidateIRDataCaches,
 	recomputeAndBroadcastIRData,
 } from "./IRScheduleRefreshService";
 export {
 	IRCalendarQueryService,
 	getSharedIRCalendarQueryService,
 } from "./IRCalendarQueryService";
+export {
+	buildWorkspaceCacheManifest,
+	hashWorkspaceCacheManifest,
+	refreshWorkspaceCacheManifest,
+	type IRWorkspaceCacheManifest,
+	type IRWorkspaceSourceStamp,
+} from "./ir-workspace-manifest";
 export type {
 	IRCalendarQueryOptions,
 	IRCalendarQueryScope,

@@ -9,8 +9,8 @@
         import { logger } from '../../utils/logger';
         import {
                 EpubBacklinkHighlightService,
-                EpubStorageService,
                 EPUB_RUNTIME,
+                getEpubStorageService,
                 resolveEpubHost
         } from '../../services/epub';
         import { getBookFormatDisplayLabel, isSupportedBookFile, stripSupportedBookExtension } from '../../services/epub/book-format';
@@ -28,6 +28,13 @@
                 resolveBookshelfViewMode,
                 type BookshelfDisplayMode
         } from '../../services/epub/bookshelf-display-mode';
+        import {
+                BOOKSHELF_LIST_VIRTUAL_ITEM_HEIGHT,
+                BOOKSHELF_LIST_VIRTUAL_OVERSCAN,
+                shouldUseBookshelfGridPaintOptimization,
+                shouldUseBookshelfListVirtualScroll,
+        } from '../../services/epub/bookshelf-display-performance';
+        import VirtualScroll from '../ui/VirtualScroll.svelte';
         import { isVaultImageFile, resolveVaultImageResourceUrl } from '../../utils/vault-image-cover';
 
         interface EpubFileInfo {
@@ -127,7 +134,9 @@
         let pendingBookshelfRefresh = false;
         let pendingBookshelfRefreshNotice = false;
         let coverLoadTimer: ReturnType<typeof setTimeout> | null = null;
-        const storageService = untrack(() => new EpubStorageService(app));
+        const storageService = untrack(() => getEpubStorageService(app));
+        let coverPersistTimer: ReturnType<typeof setTimeout> | null = null;
+        const coverPersistPending = new Map<string, string | null>();
         const MAX_VISIBLE_COVER_LOADS = 18;
         const BOOKSHELF_DATA_CHANGED_EVENT = EPUB_RUNTIME.events.bookshelfDataChanged;
         const BOOKSHELF_REFRESH_REQUEST_EVENT = EPUB_RUNTIME.events.bookshelfRefreshRequest;
@@ -174,6 +183,8 @@
         let effectiveViewMode = $derived.by(() =>
                 resolveBookshelfViewMode(bookshelfDisplayMode, detectedSurfaceContext)
         );
+        let listViewportEl = $state<HTMLDivElement | null>(null);
+        let listViewportHeight = $state(320);
 
         function icon(node: HTMLElement, name: string) {
                 setIcon(node, name);
@@ -486,6 +497,21 @@
                 };
         }
 
+        function scheduleCoverPersist(filePath: string, coverUrl: string | null) {
+                coverPersistPending.set(filePath, coverUrl);
+                if (coverPersistTimer) {
+                        clearTimeout(coverPersistTimer);
+                }
+                coverPersistTimer = setTimeout(() => {
+                        coverPersistTimer = null;
+                        const pending = Array.from(coverPersistPending.entries());
+                        coverPersistPending.clear();
+                        for (const [path, cover] of pending) {
+                                void storageService.cacheBookshelfCoverImage(path, cover);
+                        }
+                }, 400);
+        }
+
         function cacheResolvedCover(filePath: string, coverUrl: string | null | undefined) {
                 const normalizedCover = typeof coverUrl === 'string' && coverUrl.trim() ? coverUrl : null;
                 coverCache.set(filePath, normalizedCover);
@@ -495,6 +521,7 @@
                                 covers.set(filePath, normalizedCover);
                                 covers = new Map(covers);
                         }
+                        scheduleCoverPersist(filePath, normalizedCover);
                         return;
                 }
 
@@ -596,11 +623,24 @@
 
         async function loadBookMetadata(files: EpubFileInfo[], runId: number): Promise<void> {
                 try {
-                        const books = await storageService.loadBooks();
+                        const [books, scanEntries] = await Promise.all([
+                                storageService.loadBooks({ hydrateStates: false }),
+                                storageService.loadScanIndex(),
+                        ]);
                         if (runId !== refreshRunId) return;
 
                         const validPaths = new Set(files.map((file) => file.path));
                         const nextMeta = new Map<string, BookshelfBookMeta>();
+                        const scanCoverByPath = new Map(
+                                scanEntries.map((entry) => [entry.path, entry.coverImage] as const)
+                        );
+
+                        for (const file of files) {
+                                const cachedScanCover = scanCoverByPath.get(file.path);
+                                if (cachedScanCover) {
+                                        cacheResolvedCover(file.path, cachedScanCover);
+                                }
+                        }
 
                         for (const book of Object.values(books)) {
                                 if (!validPaths.has(book.filePath)) continue;
@@ -686,6 +726,18 @@
                 }
         }
 
+        function updateListViewportHeight(): void {
+                if (!listViewportEl) {
+                        return;
+                }
+                listViewportHeight = Math.max(240, Math.floor(listViewportEl.clientHeight));
+        }
+
+        function handleVirtualItemsRendered(startIndex: number, endIndex: number): void {
+                const visible = filteredFiles.slice(startIndex, Math.min(endIndex + 1, filteredFiles.length));
+                scheduleVisibleCoverLoading(visible, refreshRunId);
+        }
+
         function scheduleVisibleCoverLoading(files: EpubFileInfo[], runId: number) {
                 cancelScheduledCoverLoading();
                 const queue = files.slice(0, MAX_VISIBLE_COVER_LOADS);
@@ -762,6 +814,14 @@
                 }
         }
 
+        async function loadBookshelfMetadataAndCovers(files: EpubFileInfo[], runId: number): Promise<void> {
+                await loadBookMetadata(files, runId);
+                if (runId !== refreshRunId) {
+                        return;
+                }
+                scheduleVisibleCoverLoading(files, runId);
+        }
+
         async function loadBookshelfFromCache() {
                 if (loadingBooks) {
                         pendingBookshelfReload = true;
@@ -773,8 +833,7 @@
                         const cached = await storageService.listBookshelfEntries();
                         setBookshelfFiles(cached);
                         syncCoverCacheWithFiles();
-                        await loadBookMetadata(cached, currentRunId);
-                        scheduleVisibleCoverLoading(cached, currentRunId);
+                        void loadBookshelfMetadataAndCovers(cached, currentRunId);
                 } catch (error) {
                         logger.error('Failed to load EPUB bookshelf cache:', error);
                 } finally {
@@ -795,7 +854,7 @@
                         const result = await storageService.pruneMissingBooks();
                         const currentRunId = ++refreshRunId;
                         cancelScheduledCoverLoading();
-                        const rebuilt = await storageService.listBookshelfEntries();
+                        const rebuilt = await storageService.listBookshelfEntries({ pruneMissing: false });
                         setBookshelfFiles(rebuilt);
                         syncCoverCacheWithFiles();
                         await loadBookMetadata(rebuilt, currentRunId);
@@ -1289,6 +1348,12 @@
         let filteredFiles = $derived.by(() =>
                 displayBooks.filter((book) => matchesBookshelfQuery(book, parsedBookshelfSearchQuery))
         );
+        let useListVirtualScroll = $derived.by(() =>
+                shouldUseBookshelfListVirtualScroll(filteredFiles.length, effectiveViewMode)
+        );
+        let useGridPaintOptimization = $derived.by(() =>
+                shouldUseBookshelfGridPaintOptimization(filteredFiles.length, effectiveViewMode)
+        );
 
         let lastHandledRefreshToken = untrack(() => refreshToken);
         let activeSearchSummary = $derived.by(() => {
@@ -1504,6 +1569,14 @@
                         surfaceContextObserver?.disconnect();
                         surfaceContextObserver = null;
                         flushBookshelfSearchPersist();
+                        if (coverPersistTimer) {
+                                clearTimeout(coverPersistTimer);
+                                coverPersistTimer = null;
+                        }
+                        for (const [path, cover] of coverPersistPending.entries()) {
+                                void storageService.cacheBookshelfCoverImage(path, cover);
+                        }
+                        coverPersistPending.clear();
                 };
         });
 
@@ -1528,6 +1601,32 @@
 
         $effect(() => {
                 scheduleBookshelfSearchPersist(searchQuery);
+        });
+
+        $effect(() => {
+                if (!useListVirtualScroll || !listViewportEl) {
+                        return;
+                }
+
+                updateListViewportHeight();
+                const observer = new ResizeObserver(() => {
+                        updateListViewportHeight();
+                });
+                observer.observe(listViewportEl);
+                return () => {
+                        observer.disconnect();
+                };
+        });
+
+        $effect(() => {
+                if (!useListVirtualScroll || filteredFiles.length === 0) {
+                        return;
+                }
+
+                const visibleCount =
+                        Math.ceil(listViewportHeight / BOOKSHELF_LIST_VIRTUAL_ITEM_HEIGHT) +
+                        BOOKSHELF_LIST_VIRTUAL_OVERSCAN * 2;
+                handleVirtualItemsRendered(0, Math.min(filteredFiles.length - 1, visibleCount));
         });
 </script>
 
@@ -1570,6 +1669,39 @@
                         overflow-x: hidden;
                         overflow-y: auto;
                         overscroll-behavior: contain;
+                }
+
+                .epub-bookshelf-root.is-list-virtualized {
+                        overflow-y: hidden;
+                }
+
+                .epub-bookshelf-list.is-virtualized {
+                        flex: 1 1 auto;
+                        min-height: 0;
+                        display: flex;
+                        flex-direction: column;
+                        padding: var(--size-4-2) var(--weave-bookshelf-grid-padding-inline) var(--weave-bookshelf-grid-padding-bottom);
+                }
+
+                .epub-bookshelf-list.is-virtualized :global(.virtual-scroll-container.epub-bookshelf-virtual-scroll) {
+                        flex: 1 1 auto;
+                        min-height: 0;
+                        width: 100%;
+                }
+
+                .epub-bookshelf-list.is-virtualized :global(.virtual-scroll-item) {
+                        border-bottom: none;
+                        align-items: stretch;
+                }
+
+                .epub-bookshelf-root.is-list-virtualized .epub-book-item {
+                        animation: none;
+                }
+
+                .epub-bookshelf-grid.is-paint-optimized .epub-book-card,
+                .epub-bookshelf-cover-grid.is-paint-optimized .epub-book-cover-tile {
+                        content-visibility: auto;
+                        contain-intrinsic-size: 280px 220px;
                 }
 
                 .epub-bookshelf-toolbar.nav-header {
@@ -2276,7 +2408,7 @@
         }
 </style>
 
-<div class="epub-bookshelf-root" bind:this={bookshelfRootEl}>
+<div class="epub-bookshelf-root" class:is-list-virtualized={useListVirtualScroll} bind:this={bookshelfRootEl}>
         <div class="epub-bookshelf-toolbar nav-header" role="toolbar" aria-label={t('epub.bookshelf.toolbar.aria')}>
                 <div class="epub-bookshelf-actions nav-buttons-container">
                         <button
@@ -2322,6 +2454,50 @@
                 </div>
         </div>
 
+{#snippet listBookItem(file: DisplayBookItem, index: number, animateEntry = true)}
+	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+	<div
+		class="epub-book-item"
+		class:is-opening={openingBookPath === file.path}
+		style={animateEntry ? `animation-delay: ${Math.min(index, 8) * 36}ms` : undefined}
+		onclick={() => switchBook(file.path)}
+		oncontextmenu={(e) => handleContextMenu(e, file.path)}
+		onkeydown={(event) => handleBookKeydown(event, file.path)}
+		role="button"
+		tabindex="0"
+	>
+		{#if covers.get(file.path)}
+			<img src={covers.get(file.path)} alt="" class="book-thumb" />
+		{:else}
+			<div class="book-thumb-placeholder">
+				<span use:icon={'book-text'}></span>
+			</div>
+		{/if}
+		<div class="book-info">
+			<div class="book-name">{file.displayTitle}</div>
+			{#if file.bylineText}
+				<div class="book-meta-text">{file.bylineText}</div>
+			{/if}
+			{#if file.tagValues.length > 0}
+				<div class="book-meta-chips">
+					{#each file.tagValues as tagValue}
+						<div class={`book-meta-chip is-${tagValue.tone}`}>{tagValue.value}</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
+		<div
+			class={`book-progress-badge ${getBookshelfProgressToneClass(file.progress)}`}
+			style={`--book-progress:${clampProgress(file.progress)}%;`}
+			role="img"
+			aria-label={t('epub.bookshelf.progress', { progress: clampProgress(file.progress) })}
+			title={t('epub.bookshelf.progress', { progress: clampProgress(file.progress) })}
+		>
+			<span>{clampProgress(file.progress)}%</span>
+		</div>
+	</div>
+{/snippet}
+
 {#if searching}
         <div class="epub-bookshelf-search">
                 <CardSearchInput
@@ -2342,21 +2518,38 @@
         </div>
 {/if}
 
-{#key `${effectiveViewMode}:${bookshelfDisplayMode}:${detectedSurfaceContext}`}
-        <div
-                class={
-                        effectiveViewMode === 'covers'
-                                ? 'epub-bookshelf-cover-grid'
-                                : (effectiveViewMode === 'grid' ? 'epub-bookshelf-grid' : 'epub-bookshelf-list')
-                }
-        >
+{#key `${effectiveViewMode}:${bookshelfDisplayMode}:${detectedSurfaceContext}:${useListVirtualScroll}`}
         {#if loadingBooks && epubFiles.length === 0}
                 <div class="epub-placeholder">{t('epub.bookshelf.refreshing')}</div>
         {:else if filteredFiles.length === 0}
                 <div class="epub-placeholder">
                         {emptyStateMessage}
                 </div>
+        {:else if useListVirtualScroll}
+                <div class="epub-bookshelf-list is-virtualized" bind:this={listViewportEl}>
+                        <VirtualScroll
+                                items={filteredFiles}
+                                itemHeight={BOOKSHELF_LIST_VIRTUAL_ITEM_HEIGHT}
+                                containerHeight={listViewportHeight}
+                                overscan={BOOKSHELF_LIST_VIRTUAL_OVERSCAN}
+                                className="epub-bookshelf-virtual-scroll"
+                                onItemsRendered={handleVirtualItemsRendered}
+                        >
+                                {#snippet children(file, index)}
+                                        {@render listBookItem(file as DisplayBookItem, index, false)}
+                                {/snippet}
+                        </VirtualScroll>
+                </div>
         {:else}
+                <div
+                        class={
+                                effectiveViewMode === 'covers'
+                                        ? `epub-bookshelf-cover-grid${useGridPaintOptimization ? ' is-paint-optimized' : ''}`
+                                        : (effectiveViewMode === 'grid'
+                                                ? `epub-bookshelf-grid${useGridPaintOptimization ? ' is-paint-optimized' : ''}`
+                                                : 'epub-bookshelf-list')
+                        }
+                >
                 {#each filteredFiles as file, index (file.path)}
 			{#if effectiveViewMode === 'covers'}
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
@@ -2433,50 +2626,10 @@
 					</div>
 				</div>
 			{:else}
-				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-				<div
-					class="epub-book-item"
-					class:is-opening={openingBookPath === file.path}
-					style="animation-delay: {index * 36}ms"
-					onclick={() => switchBook(file.path)}
-					oncontextmenu={(e) => handleContextMenu(e, file.path)}
-					onkeydown={(event) => handleBookKeydown(event, file.path)}
-					role="button"
-					tabindex="0"
-				>
-					{#if covers.get(file.path)}
-						<img src={covers.get(file.path)} alt="" class="book-thumb" />
-					{:else}
-						<div class="book-thumb-placeholder">
-							<span use:icon={'book-text'}></span>
-						</div>
-					{/if}
-					<div class="book-info">
-						<div class="book-name">{file.displayTitle}</div>
-						{#if file.bylineText}
-							<div class="book-meta-text">{file.bylineText}</div>
-						{/if}
-						{#if file.tagValues.length > 0}
-							<div class="book-meta-chips">
-								{#each file.tagValues as tagValue}
-									<div class={`book-meta-chip is-${tagValue.tone}`}>{tagValue.value}</div>
-								{/each}
-							</div>
-						{/if}
-					</div>
-					<div
-						class={`book-progress-badge ${getBookshelfProgressToneClass(file.progress)}`}
-						style={`--book-progress:${clampProgress(file.progress)}%;`}
-						role="img"
-						aria-label={t('epub.bookshelf.progress', { progress: clampProgress(file.progress) })}
-						title={t('epub.bookshelf.progress', { progress: clampProgress(file.progress) })}
-					>
-						<span>{clampProgress(file.progress)}%</span>
-					</div>
-				</div>
+				{@render listBookItem(file, index, true)}
 			{/if}
 		{/each}
+                </div>
 	{/if}
-</div>
 {/key}
 </div>

@@ -134,12 +134,25 @@ function verifyNoDynamicScriptInjection() {
 	}
 }
 
+function verifyNoRuntimeNodeStreamRequires() {
+	const mainJsPath = path.join(DIST_DIR, "main.js");
+	const source = fs.readFileSync(mainJsPath, "utf8");
+	const forbiddenRequires = ['require("stream")', 'require("events")'];
+	const found = forbiddenRequires.filter((needle) => source.includes(needle));
+	if (found.length > 0) {
+		fail(
+			`dist/main.js must bundle Node shims instead of runtime ${found.join(", ")} (breaks Obsidian mobile)`
+		);
+	}
+}
+
 function main() {
 	const expectedVersion = verifyRootVersionConsistency();
 	verifyDistFileSet();
 	verifyDistManifestVersion(expectedVersion);
 	verifySensitiveContent();
 	verifyNoDynamicScriptInjection();
+	verifyNoRuntimeNodeStreamRequires();
 	console.log("[verify-release] release assets verified");
 }
 

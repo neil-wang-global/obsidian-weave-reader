@@ -45,6 +45,7 @@ import {
 import { IRPdfBookmarkTaskService } from "./IRPdfBookmarkTaskService";
 import { IRPointStorageService } from "./IRPointStorageService";
 import { resolveAssociatedNotePath, resolveAssociatedNotePaths } from "./IRAssociatedNoteSignals";
+import { invalidateIRDataCaches } from "./IRScheduleRefreshService";
 import { getSharedIRWorkspaceSnapshotService } from "./IRWorkspaceSnapshotService";
 import { DirectoryUtils } from "../../utils/directory-utils";
 import { getCompatibleIncrementalReadingSettings, getCompatibleWeaveParentFolder } from "../../utils/plugin-access";
@@ -727,6 +728,7 @@ export class IRStorageService {
 	async saveBlock(block: IRBlock): Promise<void> {
 		await this.initialize();
 		await this.syncLegacyBlockToPointStorage(block);
+		invalidateIRDataCaches(this.app);
 	}
 
 	/**
@@ -738,6 +740,7 @@ export class IRStorageService {
 		for (const block of newBlocks) {
 			await this.syncLegacyBlockToPointStorage(block, decks);
 		}
+		invalidateIRDataCaches(this.app);
 	}
 
 	/**
@@ -751,6 +754,7 @@ export class IRStorageService {
 
 		// 级联删除：从所有牌组中移除该内容块引用
 		await this.removeBlockFromAllDecks(id, deletedBlock?.filePath);
+		invalidateIRDataCaches(this.app);
 	}
 
 	/**
@@ -800,6 +804,7 @@ export class IRStorageService {
 		if (idsToDelete.length > 0) {
 			await this.removeBlocksFromAllDecks(idsToDelete, filePath);
 		}
+		invalidateIRDataCaches(this.app);
 	}
 
 	/**
@@ -910,7 +915,7 @@ export class IRStorageService {
 			id: key,
 			path: key,
 		});
-		getSharedIRWorkspaceSnapshotService(this.app).invalidate();
+		invalidateIRDataCaches(this.app);
 	}
 
 	/**
@@ -956,7 +961,7 @@ export class IRStorageService {
 			sourceFiles,
 		});
 		await this.getPointStorageService().deletePointDeck(targetDeckId);
-		getSharedIRWorkspaceSnapshotService(this.app).invalidate();
+		invalidateIRDataCaches(this.app);
 	}
 
 	private async cleanupDeletedDeckRelatedData(params: {
@@ -2061,6 +2066,7 @@ export class IRStorageService {
 	async saveChunkData(chunk: import("../../types/ir-types").IRChunkFileData): Promise<void> {
 		await this.initialize();
 		await this.syncChunkPointToNewStorage(chunk);
+		invalidateIRDataCaches(this.app);
 	}
 
 	/** 批量保存块文件调度数据。 */
@@ -2077,6 +2083,7 @@ export class IRStorageService {
 			sourcesById: options?.sourcesById,
 			decks: options?.decks,
 		});
+		invalidateIRDataCaches(this.app);
 	}
 
 	/** 删除块文件调度数据，并清理相关来源记录。 */
@@ -2088,6 +2095,18 @@ export class IRStorageService {
 			return;
 		}
 
+		try {
+			await this.deleteChunkDataInternal(chunkId, deletedChunk, chunks);
+		} finally {
+			invalidateIRDataCaches(this.app, { reason: "metadata_deleted" });
+		}
+	}
+
+	private async deleteChunkDataInternal(
+		chunkId: string,
+		deletedChunk: import("../../types/ir-types").IRChunkFileData,
+		chunks: Record<string, import("../../types/ir-types").IRChunkFileData>
+	): Promise<void> {
 		const sourceId = deletedChunk.sourceId;
 		const sources = sourceId ? await this.getAllSources() : {};
 		const sourceMeta = sourceId ? sources[sourceId] : null;

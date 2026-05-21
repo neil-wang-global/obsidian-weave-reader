@@ -212,6 +212,53 @@ describe("EpubBookmarkService", () => {
 		);
 	});
 
+	it("ignores ENOENT when removing a stale bookmark file during migration", async () => {
+		const { EpubBookmarkService } = await import("../EpubBookmarkService");
+		const app = {
+			vault: {
+				adapter: {
+					exists: vi.fn(async (path: string) => path === "weave/epub-bookmarks/Demo--legacy.md"),
+					remove: vi.fn(async () => {
+						const error = new Error("ENOENT: no such file or directory") as Error & { code?: string };
+						error.code = "ENOENT";
+						throw error;
+					}),
+				},
+				getFiles: vi.fn(() => []),
+			},
+			plugins: {
+				getPlugin: vi.fn(() => null),
+			},
+		} as any;
+		const service = new EpubBookmarkService(app);
+		const writeBookmarkFile = vi.spyOn(service as any, "writeBookmarkFile").mockResolvedValue(undefined);
+		vi.spyOn(service as any, "readBookmarkFileByPath").mockResolvedValue({
+			format: "weave-epub-bookmarks/v1",
+			weave_epub_bookmark_file: true,
+			stableKey: "legacy",
+			bookId: "epub-demo",
+			bookPath: "Books/demo.epub",
+			bookTitle: "Demo",
+			updatedAt: 1,
+			bookmarks: [],
+		});
+
+		await expect(
+			(service as any).migrateBookmarkFileForBook(
+				{
+					id: "epub-demo",
+					filePath: "Books/demo.epub",
+					sourceFingerprint: "fp-demo-123",
+					metadata: { title: "Demo", author: "Author" },
+				},
+				"weave/epub-bookmarks/Demo--legacy.md"
+			)
+		).resolves.toBe("weave/epub-bookmarks/Demo--fp-demo-123.md");
+
+		expect(writeBookmarkFile).toHaveBeenCalled();
+		expect(app.vault.adapter.remove).toHaveBeenCalledWith("weave/epub-bookmarks/Demo--legacy.md");
+	});
+
 	it("writes readingState into bookmark frontmatter with Obsidian warning callout", async () => {
 		const { EpubBookmarkService, EPUB_BOOKMARK_AUTO_MAINTAINED_CALLOUT } = await import(
 			"../EpubBookmarkService"

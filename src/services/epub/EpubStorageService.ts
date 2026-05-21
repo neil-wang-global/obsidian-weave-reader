@@ -51,6 +51,7 @@ export interface EpubBookshelfIndexEntry {
 
 export interface EpubScanIndexEntry extends EpubBookshelfIndexEntry {
 	mtime: number;
+	coverImage?: string;
 }
 
 export interface EpubBookshelfMembershipEntry {
@@ -149,6 +150,8 @@ export class EpubStorageService {
 		readingStats?: ReadingStats;
 	} | null = null;
 	private _booksCache: Record<string, EpubBook> | null = null;
+	private _booksCacheHydrated = false;
+	private _booksCacheHydrationTask: Promise<void> | null = null;
 	private _booksWriteLock: Promise<void> = Promise.resolve();
 	private _bookStateWriteLocks = new Map<string, Promise<void>>();
 	private bookIdAliasMap = new Map<string, string>();
@@ -194,13 +197,21 @@ export class EpubStorageService {
 		await DirectoryUtils.ensureDirForFile(this.app.vault.adapter, this.getScanIndexPath());
 	}
 
-	async loadBooks(): Promise<Record<string, EpubBook>> {
+	async loadBooks(options?: { hydrateStates?: boolean }): Promise<Record<string, EpubBook>> {
+		const shouldHydrateStates = options?.hydrateStates !== false;
 		await this.ensureAutomaticDataMigrations();
-		if (this._booksCache) return this._booksCache;
+		if (this._booksCache) {
+			if (shouldHydrateStates) {
+				await this.ensureBooksCacheHydrated();
+			}
+			return this._booksCache;
+		}
 		const { books: localBooks, authoritative } = await this.readBooksFromUnifiedLocalData();
 		if (authoritative) {
 			this._booksCache = localBooks;
-			await this.hydrateBookStates(localBooks);
+			if (shouldHydrateStates) {
+				await this.ensureBooksCacheHydrated();
+			}
 			return this._booksCache!;
 		}
 		const legacyBooks = await this.readLegacyBooks();
@@ -211,17 +222,40 @@ export class EpubStorageService {
 
 		if (Object.keys(books).length > 0) {
 			this._booksCache = books;
-			await this.hydrateBookStates(books);
+			if (shouldHydrateStates) {
+				await this.ensureBooksCacheHydrated();
+			}
 			return this._booksCache!;
 		}
 
 		this._booksCache = {};
+		this._booksCacheHydrated = shouldHydrateStates;
 		return this._booksCache;
+	}
+
+	private async ensureBooksCacheHydrated(): Promise<void> {
+		if (this._booksCacheHydrated || !this._booksCache) {
+			return;
+		}
+
+		if (!this._booksCacheHydrationTask) {
+			this._booksCacheHydrationTask = this.hydrateBookStates(this._booksCache)
+				.then(() => {
+					this._booksCacheHydrated = true;
+				})
+				.finally(() => {
+					this._booksCacheHydrationTask = null;
+				});
+		}
+
+		await this._booksCacheHydrationTask;
 	}
 
 	private async writeBooksWithLock(books: Record<string, EpubBook>): Promise<void> {
 		const doWrite = async () => {
 			this._booksCache = books;
+			this._booksCacheHydrated = false;
+			this._booksCacheHydrationTask = null;
 			await this.updateUnifiedLocalReaderData((localData) => {
 				const existingRecords = localData.books || {};
 				const nextRecords: Record<string, EpubReaderLocalBookRecord> = {};
@@ -547,6 +581,10 @@ export class EpubStorageService {
 				folder: String(entry.folder || "/").trim() || "/",
 				size: typeof entry.size === "number" ? entry.size : 0,
 				mtime: typeof entry.mtime === "number" ? entry.mtime : 0,
+				coverImage:
+					typeof entry.coverImage === "string" && entry.coverImage.trim()
+						? entry.coverImage.trim()
+						: undefined,
 			}))
 			.filter((entry) => Boolean(entry.path));
 	}
@@ -1025,6 +1063,8 @@ export class EpubStorageService {
 			}
 			await this.migrateUnifiedDataToCanonicalBookIdentities();
 			this._booksCache = null;
+			this._booksCacheHydrated = false;
+			this._booksCacheHydrationTask = null;
 			this.automaticMigrationCompleted = true;
 		})();
 
@@ -1852,7 +1892,7 @@ export class EpubStorageService {
 		if (storedEntries !== null) {
 			return storedEntries;
 		}
-		const books = await this.loadBooks();
+		const books = await this.loadBooks({ hydrateStates: false });
 		return this.buildBookshelfIndexEntriesFromBooks(books).map((entry) => ({
 			...entry,
 			mtime: 0,
@@ -1978,13 +2018,67 @@ export class EpubStorageService {
 		});
 	}
 
-	private async hydrateBookStates(books: Record<string, EpubBook>): Promise<void> {
-		for (const book of Object.values(books)) {
-			const state = await this.readBookState(book.id);
-			if (!state) continue;
-			book.currentPosition = state.currentPosition ?? book.currentPosition;
-			book.readingStats = state.readingStats ?? book.readingStats;
+	async hydrateBookState(bookId: string): Promise<void> {
+		const books = await this.loadBooks({ hydrateStates: false });
+		const normalizedBookId = this.resolveBookIdAlias(await this.resolveCanonicalBookId(bookId));
+		const book = books[normalizedBookId];
+		if (!book) {
+			return;
 		}
+
+		const state = await this.readBookState(book.id);
+		if (!state) {
+			return;
+		}
+
+		book.currentPosition = state.currentPosition ?? book.currentPosition;
+		book.readingStats = state.readingStats ?? book.readingStats;
+	}
+
+	private applyUnifiedBookStateFromRecord(
+		book: EpubBook,
+		record: EpubReaderLocalBookRecord | undefined
+	): boolean {
+		if (!record || !Object.prototype.hasOwnProperty.call(record, "state")) {
+			return false;
+		}
+
+		const state = record.state;
+		if (!state) {
+			return true;
+		}
+
+		book.currentPosition = state.currentPosition ?? book.currentPosition;
+		book.readingStats = state.readingStats ?? book.readingStats;
+		return true;
+	}
+
+	private async hydrateBookStates(books: Record<string, EpubBook>): Promise<void> {
+		const unifiedData = await this.readUnifiedLocalReaderData();
+		const deferredBookmarkHydration: EpubBook[] = [];
+
+		for (const book of Object.values(books)) {
+			const canonicalBookId = this.resolveBookIdAlias(book.id);
+			if (this.applyUnifiedBookStateFromRecord(book, unifiedData.books?.[canonicalBookId])) {
+				continue;
+			}
+			deferredBookmarkHydration.push(book);
+		}
+
+		if (deferredBookmarkHydration.length === 0) {
+			return;
+		}
+
+		await Promise.all(
+			deferredBookmarkHydration.map(async (book) => {
+				const state = await this.readBookState(book.id);
+				if (!state) {
+					return;
+				}
+				book.currentPosition = state.currentPosition ?? book.currentPosition;
+				book.readingStats = state.readingStats ?? book.readingStats;
+			})
+		);
 	}
 
 	async saveBooks(books: Record<string, EpubBook>): Promise<void> {
@@ -2056,7 +2150,7 @@ export class EpubStorageService {
 				entries = legacyEntries.map((entry) => ({ ...entry, mtime: 0 }));
 				await this.saveScanIndex(entries);
 			} else {
-				const books = await this.loadBooks();
+				const books = await this.loadBooks({ hydrateStates: false });
 				entries = this.buildBookshelfIndexEntriesFromBooks(books).map((entry) => ({
 					...entry,
 					mtime: 0,
@@ -2089,6 +2183,10 @@ export class EpubStorageService {
 						folder: entry.folder,
 						size: entry.size,
 						mtime: typeof entry.mtime === "number" ? entry.mtime : 0,
+						coverImage:
+							typeof entry.coverImage === "string" && entry.coverImage.trim()
+								? entry.coverImage.trim()
+								: undefined,
 					}))
 					.filter((entry) => entry.path)
 					.map((entry) => [entry.path, entry] as const)
@@ -2097,6 +2195,34 @@ export class EpubStorageService {
 		await this.writeCachedScanIndex(normalizedEntries);
 		await this.clearLegacyScanIndexFromLocalState();
 		await this.removeStoredCompatibilityFile(this.getLegacyStoredScanIndexPath());
+	}
+
+	async cacheBookshelfCoverImage(
+		filePath: string,
+		coverImage: string | null | undefined
+	): Promise<void> {
+		const normalizedPath = normalizePath(filePath || "");
+		if (!normalizedPath) {
+			return;
+		}
+
+		const normalizedCover =
+			typeof coverImage === "string" && coverImage.trim() ? coverImage.trim() : undefined;
+		const scanEntries = await this.loadScanIndex();
+		const existingIndex = scanEntries.findIndex((entry) => entry.path === normalizedPath);
+		if (existingIndex < 0) {
+			return;
+		}
+
+		if (scanEntries[existingIndex].coverImage === normalizedCover) {
+			return;
+		}
+
+		scanEntries[existingIndex] = {
+			...scanEntries[existingIndex],
+			coverImage: normalizedCover,
+		};
+		await this.saveScanIndex(scanEntries);
 	}
 
 	async saveBookshelfIndex(entries: EpubBookshelfIndexEntry[]): Promise<void> {
@@ -2184,7 +2310,7 @@ export class EpubStorageService {
 	}
 
 	async getBook(bookId: string): Promise<EpubBook | null> {
-		const books = await this.loadBooks();
+		const books = await this.loadBooks({ hydrateStates: false });
 		const normalizedBookId = this.resolveBookIdAlias(bookId);
 		return books[normalizedBookId] || null;
 	}
@@ -2199,7 +2325,7 @@ export class EpubStorageService {
 				: await this.readStoredBookshelfMembership();
 
 		if (entries === null) {
-			const books = await this.loadBooks();
+			const books = await this.loadBooks({ hydrateStates: false });
 			const legacyEntries =
 				(await this.readStoredBookshelfIndex()) ?? this.buildBookshelfIndexEntriesFromBooks(books);
 			entries = this.buildMembershipEntriesFromLegacyData(books, legacyEntries);
@@ -2549,8 +2675,13 @@ export class EpubStorageService {
 		return null;
 	}
 
-	async listBookshelfEntries(): Promise<EpubBookshelfIndexEntry[]> {
-		await this.pruneMissingBooks();
+	async listBookshelfEntries(
+		options?: { pruneMissing?: boolean }
+	): Promise<EpubBookshelfIndexEntry[]> {
+		if (options?.pruneMissing) {
+			await this.pruneMissingBooks();
+		}
+
 		const membership = await this.loadBookshelfMembership();
 		if (membership.length === 0) {
 			return [];
@@ -2559,31 +2690,34 @@ export class EpubStorageService {
 		const scanEntries = await this.loadScanIndex();
 		const scanEntryMap = new Map(scanEntries.map((entry) => [entry.path, entry] as const));
 		const synthesizedEntries: EpubScanIndexEntry[] = [];
-		const resultEntries: EpubBookshelfIndexEntry[] = [];
 
-		for (const membershipEntry of membership) {
-			let scanEntry = scanEntryMap.get(membershipEntry.path);
-			if (!scanEntry && (await this.hasExistingEpubFile(membershipEntry.path))) {
-				scanEntry = await this.createScanIndexEntryFromPath(membershipEntry.path);
-				scanEntryMap.set(scanEntry.path, scanEntry);
-				synthesizedEntries.push(scanEntry);
-			}
-			if (scanEntry) {
-				resultEntries.push(
-					this.toBookshelfIndexEntry(
-						scanEntry,
-						membershipEntry.addedAt,
-						membershipEntry.customCoverPath
-					)
+		const resolvedEntries = await Promise.all(
+			membership.map(async (membershipEntry) => {
+				let scanEntry = scanEntryMap.get(membershipEntry.path);
+				if (!scanEntry && (await this.hasExistingEpubFile(membershipEntry.path))) {
+					scanEntry = await this.createScanIndexEntryFromPath(membershipEntry.path);
+					scanEntryMap.set(scanEntry.path, scanEntry);
+					synthesizedEntries.push(scanEntry);
+				}
+				if (!scanEntry) {
+					return null;
+				}
+
+				return this.toBookshelfIndexEntry(
+					scanEntry,
+					membershipEntry.addedAt,
+					membershipEntry.customCoverPath
 				);
-			}
-		}
+			})
+		);
 
 		if (synthesizedEntries.length > 0) {
 			await this.saveScanIndex(scanEntries.concat(synthesizedEntries));
 		}
 
-		return resultEntries.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+		return resolvedEntries
+			.filter((entry): entry is EpubBookshelfIndexEntry => entry !== null)
+			.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
 	}
 
 	async addBooksToBookshelf(paths: string[]): Promise<EpubBookshelfMembershipEntry[]> {
@@ -2638,7 +2772,10 @@ export class EpubStorageService {
 
 	async findBookByFilePath(filePath: string): Promise<EpubBook | null> {
 		const normalizedFilePath = normalizePath(filePath || "");
-		return this.findBookInCollectionByFilePath(await this.loadBooks(), normalizedFilePath);
+		return this.findBookInCollectionByFilePath(
+			await this.loadBooks({ hydrateStates: false }),
+			normalizedFilePath
+		);
 	}
 
 	async findBookBySourceId(sourceId: string): Promise<EpubBook | null> {
@@ -2647,7 +2784,10 @@ export class EpubStorageService {
 			return null;
 		}
 
-		return this.findBookInCollectionBySourceId(await this.loadBooks(), normalizedSourceId);
+		return this.findBookInCollectionBySourceId(
+			await this.loadBooks({ hydrateStates: false }),
+			normalizedSourceId
+		);
 	}
 
 	private findBookInCollectionByFilePath(
@@ -2884,14 +3024,22 @@ export class EpubStorageService {
 	}
 
 	async pruneMissingBooks(): Promise<{ removedBookIds: string[]; removedPaths: string[] }> {
-		const books = await this.loadBooks();
+		const books = await this.loadBooks({ hydrateStates: false });
 		const nextBooks: Record<string, EpubBook> = {};
 		const removedBookIds: string[] = [];
 		const removedPaths: string[] = [];
 		let changed = false;
 
-		for (const [bookId, book] of Object.entries(books)) {
-			if (await this.hasExistingEpubFile(book.filePath)) {
+		const existenceChecks = await Promise.all(
+			Object.entries(books).map(async ([bookId, book]) => ({
+				bookId,
+				book,
+				exists: await this.hasExistingEpubFile(book.filePath),
+			}))
+		);
+
+		for (const { bookId, book, exists } of existenceChecks) {
+			if (exists) {
 				nextBooks[bookId] = book;
 				continue;
 			}
@@ -3228,6 +3376,7 @@ export class EpubStorageService {
 	}
 
 	async loadProgress(bookId: string): Promise<ReadingPosition | null> {
+		await this.hydrateBookState(bookId);
 		const book = await this.getBook(bookId);
 		return book?.currentPosition || null;
 	}
@@ -3464,7 +3613,11 @@ export class EpubStorageService {
 			savedAt: Number.isFinite(position.savedAt) ? position.savedAt : Date.now(),
 		};
 		const markdown = this.formatParagraphModePositionsMarkdown(map);
-		await this.app.vault.adapter.write(path, markdown);
+		try {
+			await this.app.vault.adapter.write(path, markdown);
+		} catch (error) {
+			logger.warn("[EpubStorageService] Failed to write paragraph mode positions markdown:", error);
+		}
 	}
 
 	async deleteReadingReferencePoint(bookId: string): Promise<void> {

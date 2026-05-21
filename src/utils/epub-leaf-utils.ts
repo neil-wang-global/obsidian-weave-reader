@@ -1,5 +1,5 @@
 import { TFile, type App, type WorkspaceLeaf } from "obsidian";
-import { EpubStorageService } from "../services/epub";
+import { getEpubStorageService } from "../services/epub";
 import { EPUB_RUNTIME } from "../services/epub/epub-runtime";
 import { isSupportedBookPath } from "../services/epub/book-format";
 import { epubActiveDocumentStore } from "../stores/epub-active-document-store";
@@ -207,8 +207,8 @@ export async function resolveRecentEpubPath(app: App): Promise<string | null> {
 	}
 
 	try {
-		const storageService = new EpubStorageService(app);
-		const recentBook = Object.values(await storageService.loadBooks())
+		const storageService = getEpubStorageService(app);
+		const recentBook = Object.values(await storageService.loadBooks({ hydrateStates: false }))
 			.filter((book) => isExistingEpubPath(app, book.filePath))
 			.sort((a, b) => {
 				const timeA = Number.isFinite(a.readingStats?.lastReadTime)

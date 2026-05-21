@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 import { normalizePath } from "obsidian";
-import { EpubStorageService } from "../epub/EpubStorageService";
+import type { EpubStorageService } from "../epub/EpubStorageService";
+import { getEpubStorageService } from "../epub/epub-storage-access";
 import type { IRBlockMeta, IRBlockStats, IRBlockStatus, IRBlockV4 } from "../../types/ir-types";
 import { DEFAULT_IR_BLOCK_META, DEFAULT_IR_BLOCK_STATS } from "../../types/ir-types";
 import { getTaskTopicId } from "../../utils/ir-topic-compat";
@@ -11,6 +12,7 @@ import {
 } from "./IRLegacyTaskCompatAdapter";
 import { resolveAssociatedNotePaths } from "./IRAssociatedNoteSignals";
 import { IRPointStorageService } from "./IRPointStorageService";
+import { invalidateIRDataCaches } from "./IRScheduleRefreshService";
 
 export interface IREpubBookmarkTask {
 	id: string;
@@ -90,7 +92,7 @@ export class IREpubBookmarkTaskService {
 	private initialized = false;
 
 	constructor(private readonly app: App) {
-		this.epubStorageService = new EpubStorageService(app);
+		this.epubStorageService = getEpubStorageService(app);
 	}
 
 	private getPointStorageService(): IRPointStorageService {
@@ -316,7 +318,7 @@ export class IREpubBookmarkTaskService {
 		} as IREpubBookmarkTask);
 		const tocLevel = normalizeTocLevel(input.tocLevel);
 
-		return await this.persistTask({
+		const task = await this.persistTask({
 			id: generateEpubBookmarkTaskId(),
 			topicId,
 			deckId: topicId,
@@ -353,6 +355,8 @@ export class IREpubBookmarkTaskService {
 			createdAt: now,
 			updatedAt: now,
 		});
+		invalidateIRDataCaches(this.app, { reason: "metadata_changed" });
+		return task;
 	}
 
 	async batchCreateTasks(
@@ -441,6 +445,9 @@ export class IREpubBookmarkTaskService {
 			count: persisted.length,
 			topicId: persisted[0]?.topicId,
 		});
+		if (persisted.length > 0) {
+			invalidateIRDataCaches(this.app, { reason: "metadata_changed" });
+		}
 		return persisted;
 	}
 
@@ -575,7 +582,8 @@ export class IREpubBookmarkTaskService {
 		if (deleted) {
 			logger.info("[IREpubBookmarkTaskService] 已删除任务", id);
 		}
-		return deleted;
+		invalidateIRDataCaches(this.app, { reason: "metadata_deleted" });
+		return true;
 	}
 
 	async deleteTasksByDeck(deckId: string): Promise<number> {

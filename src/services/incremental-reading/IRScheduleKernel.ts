@@ -1,6 +1,8 @@
 import type { App } from "obsidian";
+import { getPluginPaths } from "../../config/paths";
 import type { Card } from "../../data/types";
 import type { ReadingMaterial } from "../../types/incremental-reading-types";
+import { DirectoryUtils } from "../../utils/directory-utils";
 import {
 	DEFAULT_ADVANCED_SCHEDULE_SETTINGS,
 	type IRAdvancedScheduleSettings,
@@ -29,6 +31,14 @@ import { IRPlanGeneratorService } from "./IRPlanGeneratorService";
 import { IRStorageService } from "./IRStorageService";
 import { computeTagGroupPriorityBias, IRTagGroupService } from "./IRTagGroupService";
 import { ReadingMaterialStorage } from "./ReadingMaterialStorage";
+import {
+	buildWorkspaceCacheManifest,
+	hashWorkspaceCacheManifest,
+	normalizeWorkspaceCacheManifest,
+	refreshWorkspaceCacheManifest,
+	type IRWorkspaceCacheManifest,
+} from "./ir-workspace-manifest";
+import { getIRDataMutationGeneration } from "./IRScheduleRefreshService";
 
 export type ScheduleRecomputeReason =
 	| "complete_block"
@@ -270,9 +280,15 @@ export class IRScheduleKernel {
 	private readingMaterialStorage: ReadingMaterialStorage | null = null;
 	private scheduleCache = new Map<string, IRPlannedSchedule>();
 	private inflightRecomputes = new Map<string, Promise<IRPlannedSchedule>>();
+	private readonly scheduleDiskCachePath: string;
+	private scheduleDiskCacheStore: IRScheduleDiskCacheStore | null = null;
+	private scheduleDiskCacheLoaded = false;
+	private inflightScheduleDiskCacheLoad: Promise<IRScheduleDiskCacheStore> | null = null;
+	private inflightScheduleDiskCacheWrite: Promise<void> | null = null;
 
 	constructor(app: App) {
 		this.app = app;
+		this.scheduleDiskCachePath = getPluginPaths(app).cache.incrementalReading.irScheduleCache;
 		this.storage = new IRStorageService(app);
 		this.pdfService = new IRPdfBookmarkTaskService(app);
 		this.epubService = new IREpubBookmarkTaskService(app);
@@ -301,6 +317,22 @@ export class IRScheduleKernel {
 	invalidateScheduleCache(): void {
 		this.scheduleCache.clear();
 		this.inflightRecomputes.clear();
+		this.resetScheduleDiskCacheStore();
+	}
+
+	private resetScheduleDiskCacheStore(): void {
+		this.scheduleDiskCacheStore = this.createEmptyScheduleDiskCacheStore();
+		this.scheduleDiskCacheLoaded = true;
+		this.inflightScheduleDiskCacheLoad = null;
+		this.inflightScheduleDiskCacheWrite = null;
+	}
+
+	private scheduleDiskCacheEntryMatchesMutation(entry: IRScheduleDiskCacheEntry): boolean {
+		const currentGeneration = getIRDataMutationGeneration();
+		if (currentGeneration === 0) {
+			return true;
+		}
+		return entry.dataMutationGeneration === currentGeneration;
 	}
 
 	private getReadingMaterialStorage(): ReadingMaterialStorage {
@@ -423,6 +455,15 @@ export class IRScheduleKernel {
 		options?: RecomputeOptions
 	): Promise<IRPlannedSchedule> {
 		const cacheKey = this.buildScheduleCacheKey(options);
+		const memoryCached = this.scheduleCache.get(cacheKey);
+		if (memoryCached) {
+			return memoryCached;
+		}
+		const diskCached = await this.tryReadDiskScheduleCache(cacheKey);
+		if (diskCached) {
+			this.scheduleCache.set(cacheKey, diskCached);
+			return diskCached;
+		}
 		const inflight = this.inflightRecomputes.get(cacheKey);
 		if (inflight) {
 			return inflight;
@@ -522,6 +563,15 @@ export class IRScheduleKernel {
 		});
 		const schedule = this.buildPlannedScheduleFromMap(generated.itemsByDate, canonicalDeckIds, reason);
 		this.scheduleCache.set(cacheKey, schedule);
+		const workspaceManifest = await buildWorkspaceCacheManifest(this.app);
+		await this.persistDiskScheduleCache(cacheKey, {
+			workspaceFingerprint: hashWorkspaceCacheManifest(workspaceManifest),
+			workspaceManifest: normalizeWorkspaceCacheManifest(workspaceManifest),
+			settingsFingerprint: this.buildPlanningSettingsFingerprint(),
+			dataMutationGeneration: getIRDataMutationGeneration(),
+			savedAt: new Date().toISOString(),
+			schedule: this.serializePlannedScheduleForDisk(schedule),
+		});
 		return schedule;
 	}
 
@@ -1087,6 +1137,255 @@ export class IRScheduleKernel {
 	private isInactiveScheduleStatus(status?: string): boolean {
 		return status === "done" || status === "suspended" || status === "removed";
 	}
+
+	private buildPlanningSettingsFingerprint(): string {
+		return this.hashStableValue(this.getPlanningSettingsSnapshot());
+	}
+
+	private async tryReadDiskScheduleCache(cacheKey: string): Promise<IRPlannedSchedule | null> {
+		const entry = await this.readDiskScheduleCacheEntry(cacheKey);
+		if (!entry) {
+			return null;
+		}
+		if (entry.settingsFingerprint !== this.buildPlanningSettingsFingerprint()) {
+			return null;
+		}
+		if (entry.workspaceManifest) {
+			const refreshed = await refreshWorkspaceCacheManifest(this.app, entry.workspaceManifest);
+			if (!refreshed) {
+				return null;
+			}
+		} else {
+			const manifest = await buildWorkspaceCacheManifest(this.app);
+			if (hashWorkspaceCacheManifest(manifest) !== entry.workspaceFingerprint) {
+				return null;
+			}
+		}
+		if (!this.scheduleDiskCacheEntryMatchesMutation(entry)) {
+			return null;
+		}
+		if (!entry.schedule?.days?.length) {
+			return null;
+		}
+		return this.hydratePlannedScheduleFromDisk(entry.schedule);
+	}
+
+	private serializePlannedScheduleForDisk(schedule: IRPlannedSchedule): SerializedPlannedScheduleForDisk {
+		return {
+			generatedAt: schedule.generatedAt,
+			version: schedule.version,
+			deckIds: [...schedule.deckIds],
+			triggerReason: schedule.triggerReason,
+			days: schedule.days.map((day) => ({
+				...day,
+				items: day.items.map((item) => ({
+					...item,
+					nextReviewDate: item.nextReviewDate ? item.nextReviewDate.toISOString() : null,
+				})),
+			})),
+		};
+	}
+
+	private hydratePlannedScheduleFromDisk(schedule: SerializedPlannedScheduleForDisk): IRPlannedSchedule {
+		const days: IRPlannedDay[] = (schedule.days || []).map((day) => ({
+			...day,
+			items: (day.items || []).map((item) => ({
+				...item,
+				nextReviewDate: item.nextReviewDate ? new Date(item.nextReviewDate) : null,
+			})),
+		}));
+		return {
+			generatedAt: schedule.generatedAt,
+			version: schedule.version,
+			days,
+			itemsByDate: new Map(days.map((day) => [day.dateKey, day.items])),
+			deckIds: [...(schedule.deckIds || [])],
+			triggerReason: schedule.triggerReason,
+		};
+	}
+
+	private createEmptyScheduleDiskCacheStore(): IRScheduleDiskCacheStore {
+		return {
+			version: IR_SCHEDULE_DISK_CACHE_VERSION,
+			lastUpdated: new Date(0).toISOString(),
+			entries: {},
+		};
+	}
+
+	private async loadScheduleDiskCacheStore(): Promise<IRScheduleDiskCacheStore> {
+		if (this.scheduleDiskCacheStore) {
+			return this.scheduleDiskCacheStore;
+		}
+		if (this.inflightScheduleDiskCacheLoad) {
+			return this.inflightScheduleDiskCacheLoad;
+		}
+		const loadPromise = (async () => {
+			const adapter = this.app.vault.adapter;
+			const cachePath = this.scheduleDiskCachePath;
+			try {
+				if (!(await adapter.exists(cachePath))) {
+					const emptyStore = this.createEmptyScheduleDiskCacheStore();
+					this.scheduleDiskCacheStore = emptyStore;
+					this.scheduleDiskCacheLoaded = true;
+					return emptyStore;
+				}
+				const content = await adapter.read(cachePath);
+				const parsed = JSON.parse(content) as Partial<IRScheduleDiskCacheStore>;
+				const store =
+					parsed?.version === IR_SCHEDULE_DISK_CACHE_VERSION
+						? {
+								version: IR_SCHEDULE_DISK_CACHE_VERSION,
+								lastUpdated: String(parsed.lastUpdated || new Date().toISOString()),
+								entries: (parsed.entries || {}) as Record<string, IRScheduleDiskCacheEntry>,
+							}
+						: this.createEmptyScheduleDiskCacheStore();
+				this.scheduleDiskCacheStore = store;
+				this.scheduleDiskCacheLoaded = true;
+				return store;
+			} catch (error) {
+				logger.warn("[IRScheduleKernel] 读取调度磁盘缓存失败", error);
+				const emptyStore = this.createEmptyScheduleDiskCacheStore();
+				this.scheduleDiskCacheStore = emptyStore;
+				this.scheduleDiskCacheLoaded = true;
+				return emptyStore;
+			}
+		})();
+		this.inflightScheduleDiskCacheLoad = loadPromise;
+		try {
+			return await loadPromise;
+		} finally {
+			if (this.inflightScheduleDiskCacheLoad === loadPromise) {
+				this.inflightScheduleDiskCacheLoad = null;
+			}
+		}
+	}
+
+	private async readDiskScheduleCacheEntry(cacheKey: string): Promise<IRScheduleDiskCacheEntry | null> {
+		const store = this.scheduleDiskCacheLoaded
+			? this.scheduleDiskCacheStore || this.createEmptyScheduleDiskCacheStore()
+			: await this.loadScheduleDiskCacheStore();
+		return store.entries[cacheKey] || null;
+	}
+
+	private async persistDiskScheduleCache(
+		cacheKey: string,
+		entry: IRScheduleDiskCacheEntry
+	): Promise<void> {
+		try {
+			const store = this.scheduleDiskCacheLoaded
+				? this.scheduleDiskCacheStore || this.createEmptyScheduleDiskCacheStore()
+				: await this.loadScheduleDiskCacheStore();
+			const nextStore: IRScheduleDiskCacheStore = {
+				...store,
+				version: IR_SCHEDULE_DISK_CACHE_VERSION,
+				lastUpdated: new Date().toISOString(),
+				entries: {
+					...store.entries,
+					[cacheKey]: entry,
+				},
+			};
+			const previousWrite = this.inflightScheduleDiskCacheWrite ?? Promise.resolve();
+			const writePromise = previousWrite
+				.catch(() => undefined)
+				.then(async () => {
+					await DirectoryUtils.ensureDirForFile(
+						this.app.vault.adapter,
+						this.scheduleDiskCachePath
+					);
+					await this.app.vault.adapter.write(
+						this.scheduleDiskCachePath,
+						JSON.stringify(nextStore)
+					);
+					this.scheduleDiskCacheStore = nextStore;
+					this.scheduleDiskCacheLoaded = true;
+				});
+			this.inflightScheduleDiskCacheWrite = writePromise;
+			try {
+				await writePromise;
+			} finally {
+				if (this.inflightScheduleDiskCacheWrite === writePromise) {
+					this.inflightScheduleDiskCacheWrite = null;
+				}
+			}
+		} catch (error) {
+			logger.warn("[IRScheduleKernel] 写入调度磁盘缓存失败", error);
+		}
+	}
+
+	private hashStableValue(value: unknown): string {
+		return this.hashString(this.stableStringify(value));
+	}
+
+	private stableStringify(value: unknown): string {
+		if (value === null || value === undefined) {
+			return "null";
+		}
+		if (typeof value === "number") {
+			return Number.isFinite(value) ? String(value) : "null";
+		}
+		if (typeof value === "boolean") {
+			return value ? "true" : "false";
+		}
+		if (typeof value === "string") {
+			return JSON.stringify(value);
+		}
+		if (Array.isArray(value)) {
+			return `[${value.map((entry) => this.stableStringify(entry)).join(",")}]`;
+		}
+		if (value instanceof Date) {
+			return JSON.stringify(value.toISOString());
+		}
+		if (typeof value === "object") {
+			const record = value as Record<string, unknown>;
+			return `{${Object.keys(record)
+				.sort((left, right) => left.localeCompare(right))
+				.map((key) => `${JSON.stringify(key)}:${this.stableStringify(record[key])}`)
+				.join(",")}}`;
+		}
+		return JSON.stringify(String(value));
+	}
+
+	private hashString(input: string): string {
+		let hash = 2166136261;
+		for (let index = 0; index < input.length; index += 1) {
+			hash ^= input.charCodeAt(index);
+			hash = Math.imul(hash, 16777619);
+		}
+		return `fnv1a:${(hash >>> 0).toString(16).padStart(8, "0")}`;
+	}
+}
+
+const IR_SCHEDULE_DISK_CACHE_VERSION = "1.0.0";
+
+type SerializedPlannedScheduleItemForDisk = Omit<IRPlannedScheduleItem, "nextReviewDate"> & {
+	nextReviewDate: string | null;
+};
+
+type SerializedPlannedDayForDisk = Omit<IRPlannedDay, "items"> & {
+	items: SerializedPlannedScheduleItemForDisk[];
+};
+
+type SerializedPlannedScheduleForDisk = {
+	generatedAt: number;
+	version: number;
+	deckIds: string[];
+	triggerReason?: ScheduleRecomputeReason;
+	days: SerializedPlannedDayForDisk[];
+};
+
+interface IRScheduleDiskCacheEntry {
+	workspaceFingerprint: string;
+	workspaceManifest?: IRWorkspaceCacheManifest;
+	settingsFingerprint: string;
+	dataMutationGeneration?: number;
+	savedAt: string;
+	schedule: SerializedPlannedScheduleForDisk;
+}
+
+interface IRScheduleDiskCacheStore {
+	version: string;
+	lastUpdated: string;
+	entries: Record<string, IRScheduleDiskCacheEntry>;
 }
 
 export function createIRScheduleKernel(app: App): IRScheduleKernel {

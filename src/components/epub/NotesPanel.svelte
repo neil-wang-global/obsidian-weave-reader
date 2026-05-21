@@ -305,6 +305,70 @@
 		highlights = nextHighlights;
 	}
 
+	async function hydratePageLabelsInBackground(
+		loadToken: number,
+		expectedBook: NonNullable<typeof book>,
+		expectedFilePath: string | undefined,
+		showStrikethrough: boolean
+	) {
+		if (!snapshotService) {
+			return;
+		}
+		try {
+			const hydratedSnapshot = await snapshotService.hydratePageLabels({
+				bookId: expectedBook.id,
+				filePath: expectedFilePath ?? '',
+				showStrikethroughHighlights: showStrikethrough,
+				annotationService,
+				backlinkService,
+				readerService,
+				highlightRevision,
+			});
+			if (!hydratedSnapshot || isStaleAnnotationsLoad(loadToken, expectedBook.id, expectedFilePath)) {
+				return;
+			}
+			applySnapshot(hydratedSnapshot.highlights);
+		} catch (error) {
+			logger.error('[NotesPanel] Failed to hydrate page labels:', error);
+		}
+	}
+
+	async function refreshAnnotationsInBackground(
+		loadToken: number,
+		expectedBook: NonNullable<typeof book>,
+		expectedFilePath: string | undefined,
+		showStrikethrough: boolean
+	) {
+		if (!snapshotService) {
+			return;
+		}
+		try {
+			const freshSnapshot = await snapshotService.revalidateSnapshot({
+				bookId: expectedBook.id,
+				filePath: expectedFilePath ?? '',
+				showStrikethroughHighlights: showStrikethrough,
+				annotationService,
+				backlinkService,
+				readerService,
+				highlightRevision,
+			});
+			if (!freshSnapshot || isStaleAnnotationsLoad(loadToken, expectedBook.id, expectedFilePath)) {
+				return;
+			}
+			applySnapshot(freshSnapshot.highlights);
+			if (!freshSnapshot.pageLabelsResolved) {
+				void hydratePageLabelsInBackground(
+					loadToken,
+					expectedBook,
+					expectedFilePath,
+					showStrikethrough
+				);
+			}
+		} catch (error) {
+			logger.error('[NotesPanel] Failed to refresh annotations:', error);
+		}
+	}
+
 	async function loadAnnotations() {
 		const currentBook = book;
 		if (!currentBook) {
@@ -322,9 +386,15 @@
 		if (cachedSnapshot) {
 			applySnapshot(cachedSnapshot.highlights);
 			loading = false;
-		} else {
-			loading = true;
+			void refreshAnnotationsInBackground(
+				loadToken,
+				currentBook,
+				expectedFilePath,
+				showStrikethroughHighlights
+			);
+			return;
 		}
+		loading = true;
 		try {
 			const freshSnapshot = snapshotService
 				? await snapshotService.revalidateSnapshot({
@@ -342,23 +412,13 @@
 			}
 			if (freshSnapshot) {
 				applySnapshot(freshSnapshot.highlights);
-				loading = false;
 				if (!freshSnapshot.pageLabelsResolved && snapshotService) {
-					void (async () => {
-						const hydratedSnapshot = await snapshotService.hydratePageLabels({
-							bookId: currentBook.id,
-							filePath: expectedFilePath ?? '',
-							showStrikethroughHighlights,
-							annotationService,
-							backlinkService,
-							readerService,
-							highlightRevision,
-						});
-						if (!hydratedSnapshot || isStaleAnnotationsLoad(loadToken, currentBook.id, expectedFilePath)) {
-							return;
-						}
-						applySnapshot(hydratedSnapshot.highlights);
-					})();
+					void hydratePageLabelsInBackground(
+						loadToken,
+						currentBook,
+						expectedFilePath,
+						showStrikethroughHighlights
+					);
 				}
 			}
 		} catch (error) {

@@ -10,6 +10,7 @@ import {
 } from "./IRLegacyTaskCompatAdapter";
 import { resolveAssociatedNotePaths } from "./IRAssociatedNoteSignals";
 import { IRPointStorageService } from "./IRPointStorageService";
+import { invalidateIRDataCaches } from "./IRScheduleRefreshService";
 
 export interface IRPdfBookmarkTask {
 	id: string;
@@ -235,7 +236,7 @@ export class IRPdfBookmarkTaskService {
 			deckId: input.deckId,
 		} as IRPdfBookmarkTask);
 
-		return await this.persistTask({
+		const task = await this.persistTask({
 			id: generatePdfBookmarkTaskId(),
 			topicId,
 			deckId: topicId,
@@ -271,6 +272,8 @@ export class IRPdfBookmarkTaskService {
 			createdAt: now,
 			updatedAt: now,
 		});
+		invalidateIRDataCaches(this.app, { reason: "metadata_changed" });
+		return task;
 	}
 
 	async updateTask(
@@ -369,7 +372,8 @@ export class IRPdfBookmarkTaskService {
 		if (deleted) {
 			logger.info("[IRPdfBookmarkTaskService] 已删除任务", id);
 		}
-		return deleted;
+		invalidateIRDataCaches(this.app, { reason: "metadata_deleted" });
+		return true;
 	}
 
 	async deleteTasksByDeck(deckId: string): Promise<number> {

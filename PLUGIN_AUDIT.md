@@ -25,3 +25,17 @@ Release builds do not use `eval()` or `new Function()`. Scheduling polyfills use
 - SPDX: `GPL-3.0-or-later`
 - Full license text: [LICENSE](./LICENSE)
 - Copyright notice: [COPYRIGHT](./COPYRIGHT)
+
+## GitHub release title
+
+ObsidianReviewBot compares the GitHub Release **title** with `manifest.json` `version`. If the title is blank, the bot reports an empty name and warns that it does not include the version (for example `0.6.3`).
+
+Fix an existing release without rebuilding:
+
+```bash
+gh release edit 0.6.3 --title 0.6.3
+```
+
+Or on GitHub: **Releases → select the tag → Edit → Title** = the tag (for example `0.6.3`).
+
+New releases created by `.github/workflows/release.yml` set `name` to the tag and run a post-step `gh release edit` check.

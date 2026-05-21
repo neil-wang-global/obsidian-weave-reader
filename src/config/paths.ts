@@ -310,6 +310,7 @@ export function getPluginPathsById(
 			incrementalReading: {
 				root: irCacheRoot,
 				irCalendarCache: `${irCacheRoot}/ir-calendar-cache.json`,
+				irScheduleCache: `${irCacheRoot}/ir-schedule-cache.json`,
 				epubBacklinkHighlightsCache: `${irCacheRoot}/epub-backlink-highlights-cache.json`,
 				documentGroupMap: `${irCacheRoot}/document-group-map.json`,
 				pointFilesIndex: `${irCacheRoot}/point-files-index.json`,

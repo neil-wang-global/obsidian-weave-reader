@@ -15,6 +15,7 @@
   } from '../constants/activation-constants';
   
   import { licenseManager, ActivationAttemptLimiter } from '../../../utils/licenseManager';
+  import { PremiumFeatureGuard } from '../../../services/premium/PremiumFeatureGuard';
   import {
     getPluginEffectiveLicenseState,
     getPluginLicensedProduct,
@@ -184,7 +185,20 @@
 
       if (result.success && result.licenseInfo) {
         upsertPluginLocalLicense(plugin, result.licenseInfo);
-        await onSave();
+        await PremiumFeatureGuard.getInstance().updateLicenseState({
+          product: getPluginLicensedProduct(plugin),
+          localLicenses: getPluginEffectiveLicenseState(plugin).localLicenses,
+        });
+        let callbackAlreadyUsedForSave = false;
+        if (typeof plugin?.saveSettings === 'function') {
+          await plugin.saveSettings();
+        } else {
+          await onSave();
+          callbackAlreadyUsedForSave = true;
+        }
+        if (!callbackAlreadyUsedForSave) {
+          await onSave();
+        }
         emitWeaveLicenseChanged(plugin.app);
         
         // 显示成功状态

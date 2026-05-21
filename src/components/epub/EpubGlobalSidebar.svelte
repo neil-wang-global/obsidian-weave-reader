@@ -32,7 +32,14 @@
   	let sidebarView = $state<'details' | 'bookshelf'>('details');
   	let tocItems = $state<TocItem[]>([]);
   	let bookshelfRefreshToken = $state(0);
+  	let bookshelfMounted = $state(false);
   	let effectiveSidebarView = $derived(sharedState?.book ? sidebarView : 'bookshelf');
+
+	$effect(() => {
+		if (effectiveSidebarView === 'bookshelf') {
+			bookshelfMounted = true;
+		}
+	});
 
 	let searchQuery = $state('');
 	let searchResults = $state<Array<{ cfi: string; excerpt: string; chapterTitle: string }>>([]);
@@ -387,6 +394,7 @@
 		}) || null;
 		if (cachedSnapshot) {
 			highlightCount = cachedSnapshot.highlights.length;
+			return;
 		}
 		try {
 			const snapshot = highlightViewSnapshotService
@@ -690,22 +698,29 @@
 </script>
 
 <div class="epub-global-sidebar">
-	{#if effectiveSidebarView === 'bookshelf'}
-		<BookshelfView
-			{app}
-			onSwitchBook={sharedState?.onSwitchBook ?? undefined}
-			onClose={returnFromBookshelfToReaderSidebar}
-			onBack={returnFromBookshelfToReaderSidebar}
-			backButtonLabel={t('epub.globalSidebar.backToDirectory')}
-			refreshToken={bookshelfRefreshToken}
-			onSettingsClick={sharedState?.onSettingsClick ?? undefined}
-		/>
-	{:else if !sharedState?.book}
+	{#if bookshelfMounted}
+		<div
+			class="epub-global-sidebar-bookshelf"
+			class:is-hidden={effectiveSidebarView !== 'bookshelf'}
+			aria-hidden={effectiveSidebarView !== 'bookshelf'}
+		>
+			<BookshelfView
+				{app}
+				onSwitchBook={sharedState?.onSwitchBook ?? undefined}
+				onClose={returnFromBookshelfToReaderSidebar}
+				onBack={returnFromBookshelfToReaderSidebar}
+				backButtonLabel={t('epub.globalSidebar.backToDirectory')}
+				refreshToken={bookshelfRefreshToken}
+				onSettingsClick={sharedState?.onSettingsClick ?? undefined}
+			/>
+		</div>
+	{/if}
+	{#if effectiveSidebarView !== 'bookshelf' && !sharedState?.book}
 		<div class="epub-global-sidebar-empty">
 			<span class="empty-icon" use:icon={'book-open'}></span>
 			<span class="empty-text">{t('epub.globalSidebar.noBookOpen')}</span>
 		</div>
-	{:else}
+	{:else if effectiveSidebarView !== 'bookshelf'}
 		{#if sidebarView === 'details'}
 			<div class="epub-global-sidebar-header">
 				<div class="header-flex">
@@ -951,6 +966,18 @@
 
 	.epub-global-sidebar > * {
 		min-height: 0;
+	}
+
+	.epub-global-sidebar-bookshelf {
+		display: flex;
+		flex: 1 1 auto;
+		flex-direction: column;
+		min-height: 0;
+		width: 100%;
+	}
+
+	.epub-global-sidebar-bookshelf.is-hidden {
+		display: none;
 	}
 
 	.epub-global-sidebar-empty {

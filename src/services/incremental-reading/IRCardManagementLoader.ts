@@ -127,14 +127,18 @@ export async function loadIRCardManagementData(options: {
 }): Promise<IRCardManagementLoadResult> {
 	const { app, plugin, storage, helpers } = options;
 	void storage;
-	const workspaceSnapshotPromise = getSharedIRWorkspaceSnapshotService(app).getWorkspaceData();
+	const workspaceSnapshot = await getSharedIRWorkspaceSnapshotService(app).getWorkspaceData();
+	const hasProjectedChunks = Object.keys(workspaceSnapshot.chunksRecord).length > 0;
+	const hasBookmarkTasks =
+		workspaceSnapshot.pdfTasks.length > 0 || workspaceSnapshot.epubTasks.length > 0;
 	let pointSnapshots: IRPointSnapshot[] = [];
-	try {
-		pointSnapshots = await new IRPointStorageService(app).listPointSnapshots();
-	} catch (error) {
-		logger.warn("[IR] 新点存储读取失败，回退旧任务读取:", error);
+	if (!hasProjectedChunks || !hasBookmarkTasks) {
+		try {
+			pointSnapshots = await new IRPointStorageService(app).listPointSnapshots();
+		} catch (error) {
+			logger.warn("[IR] 新点存储读取失败，回退旧任务读取:", error);
+		}
 	}
-	const workspaceSnapshot = await workspaceSnapshotPromise;
 	const irBlocks = workspaceSnapshot.blocksRecord;
 	const irDecks = workspaceSnapshot.decksRecord;
 	const history = workspaceSnapshot.history;

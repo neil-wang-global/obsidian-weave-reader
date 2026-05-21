@@ -295,7 +295,9 @@ export class EpubBookmarkService {
 	private async findExistingBookmarkFilePath(book: EpubBook): Promise<string | null> {
 		const preferredPath = this.getPreferredBookmarkFilePath(book);
 		if (await this.app.vault.adapter.exists(preferredPath)) {
-			return preferredPath;
+			if (await this.readBookmarkFileByPath(preferredPath)) {
+				return preferredPath;
+			}
 		}
 		const stableKey = this.buildStableKey(book);
 		const suffix = `--${stableKey}.md`;
@@ -308,7 +310,13 @@ export class EpubBookmarkService {
 					this.isBookmarkFileInsideFolder(file.path, folderPath) &&
 					file.name.endsWith(suffix)
 			);
-		return match?.path ?? null;
+		if (!match?.path) {
+			return null;
+		}
+		if (await this.readBookmarkFileByPath(match.path)) {
+			return match.path;
+		}
+		return null;
 	}
 
 	private async findCompatibleBookmarkFilePath(book: EpubBook): Promise<string | null> {
@@ -409,7 +417,7 @@ export class EpubBookmarkService {
 		}
 
 		await this.writeBookmarkFile(normalizedPreferredPath, nextFrontmatter);
-		await this.app.vault.adapter.remove(normalizedCurrentPath);
+		await this.safeRemovePath(normalizedCurrentPath);
 		return normalizedPreferredPath;
 	}
 
@@ -479,16 +487,51 @@ export class EpubBookmarkService {
 	private async readBookmarkFileByPath(
 		filePath: string
 	): Promise<EpubBookmarkFileFrontmatter | null> {
-		const existing = this.app.vault.getAbstractFileByPath(filePath);
-		if (!(existing instanceof TFile)) {
+		const normalizedPath = normalizePath(String(filePath || "").trim());
+		if (!normalizedPath) {
 			return null;
 		}
+
+		const existing = this.app.vault.getAbstractFileByPath(normalizedPath);
+		if (existing instanceof TFile) {
+			try {
+				const content = await this.app.vault.read(existing);
+				return this.parseBookmarkFileContent(content);
+			} catch (error) {
+				logger.warn("[EpubBookmarkService] Failed to read bookmark file:", error);
+				return null;
+			}
+		}
+
 		try {
-			const content = await this.app.vault.read(existing);
+			if (!(await this.app.vault.adapter.exists(normalizedPath))) {
+				return null;
+			}
+			const content = await this.app.vault.adapter.read(normalizedPath);
 			return this.parseBookmarkFileContent(content);
 		} catch (error) {
-			logger.warn("[EpubBookmarkService] Failed to read bookmark file:", error);
+			logger.warn("[EpubBookmarkService] Failed to read bookmark file via adapter:", error);
 			return null;
+		}
+	}
+
+	private async safeRemovePath(filePath: string): Promise<void> {
+		const normalizedPath = normalizePath(String(filePath || "").trim());
+		if (!normalizedPath) {
+			return;
+		}
+		try {
+			await this.app.vault.adapter.remove(normalizedPath);
+		} catch (error) {
+			const code =
+				error && typeof error === "object" && "code" in error
+					? String((error as { code?: string }).code || "")
+					: "";
+			const message = error instanceof Error ? error.message : String(error);
+			if (code === "ENOENT" || /no such file or directory/i.test(message)) {
+				return;
+			}
+			logger.warn("[EpubBookmarkService] Failed to remove bookmark file:", error);
 		}
 	}
 

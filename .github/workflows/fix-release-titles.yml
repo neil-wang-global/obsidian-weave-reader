@@ -1,0 +1,74 @@
+name: Fix GitHub Release Titles
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix-titles:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Repair empty release titles
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          node - <<'EOF'
+          (async () => {
+            const token = process.env.GITHUB_TOKEN;
+            const repo = process.env.GITHUB_REPOSITORY;
+            const headers = {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github+json",
+              "User-Agent": "weave-epub-reader-fix-release-titles",
+            };
+
+            let page = 1;
+            let fixed = 0;
+
+            while (page <= 20) {
+              const url = `https://api.github.com/repos/${repo}/releases?per_page=100&page=${page}`;
+              const response = await fetch(url, { headers });
+              if (!response.ok) {
+                throw new Error(`Failed to list releases: ${response.status}`);
+              }
+
+              const releases = await response.json();
+              if (!Array.isArray(releases) || releases.length === 0) break;
+
+              for (const release of releases) {
+                const tag = release.tag_name;
+                if (!tag || release.name === tag) continue;
+
+                const patchResponse = await fetch(
+                  `https://api.github.com/repos/${repo}/releases/${release.id}`,
+                  {
+                    method: "PATCH",
+                    headers: { ...headers, "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: tag, tag_name: tag }),
+                  }
+                );
+
+                if (!patchResponse.ok) {
+                  throw new Error(`Failed to patch release ${tag}: ${patchResponse.status}`);
+                }
+
+                fixed += 1;
+                console.log(`Fixed release title for ${tag}`);
+              }
+
+              if (releases.length < 100) break;
+              page += 1;
+            }
+
+            console.log(`Done. Updated ${fixed} release(s).`);
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          EOF

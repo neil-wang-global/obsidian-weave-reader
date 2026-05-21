@@ -456,4 +456,17 @@ describe("IRPointWriteService", () => {
 		expect(storageSpies.deleteChunkData).toHaveBeenCalledWith("chunk-1");
 		expect(result).toBe(true);
 	});
+
+	it("删除已不存在的阅读点应视为成功（幂等）", async () => {
+		storageSpies.getChunkData.mockResolvedValue(null);
+		storageSpies.getAllBlocks.mockResolvedValue({});
+		const service = new IRPointWriteService({} as any);
+
+		const result = await service.deletePoint({
+			id: "missing-chunk",
+		});
+
+		expect(storageSpies.deleteChunkData).not.toHaveBeenCalled();
+		expect(result).toBe(true);
+	});
 });

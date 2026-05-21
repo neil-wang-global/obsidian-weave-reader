@@ -89,6 +89,9 @@ export class EpubView extends ItemView {
 	private tutorialBtn: HTMLElement | null = null;
 	private inlineTutorialBtn: HTMLButtonElement | null = null;
 	private bookmarkBtn: HTMLElement | null = null;
+	private readingPositionAutoSaveBtn: HTMLElement | null = null;
+	private inlineReadingPositionAutoSaveBtn: HTMLButtonElement | null = null;
+	private readingPositionAutoSaveEnabled = false;
 	private actionHandlers: {
 		setAutoInsert?: (enabled: boolean) => void;
 		setScreenshotMode?: (active: boolean) => void;
@@ -112,6 +115,8 @@ export class EpubView extends ItemView {
 		showPremiumFeaturePreview?: (featureId: string) => void;
 		saveReadingReferencePoint?: () => Promise<void>;
 		saveLastOpenBookmark?: () => Promise<void>;
+		getReadingPositionAutoSaveEnabled?: () => boolean;
+		setReadingPositionAutoSaveEnabled?: (enabled: boolean) => Promise<boolean>;
 		bindCanvasPath?: (canvasPath: string) => void;
 		unbindCanvas?: () => void;
 		getCanvasService?: () => EpubCanvasService;
@@ -705,6 +710,13 @@ export class EpubView extends ItemView {
 		this.bookmarkBtn = this.addAction("bookmark", this.t("views.epubView.menu.addBookmark"), () => {
 			void this.actionHandlers.addBookmark?.();
 		});
+		this.readingPositionAutoSaveBtn = this.addAction(
+			"map-pinned",
+			this.t("views.epubView.label.readingPositionAutoSaveOff"),
+			() => {
+				void this.toggleReadingPositionAutoSave();
+			}
+		);
 		this.readingReferenceBtn = this.addAction(
 			"flag",
 			this.t("views.epubView.label.readingReferencePointUnset"),
@@ -971,6 +983,13 @@ export class EpubView extends ItemView {
 				void this.actionHandlers.saveReadingReferencePoint?.();
 			}
 		);
+		this.inlineReadingPositionAutoSaveBtn = this.appendInlineActionButton(
+			"map-pinned",
+			this.t("views.epubView.label.readingPositionAutoSaveOff"),
+			() => {
+				void this.toggleReadingPositionAutoSave();
+			}
+		);
 		this.inlineResumePointBtn = this.appendInlineActionButton(
 			"bookmark-plus",
 			this.t("views.epubView.menu.markResumePoint"),
@@ -1048,6 +1067,7 @@ export class EpubView extends ItemView {
 		this.updateSaveAsImageBtn();
 		this.updateScreenshotBtn();
 		this.updateAutoInsertBtn();
+		this.updateReadingPositionAutoSaveBtn();
 		this.updateReadingReferencePointBtn();
 		this.updateResumePointBtn();
 		this.updateFlowBtn();
@@ -1320,9 +1340,12 @@ export class EpubView extends ItemView {
 		this.inlineCanvasDirBtn = null;
 		this.inlineCanvasBtn = null;
 		this.inlineReadingReferenceBtn = null;
+		this.inlineReadingPositionAutoSaveBtn = null;
 		this.inlineResumePointBtn = null;
 		this.inlineTutorialBtn = null;
 		this.readingReferenceBtn = null;
+		this.readingPositionAutoSaveBtn = null;
+		this.readingPositionAutoSaveEnabled = false;
 		this.hasReadingReferencePoint = false;
 	}
 
@@ -1632,6 +1655,35 @@ export class EpubView extends ItemView {
 		});
 	}
 
+	private updateReadingPositionAutoSaveBtn(): void {
+		if (this.actionHandlers.getReadingPositionAutoSaveEnabled) {
+			this.readingPositionAutoSaveEnabled = this.actionHandlers.getReadingPositionAutoSaveEnabled();
+		}
+		const visible = this.canUseReadingProgress() || this.isPremiumFeaturePreviewEnabled();
+		const label = this.canUseReadingProgress()
+			? this.readingPositionAutoSaveEnabled
+				? this.t("views.epubView.label.readingPositionAutoSaveOn")
+				: this.t("views.epubView.label.readingPositionAutoSaveOff")
+			: this.getFeatureActionLabel(
+				this.t("views.epubView.label.readingPositionAutoSaveOff"),
+				PREMIUM_FEATURES.EPUB_READING_PROGRESS
+			);
+		const icon = this.readingPositionAutoSaveEnabled ? "locate-fixed" : "map-pinned";
+		const active = this.canUseReadingProgress() ? this.readingPositionAutoSaveEnabled : false;
+		this.applyActionButtonState(this.readingPositionAutoSaveBtn, {
+			icon,
+			label,
+			active,
+			visible,
+		});
+		this.applyActionButtonState(this.inlineReadingPositionAutoSaveBtn, {
+			icon,
+			label,
+			active,
+			visible,
+		});
+	}
+
 	private updateReadingReferencePointBtn(): void {
 		const baseLabel = this.hasReadingReferencePoint
 			? this.t("views.epubView.label.readingReferencePointSet")
@@ -1805,6 +1857,21 @@ export class EpubView extends ItemView {
 				this.actionHandlers.toggleTutorial?.();
 			});
 		});
+	}
+
+	private async toggleReadingPositionAutoSave(): Promise<void> {
+		if (!this.canUseReadingProgress()) {
+			this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_READING_PROGRESS);
+			return;
+		}
+		if (!this.actionHandlers.setReadingPositionAutoSaveEnabled) {
+			return;
+		}
+		const nextEnabled = await this.actionHandlers.setReadingPositionAutoSaveEnabled(
+			!this.readingPositionAutoSaveEnabled
+		);
+		this.readingPositionAutoSaveEnabled = nextEnabled;
+		this.updateReadingPositionAutoSaveBtn();
 	}
 
 	private showDirectionMenu(evt: MouseEvent | Event): void {

@@ -17,6 +17,12 @@ import {
 } from "./IRProjectedScheduleSummary";
 import { IRPdfBookmarkTaskService } from "./IRPdfBookmarkTaskService";
 import { IRStorageService } from "./IRStorageService";
+import {
+	buildWorkspaceCacheManifest,
+	hashWorkspaceCacheManifest,
+	refreshWorkspaceCacheManifest,
+	type IRWorkspaceCacheManifest,
+} from "./ir-workspace-manifest";
 
 type DeckOverviewOptions = {
 	dailyNewLimit?: number;
@@ -49,6 +55,8 @@ export class IRWorkspaceSnapshotService {
 	private pdfService: IRPdfBookmarkTaskService;
 	private epubService: IREpubBookmarkTaskService;
 	private workspaceDataCache: IRWorkspaceDataSnapshot | null = null;
+	private workspaceManifestCache: IRWorkspaceCacheManifest | null = null;
+	private workspaceManifestFingerprint = "";
 	private inflightWorkspaceData: Promise<IRWorkspaceDataSnapshot> | null = null;
 	private deckOverviewCache = new Map<string, IRDeckOverviewSnapshot>();
 	private inflightDeckOverview = new Map<string, Promise<IRDeckOverviewSnapshot>>();
@@ -64,6 +72,8 @@ export class IRWorkspaceSnapshotService {
 	invalidate(): void {
 		this.cacheVersion += 1;
 		this.workspaceDataCache = null;
+		this.workspaceManifestCache = null;
+		this.workspaceManifestFingerprint = "";
 		this.inflightWorkspaceData = null;
 		this.deckOverviewCache.clear();
 		this.inflightDeckOverview.clear();
@@ -74,8 +84,19 @@ export class IRWorkspaceSnapshotService {
 	}
 
 	async getWorkspaceData(): Promise<IRWorkspaceDataSnapshot> {
-		if (this.workspaceDataCache) {
-			return this.workspaceDataCache;
+		if (this.workspaceDataCache && this.workspaceManifestCache) {
+			const refreshedManifest = await refreshWorkspaceCacheManifest(
+				this.app,
+				this.workspaceManifestCache
+			);
+			if (refreshedManifest) {
+				this.workspaceManifestCache = refreshedManifest;
+				this.workspaceManifestFingerprint = hashWorkspaceCacheManifest(refreshedManifest);
+				return this.workspaceDataCache;
+			}
+			this.workspaceDataCache = null;
+			this.workspaceManifestCache = null;
+			this.workspaceManifestFingerprint = "";
 		}
 		if (this.inflightWorkspaceData) {
 			return this.inflightWorkspaceData;
@@ -361,6 +382,9 @@ export class IRWorkspaceSnapshotService {
 		};
 		if (this.cacheVersion === requestVersion) {
 			this.workspaceDataCache = snapshot;
+			const manifest = await buildWorkspaceCacheManifest(this.app);
+			this.workspaceManifestCache = manifest;
+			this.workspaceManifestFingerprint = hashWorkspaceCacheManifest(manifest);
 		}
 		logger.info("[IRWorkspaceSnapshotService] workspace data ready", {
 			deckCount: Object.keys(decksRecord).length,

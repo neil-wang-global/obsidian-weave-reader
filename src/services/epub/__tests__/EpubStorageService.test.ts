@@ -1397,6 +1397,36 @@ describe('EpubStorageService', () => {
     ]);
   });
 
+  it('findBookByFilePath avoids eager catalog hydration', async () => {
+    const { app, files } = createMemoryApp({
+      'Books/demo.epub': 'demo-epub-binary',
+    });
+    const service = new EpubStorageService(app);
+    await service.addBooksToBookshelf(['Books/demo.epub']);
+    const hydrateSpy = vi.spyOn(service as any, 'hydrateBookStates');
+
+    await service.findBookByFilePath('Books/demo.epub');
+
+    expect(hydrateSpy).not.toHaveBeenCalled();
+    hydrateSpy.mockRestore();
+    expect(readLocalEpubData(files).bookshelfMembership).toBeDefined();
+  });
+
+  it('persists bookshelf cover image in scan index', async () => {
+    const { app } = createMemoryApp({
+      'Books/demo.epub': 'demo-epub-binary',
+    });
+    const service = new EpubStorageService(app);
+
+    await service.addBooksToBookshelf(['Books/demo.epub']);
+    await service.cacheBookshelfCoverImage('Books/demo.epub', 'blob:cached-cover');
+
+    const scanEntries = await service.loadScanIndex();
+    expect(scanEntries.find((entry) => entry.path === 'Books/demo.epub')?.coverImage).toBe(
+      'blob:cached-cover'
+    );
+  });
+
   it('persists bookshelf search query in plugin ui memory across reloads', async () => {
     const { app, files } = createMemoryApp();
     const service = new EpubStorageService(app);

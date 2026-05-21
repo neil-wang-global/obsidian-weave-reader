@@ -82,6 +82,7 @@ export interface EpubHostAISplitConfigModalInput {
 }
 
 export interface EpubHostCapabilities {
+	getEpubStorageService?: () => import("./EpubStorageService").EpubStorageService;
 	openEpubReader?: (filePath: string) => Promise<void>;
 	hasEpubPremiumAccess?: () => boolean;
 	openEpubPremiumSettings?: () => void;
