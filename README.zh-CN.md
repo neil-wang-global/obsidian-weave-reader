@@ -16,10 +16,9 @@ Weave EPUB Reader 是一款面向 **Obsidian 全平台**（桌面端与移动端
 
 最低 Obsidian 版本：**1.7.0**
 
+![阅读器与书架界面](https://github.com/user-attachments/assets/f7d9af9a-8c4e-4c93-90e8-3662662fa985)
 
-<img width="1164" height="883" alt="image" src="https://github.com/user-attachments/assets/f7d9af9a-8c4e-4c93-90e8-3662662fa985" />
-
-<img width="1536" height="1300" alt="QQ20260523-181519-HD" src="https://github.com/user-attachments/assets/6bec4ba2-2b14-4c74-9cbd-f116a56438dc" />
+![摘录与笔记工作流](https://github.com/user-attachments/assets/6bec4ba2-2b14-4c74-9cbd-f116a56438dc)
 
 ## 摘录笔记工作流：装上之后有什么不同
 
