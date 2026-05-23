@@ -22,6 +22,12 @@ If your habit today is **read in an external app → copy a paragraph → paste 
 
 **Reading stays inside Obsidian, excerpts land in your vault, and location metadata travels with each excerpt.** The three diagrams below summarize the structure (Mermaid renders on **GitHub** and in **Obsidian**).
 
+<img width="1164" height="883" alt="image" src="https://github.com/user-attachments/assets/f7d9af9a-8c4e-4c93-90e8-3662662fa985" />
+
+<img width="1536" height="1300" alt="QQ20260523-181519-HD" src="https://github.com/user-attachments/assets/6bec4ba2-2b14-4c74-9cbd-f116a56438dc" />
+
+
+
 ### Diagram 1 · Core loop (main value chain)
 
 Every workflow eventually feeds this repeatable loop: **read → capture → render → return**.
