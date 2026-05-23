@@ -32,27 +32,7 @@
 
 ![摘录与笔记工作流](https://github.com/user-attachments/assets/6bec4ba2-2b14-4c74-9cbd-f116a56438dc)
 
-### 图 1 · 核心闭环（装上插件后的主链路）
-
-所有工作流最终都落在这条可反复走的环路上：**读 → 记 → 显 → 回**。
-
-```mermaid
-flowchart TB
-  READ["① 在 Vault 里读书<br/>（Obsidian 阅读器）"]
-  CAPTURE["② 摘录写入 Vault<br/>Markdown / Canvas / 牌组<br/>（带书籍深链接）"]
-  ORGANIZE["③ 在 Vault 里整理<br/>复习 · 重组 · 制卡"]
-  RENDER["④ 再打开同一本书<br/>正文回显历史高亮"]
-  BACK["⑤ 从笔记点击深链接<br/>跳回原文段落"]
-  TRACE["⑥ 高级：书中高亮<br/>反查来源笔记"]
-
-  READ --> CAPTURE --> ORGANIZE --> RENDER --> BACK
-  BACK -->|"继续阅读"| READ
-  RENDER -->|"继续阅读"| READ
-  BACK -.->|"Premium"| TRACE
-  TRACE -.-> READ
-```
-
-### 图 2 · 五条工作流怎么选（按目标分流）
+### 图 1 · 五条工作流怎么选（按目标分流）
 
 中心是「在 Obsidian 内读书」；向外是你可能走的五条路径，以及是否需要**高级版**或 **Weave**。
 
@@ -66,7 +46,7 @@ flowchart TB
   READ --> D["D 回链复盘<br/>笔记 ↔ 原书"]
   READ --> E["E 增量阅读<br/>何时读哪章 · 需 Weave"]
 
-  A --> LOOP["汇入核心闭环<br/>图 1：读→记→显→回"]
+  A --> LOOP["汇入核心闭环<br/>读→记→显→回"]
   B --> LOOP
   C --> LOOP
   D --> LOOP
@@ -89,9 +69,9 @@ flowchart TB
 | 橙色路径 | 需阅读器**高级版**（或继承 Weave 授权） |
 | 蓝色路径 | 需安装并启用 **Weave** 主插件 |
 
-### 图 3 · 增量阅读子流程（工作流 E）
+### 图 2 · 增量阅读子流程（工作流 E）
 
-解决「**多本书如何交错推进、长书如何按章深度读**」，与图 1 的「记摘录」互补：**E 管排期，A 管记下什么**。
+解决「**多本书如何交错推进、长书如何按章深度读**」，与自动摘录（工作流 A）互补：**E 管排期，A 管记下什么**。
 
 ```mermaid
 flowchart LR
@@ -101,7 +81,7 @@ flowchart LR
   DAY["调度日<br/>打开任务"]
   BOOK["深链接回到<br/>书中章节/段落"]
   DEEP["阅读点 / 续读点<br/>深度精读"]
-  LOOP["衔接 图 1<br/>摘录 · 回链 · 回显"]
+  LOOP["读→记→显→回<br/>摘录 · 回链 · 回显"]
 
   TOC --> CAL --> MIX --> DAY --> BOOK --> DEEP --> LOOP
 ```
@@ -293,27 +273,7 @@ The diagrams below summarize the structure (Mermaid renders on **GitHub** and in
 
 ![Excerpt and note workflow](https://github.com/user-attachments/assets/6bec4ba2-2b14-4c74-9cbd-f116a56438dc)
 
-### Diagram 1 · Core loop (main value chain)
-
-Every workflow eventually feeds this repeatable loop: **read → capture → render → return**.
-
-```mermaid
-flowchart TB
-  READ["① Read in the vault<br/>(Obsidian reader)"]
-  CAPTURE["② Capture to the vault<br/>Markdown / Canvas / decks<br/>(with book deep links)"]
-  ORGANIZE["③ Organize in the vault<br/>review · restructure · cards"]
-  RENDER["④ Reopen the same book<br/>highlights render in the body"]
-  BACK["⑤ Click a deep link in notes<br/>jump to the original passage"]
-  TRACE["⑥ Premium: from a highlight<br/>open the source note"]
-
-  READ --> CAPTURE --> ORGANIZE --> RENDER --> BACK
-  BACK -->|"keep reading"| READ
-  RENDER -->|"keep reading"| READ
-  BACK -.->|"Premium"| TRACE
-  TRACE -.-> READ
-```
-
-### Diagram 2 · Pick a workflow (goal-based map)
+### Diagram 1 · Pick a workflow (goal-based map)
 
 Reading in Obsidian is the hub; each branch is a typical path and its **Premium** / **Weave** requirements.
 
@@ -327,7 +287,7 @@ flowchart TB
   READ --> D["D Backlink review<br/>notes ↔ book"]
   READ --> E["E Incremental reading<br/>when to read · Weave"]
 
-  A --> LOOP["Join the core loop<br/>Diagram 1: read→capture→render→return"]
+  A --> LOOP["Join the core loop<br/>read→capture→render→return"]
   B --> LOOP
   C --> LOOP
   D --> LOOP
@@ -350,9 +310,9 @@ flowchart TB
 | Orange paths | Requires reader **Premium** (or inherited Weave license) |
 | Blue paths | Requires the **Weave** main plugin |
 
-### Diagram 3 · Incremental reading subflow (workflow E)
+### Diagram 2 · Incremental reading subflow (workflow E)
 
-Answers **how several books advance on a schedule** and complements Diagram 1: **E schedules chapters; A captures what you noted**.
+Answers **how several books advance on a schedule** and complements auto excerpts (workflow A): **E schedules chapters; A captures what you noted**.
 
 ```mermaid
 flowchart LR
@@ -362,7 +322,7 @@ flowchart LR
   DAY["Scheduled day<br/>open task"]
   BOOK["Deep link back to<br/>chapter or passage"]
   DEEP["IR point / resume point<br/>deep reading"]
-  LOOP["Join Diagram 1<br/>excerpts · backlinks · rendering"]
+  LOOP["read→capture→render→return<br/>excerpts · backlinks · rendering"]
 
   TOC --> CAL --> MIX --> DAY --> BOOK --> DEEP --> LOOP
 ```
