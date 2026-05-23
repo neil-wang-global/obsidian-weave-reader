@@ -22,6 +22,17 @@
 
 上手很轻：把 EPUB 放进 Vault，从书架打开，选中文字即可摘录。摘录会带着回到原书的位置信息；你改笔记、删摘录或换颜色，书里的高亮也会跟着变。更完整的五条工作流（自动摘录、Canvas、制卡、回链、增量阅读）见下方 [摘录笔记工作流](#摘录笔记工作流) 图示——按自己的习惯选一条路走即可。
 
+## 核心能力
+
+- **支持平台**：桌面端（Windows、macOS、Linux）与移动端（iOS、Android）
+- **阅读格式**：Vault 内 EPUB、MOBI、AZW3、FB2、FBZ（`fb2.zip`）、CBZ、TXT 等（名称含 EPUB，但不仅限于 EPUB）
+- **摘录笔记**：五种高亮颜色，以及下划线、删除线、波浪线等样式标注；批注；自动或手动写入 Markdown / Canvas / Weave 牌组；正文回显；笔记删改、改色后书中高亮同步更新
+- **双向溯源与定位**：书籍深链接锚点；笔记跳回原文段落；阅读器内点击高亮反查来源笔记 / Canvas / 牌组
+- **段落阅读模式**：单段沉浸阅读、段内翻页与跨段导航
+- **其它**：书架与目录、分页/连续滚动、版式主题；阅读进度与剩余时间估算；增量阅读月历排期；脚注浮窗；书签、章节导出、截图、Canvas 绑定；AI 入口
+
+各能力在 [基础体验与高级支持](#基础体验与高级支持) 中的划分见下表。
+
 最低 Obsidian 版本：**1.7.0**
 
 ## 摘录笔记工作流
@@ -34,40 +45,24 @@
 
 ### 图 1 · 五条工作流怎么选（按目标分流）
 
-中心是「在 Obsidian 内读书」；向外是你可能走的五条路径，以及是否需要**高级版**或 **Weave**。
+中心是「在 Obsidian 内读书」；向外是按目标选择的五条典型路径。
 
 ```mermaid
 flowchart TB
   READ(["在 Obsidian 内阅读<br/>Weave EPUB Reader"])
 
-  READ --> A["A 自动 Markdown 摘录<br/>记到哪 · 免费"]
-  READ --> B["B Canvas 视觉整理<br/>画结构 · 高级"]
-  READ --> C["C 记忆回顾<br/>制卡复习 · 需 Weave"]
+  READ --> A["A 自动 Markdown 摘录<br/>记到哪"]
+  READ --> B["B Canvas 视觉整理<br/>画结构"]
+  READ --> C["C 记忆回顾<br/>制卡复习"]
   READ --> D["D 回链复盘<br/>笔记 ↔ 原书"]
-  READ --> E["E 增量阅读<br/>何时读哪章 · 需 Weave"]
+  READ --> E["E 增量阅读<br/>何时读哪章"]
 
   A --> LOOP["汇入核心闭环<br/>读→记→显→回"]
   B --> LOOP
   C --> LOOP
   D --> LOOP
   E --> LOOP
-
-  D --> D1["免费：正文回显 + 笔记跳回书中"]
-  D --> D2["高级：书中高亮反查笔记"]
-
-  style A fill:#e8f5e9,stroke:#2e7d32
-  style D1 fill:#e8f5e9,stroke:#2e7d32
-  style B fill:#fff3e0,stroke:#ef6c00
-  style D2 fill:#fff3e0,stroke:#ef6c00
-  style C fill:#e3f2fd,stroke:#1565c0
-  style E fill:#e3f2fd,stroke:#1565c0
 ```
-
-| 图例 | 含义 |
-|------|------|
-| 绿色路径 | 免费版即可起步 |
-| 橙色路径 | 需阅读器**高级版**（或继承 Weave 授权） |
-| 蓝色路径 | 需安装并启用 **Weave** 主插件 |
 
 ### 图 2 · 增量阅读子流程（工作流 E）
 
@@ -88,7 +83,7 @@ flowchart LR
 
 ### 五条典型工作流
 
-#### A. 自动 Markdown 摘录（最常用，免费核心）
+#### A. 自动 Markdown 摘录（最常用）
 
 适合「边读边记、笔记就是主战场」：
 
@@ -99,7 +94,7 @@ flowchart LR
 
 详见 [自动化摘录流程](./docs/user/zh-CN/03-auto-excerpt-workflow.md)。
 
-#### B. Canvas 视觉整理（高级）
+#### B. Canvas 视觉整理
 
 适合「做专题、画结构、理清论点关系」：
 
@@ -107,7 +102,7 @@ flowchart LR
 2. 开启自动模式后，摘录可**自动写入 Canvas 新节点**（可调整节点排布方向）。
 3. 在 Canvas 里拖拽、连线、分组；阅读器识别绑定 Canvas 中的摘录并**回显到正文**。
 
-#### C. 记忆回顾（需安装 Weave）
+#### C. 记忆回顾
 
 适合「摘录之后要复习、要间隔重复」：
 
@@ -115,19 +110,17 @@ flowchart LR
 2. 保存到 `.wdeck` 等牌组文件后，阅读器从牌组数据**回显高亮**。
 3. 在 Weave 记忆模块中按牌组规则做复习；需要时仍可回到书中原文。
 
-#### D. 回链复盘（免费回显 + 高级双向溯源）
+#### D. 回链复盘
 
 适合「先摘录、后复习、再回原文」：
 
-1. 在 Markdown / Canvas / 牌组笔记里查看历史摘录；打开书时正文侧已有**回显高亮**（免费）。
+1. 在 Markdown / Canvas / 牌组笔记里查看历史摘录；打开书时正文侧已有**回显高亮**。
 2. 点击笔记中的书籍深链接 → 跳回**原文段落**。
-3. **高级版**：在阅读器里点击某条高亮 → **一键定位到来源笔记**，完成「笔记 ↔ 原书」双向溯源。
+3. 在阅读器里点击某条高亮 → **一键定位到来源笔记**，完成「笔记 ↔ 原书」双向溯源。
 
-#### E. 增量阅读：多书交错与深度精读（需安装 Weave）
+#### E. 增量阅读：多书交错与深度精读
 
 适合「**不想一次读完一本**、而是多本书按节奏交错推进，并在月历里看见整体阅读计划」：
-
-> 阅读器提供**增量阅读入口**（不单独占用阅读器高级许可）；**调度、月历视图与任务队列**由 **Weave** 的增量阅读模块提供，需安装并启用 Weave。
 
 1. **把当前章节加入增量阅读**：在阅读器侧边栏 **目录** 中，对某一章使用 **「添加到增量阅读」**（可选择一个增量阅读专题），将该章纳入增量阅读任务。
 2. **进入月历视图统一调度**：章节会出现在 Weave **增量阅读月历视图** 中，与来自其他书籍、其他章节的阅读点一起排期——实现 **多本书的交错阅读**，而不是在书架里同时开很多本却都读不深。
@@ -143,51 +136,37 @@ flowchart LR
 - **少一次上下文切换**：不必为了记一句而离开 Obsidian。
 - **摘录可沉淀、可检索**：内容在 Vault 的 Markdown / Canvas / 牌组里，而不是散落在剪贴板历史里。
 - **复习时原文仍在场**：笔记是索引，书是现场；两者通过深链接与正文回显连在一起。
-- **多端一致**：书与笔记都在 Vault 里，随 Obsidian 同步策略走；手机读、桌面整理可以同一条链路（部分阅读进度等高级能力见上表）。
+- **多端一致**：书与笔记都在 Vault 里，随 Obsidian 同步策略走；手机读、桌面整理可以同一条链路。
 - **长书与多书有节奏**：章节可进入增量阅读月历，按调度交错阅读，而不是靠意志力硬啃单本。
 
 更完整的操作说明见 [用户手册 · 产品介绍与工作流](./docs/user/zh-CN/00-introduction.md)、[联动与扩展 · 增量阅读](./docs/user/zh-CN/06-integrations.md#weave-主插件可选)。
 
-## 核心能力
+## 基础体验与高级支持
 
-- **全平台**：桌面端（Windows、macOS、Linux）与移动端（iOS、Android）一致体验
-- **多格式阅读**：Vault 内 **EPUB**（免费）；MOBI、AZW3、FB2、FBZ（`fb2.zip`）、CBZ、TXT 等（**高级版**或继承 Weave 授权）。插件名称含 EPUB，但不仅限于 EPUB
-- **书架与阅读**：导入图书、章节目录、分页/连续滚动、字体与主题等版式设置
-- **段落阅读模式**（高级版）：单段沉浸阅读、段内翻页与跨段导航
-- **摘录、高亮与批注**：选区标注与批注；插入 Markdown / 复制 / 写入 Canvas（Canvas 写入属高级能力）
-- **双向笔记数据同步**：笔记侧删除、改色、改类型后，正文高亮与回显自动更新（通常数秒内）
-- **正文回显**：汇总 Markdown、Canvas、Weave 牌组中的摘录，在书中显示高亮
-- **摘录为 Weave 记忆卡片**（需 Weave）：选区制卡，牌组摘录同样回显到书中
-- **深链接与双向溯源**（溯源属高级版）：从笔记跳回书中；阅读器内点击高亮反查来源笔记 / Canvas / 牌组
-- **当前章节加入增量阅读专题**（需 Weave）：目录「添加到增量阅读」，阅读点/续读点配合 Weave 月历调度
-- **脚注浮窗预览**（高级版）
-- **自动记录阅读位置**（高级版）：阅读进度持久化、书架进度、最后阅读点
-- **预计剩余阅读时间**（高级版）：按阅读节奏估算全书/本章剩余时长
-- **扩展**：书签、章节导出、截图、Canvas 绑定；AI 入口
+| 能力 | 基础体验 | 高级支持 |
+|------|:--------:|:--------:|
+| **全平台**阅读（桌面端与移动端） | ✅ | ✅ |
+| 阅读 **EPUB**，目录跳转、翻页/滚动、版式与主题 | ✅ | ✅ |
+| 阅读 **MOBI / AZW3 / FB2 / FBZ / CBZ / TXT** | 🔒 | ✅ |
+| **五种高亮色**、批注、摘录与**正文回显** | ✅ | ✅ |
+| **下划线 / 删除线 / 波浪线**等样式标注 | 🔒 | ✅ |
+| **双向溯源**（锚点跳转、笔记 ↔ 原书定位显示） | 🔒 | ✅ |
+| **段落阅读模式**、参考阅读点 | 🔒 | ✅ |
+| **阅读进度**持久化、书架进度、最后阅读点、剩余阅读时间 | 🔒 | ✅ |
+| **Canvas** 绑定与自动写入节点 | 🔒 | ✅ |
+| 当前页书签 | ✅ | ✅ |
+| 脚注浮窗预览、导出当前章节为 Markdown | 🔒 | ✅ |
 
-## 免费版与高级版
+> 图例：✅ 已包含 · 🔒 需启用高级支持
 
-| 能力 | 免费 | 高级 |
-|------|:----:|:----:|
-| 阅读 **EPUB**、目录跳转、翻页/滚动、版式与主题 | ✅ | — |
-| 阅读 **MOBI / AZW3 / FB2 / FBZ / CBZ / TXT** | — | ✅ |
-| 当前页书签 | ✅ | — |
-| 基础高亮、批注、摘录与**正文回显** | ✅ | — |
-| **阅读进度**持久化、自动保存、书架进度、最后阅读点 | — | ✅ |
-| 段落阅读模式、参考阅读点 | — | ✅ |
-| 下划线/删除线/波浪线等样式摘录 | — | ✅ |
-| **Canvas** 绑定与自动写入节点 | — | ✅ |
-| **双向溯源**（阅读器 ↔ 笔记/Canvas/牌组） | — | ✅ |
-| 脚注浮窗预览、导出当前章节为 Markdown | — | ✅ |
+- **启用高级支持**：在阅读器设置中使用 EPUB 独立激活码；若已安装并激活 **Weave 主插件**，可继承授权而无需重复输入。
+- **制卡 / 增量阅读 / AI**：不单独占用阅读器高级支持许可，但需安装 Weave；AI 另需自行配置 API Key。
 
-- **激活**：在阅读器设置中使用 EPUB 独立激活码；若已安装并激活 **Weave 主插件**，可继承授权而无需重复输入。
-- **制卡 / 增量阅读 / AI**：不单独占用阅读器高级许可，但需安装 Weave；AI 另需自行配置 API Key。
-
-完整分层以 [功能对照表](./docs/user/zh-CN/00-feature-comparison.md) 为准；激活步骤见 [高级版与激活](./docs/user/zh-CN/08-premium-and-activation.md)，条款见 [PREMIUM_TERMS.md](./PREMIUM_TERMS.md)。
+完整对照以 [功能对照表](./docs/user/zh-CN/00-feature-comparison.md) 为准；激活步骤见 [高级版与激活](./docs/user/zh-CN/08-premium-and-activation.md)，条款见 [PREMIUM_TERMS.md](./PREMIUM_TERMS.md)。
 
 ## 安装
 
-### 方式一：社区插件（上架后推荐）
+### 方式一：社区插件（推荐）
 
 1. 打开 **设置 → 社区插件 → 浏览**
 2. 搜索 **Weave EPUB Reader**，安装并启用
@@ -218,7 +197,7 @@ flowchart LR
 ## 隐私与网络
 
 - 阅读、渲染、摘录与回链等**默认在本地完成**，不会主动上传 Vault 内容。
-- **高级版激活**可能访问许可证服务（激活码、邮箱、设备指纹摘要等），详见 [PRIVACY.md](./PRIVACY.md)。
+- **高级支持激活**可能访问许可证服务（激活码、邮箱、设备指纹摘要等），详见 [PRIVACY.md](./PRIVACY.md)。
 - **AI 功能**会调用你自行配置的第三方服务。
 
 ## 常见问题
@@ -227,13 +206,29 @@ flowchart LR
 
 确认摘录由本插件生成、位于 Markdown / Canvas / Weave 牌组文件中，且打开的是**同一本书**。来源文件刚修改时，稍等片刻会自动刷新。
 
+### 与 Weave 的关系？
+
+**Weave EPUB Reader 可独立使用**：不安装 [Weave](https://github.com/zhuzhige123/anki-obsidian-plugin) 主插件，也能在 Obsidian 里阅读 EPUB、管理书架，并完成基础摘录与正文回显。安装 Weave 后，可额外衔接制卡复习、增量阅读月历、AI 菜单等能力，并可继承 Weave 授权以启用阅读器高级支持。二者是**可选联动**，不是硬性依赖。
+
+### 摘录笔记能否全平台同步？
+
+**支持。** 摘录落在 Vault 内的 Markdown、Canvas、牌组等文件中，会随你使用的 Obsidian 同步方式（官方 Sync、iCloud、网盘同步 Vault 等）在桌面端与移动端之间保持一致。建议同步 Vault 内容；阅读器缓存等插件目录数据通常无需跨设备同步（见上文 [数据与同步](#数据与同步)）。
+
+### 是否支持导出笔记？
+
+**支持。** 摘录与高亮相关数据保存在你的库内，可在 Obsidian 中直接查看、编辑与导出 Markdown；阅读器也提供章节导出等能力。**数据默认完全本地化**，不会主动上传你的 Vault 内容。
+
+### 为何提供高级付费？
+
+高级支持用于**支持持续开发**——让开发者能长期投入、打磨阅读与摘录细节。**基础体验免费**，已覆盖日常阅读、五色高亮、批注、摘录与正文回显等核心能力，上手体验完整；若你需要多格式、双向溯源、段落阅读模式等进阶能力，再按需启用高级支持即可。
+
+### 是订阅还是买断？
+
+阅读器高级支持采用**买断制**（一次激活，长期使用，具体以 [高级支持条款](./PREMIUM_TERMS.md) 为准），而非按月订阅。
+
 ### 非 EPUB 格式打不开？
 
-MOBI、AZW3、FB2 等格式需**高级版**。免费版可直接阅读 EPUB。
-
-### 是否必须安装 Weave？
-
-不必。独立即可阅读 EPUB 并使用基础摘录。制卡、增量阅读、AI 菜单需要 Weave。
+各格式能力划分见上文 [基础体验与高级支持](#基础体验与高级支持)。
 
 ### 插件文件夹名称？
 
@@ -242,11 +237,11 @@ MOBI、AZW3、FB2 等格式需**高级版**。免费版可直接阅读 EPUB。
 ## 更多文档
 
 - [用户手册（简体中文）](./docs/user/zh-CN/README.md)
-- [隐私说明](./PRIVACY.md) · [高级版说明](./PREMIUM_TERMS.md) · [支持](./SUPPORT.md) · [安全](./SECURITY.md)
+- [隐私说明](./PRIVACY.md) · [高级支持条款](./PREMIUM_TERMS.md) · [支持](./SUPPORT.md) · [安全](./SECURITY.md)
 
 ## 许可证与作者
 
-源码基于 [GPL-3.0-or-later](LICENSE) 发布。基础功能免费、高级功能付费属于产品分层，不改变 GPL 对已发布源码所赋予的权利。
+源码基于 [GPL-3.0-or-later](LICENSE) 发布。
 
 - Author: Rabbit (zhuzhige)
 - GitHub: https://github.com/zhuzhige123
@@ -263,6 +258,17 @@ It fits readers who capture sentences into Markdown as they go; researchers who 
 
 Getting started is light: put an EPUB in your vault, open it from the bookshelf, select text, and excerpt. Each capture keeps a link back to the same passage in the book; when you edit, delete, or recolor notes, highlights in the text update to match. Five fuller paths—auto excerpts, Canvas, cards, backlinks, incremental reading—are diagrammed in [Excerpt and note workflows](#excerpt-and-note-workflows) below; follow the one that matches your habit.
 
+## Core capabilities
+
+- **Platforms**: Desktop (Windows, macOS, Linux) and mobile (iOS, Android)
+- **Formats**: EPUB, MOBI, AZW3, FB2, FBZ (`fb2.zip`), CBZ, TXT, and more in the vault (despite the name, the plugin is not EPUB-only)
+- **Excerpts and notes**: Five highlight colors plus underline, strikethrough, and wavy underline; annotations; auto or manual capture to Markdown, Canvas, or Weave decks; in-body rendering; highlights refresh when notes change
+- **Two-way tracing and anchors**: Book deep links; jump from notes to the original passage; open the source note, Canvas, or deck from a highlight in the reader
+- **Paragraph reading mode**: Immersive single-paragraph view with in-paragraph paging and cross-paragraph navigation
+- **More**: Bookshelf and TOC, paginated or continuous scrolling, typography and themes; reading progress and remaining-time estimates; incremental reading calendar; footnote hover preview; bookmarks, chapter export, screenshots, Canvas binding; AI entry points
+
+See [Essential experience and Premium support](#essential-experience-and-premium-support) for how capabilities are grouped.
+
 Minimum Obsidian version: **1.7.0**
 
 ## Excerpt and note workflows
@@ -275,40 +281,24 @@ The diagrams below summarize the structure (Mermaid renders on **GitHub** and in
 
 ### Diagram 1 · Pick a workflow (goal-based map)
 
-Reading in Obsidian is the hub; each branch is a typical path and its **Premium** / **Weave** requirements.
+Reading in Obsidian is the hub; each branch is a typical path you can follow by goal.
 
 ```mermaid
 flowchart TB
   READ(["Read inside Obsidian<br/>Weave EPUB Reader"])
 
-  READ --> A["A Auto Markdown excerpts<br/>where to capture · Free"]
-  READ --> B["B Canvas mapping<br/>structure · Premium"]
-  READ --> C["C Memory review<br/>cards · Weave"]
+  READ --> A["A Auto Markdown excerpts<br/>where to capture"]
+  READ --> B["B Canvas mapping<br/>structure"]
+  READ --> C["C Memory review<br/>cards"]
   READ --> D["D Backlink review<br/>notes ↔ book"]
-  READ --> E["E Incremental reading<br/>when to read · Weave"]
+  READ --> E["E Incremental reading<br/>when to read"]
 
   A --> LOOP["Join the core loop<br/>read→capture→render→return"]
   B --> LOOP
   C --> LOOP
   D --> LOOP
   E --> LOOP
-
-  D --> D1["Free: in-body rendering + note→book"]
-  D --> D2["Premium: highlight→source note"]
-
-  style A fill:#e8f5e9,stroke:#2e7d32
-  style D1 fill:#e8f5e9,stroke:#2e7d32
-  style B fill:#fff3e0,stroke:#ef6c00
-  style D2 fill:#fff3e0,stroke:#ef6c00
-  style C fill:#e3f2fd,stroke:#1565c0
-  style E fill:#e3f2fd,stroke:#1565c0
 ```
-
-| Legend | Meaning |
-|--------|---------|
-| Green paths | Usable on the **free** tier |
-| Orange paths | Requires reader **Premium** (or inherited Weave license) |
-| Blue paths | Requires the **Weave** main plugin |
 
 ### Diagram 2 · Incremental reading subflow (workflow E)
 
@@ -329,7 +319,7 @@ flowchart LR
 
 ### Five typical workflows
 
-#### A. Auto Markdown excerpts (most common, free core)
+#### A. Auto Markdown excerpts (most common)
 
 Best when **notes are your primary workspace while reading**:
 
@@ -340,7 +330,7 @@ Best when **notes are your primary workspace while reading**:
 
 See [automated excerpt workflow (zh-CN)](./docs/user/zh-CN/03-auto-excerpt-workflow.md).
 
-#### B. Canvas visual mapping (Premium)
+#### B. Canvas visual mapping
 
 Best for **topics, structure, and relationships**:
 
@@ -348,7 +338,7 @@ Best for **topics, structure, and relationships**:
 2. With Auto mode on, excerpts can **auto-create Canvas nodes** (layout direction is configurable).
 3. Arrange nodes in the Canvas; the reader **renders related excerpts back into the book**.
 
-#### C. Memory review (requires Weave)
+#### C. Memory review
 
 Best when excerpts should enter **spaced repetition**:
 
@@ -356,19 +346,17 @@ Best when excerpts should enter **spaced repetition**:
 2. Save to `.wdeck` or other deck files; the reader **renders highlights from deck data**.
 3. Review in Weave; jump back to the book when you need the original passage.
 
-#### D. Backlink review (free in-body rendering + Premium two-way tracing)
+#### D. Backlink review
 
 Best for **excerpt first, review later, return to source**:
 
-1. Review past excerpts in Markdown / Canvas / decks; reopen the book to see **highlights in the body** (free).
+1. Review past excerpts in Markdown / Canvas / decks; reopen the book to see **highlights in the body**.
 2. Click a book deep link in a note → jump to the **original passage**.
-3. **Premium**: click a highlight in the reader → **open the source note** (two-way tracing).
+3. Click a highlight in the reader → **open the source note** (two-way tracing).
 
-#### E. Incremental reading: interleaved multi-book deep reading (requires Weave)
+#### E. Incremental reading: interleaved multi-book deep reading
 
 Best when you want **several books to advance on a rhythm** instead of reading one cover-to-cover in a single sprint:
-
-> The reader exposes **incremental reading entry points** (no separate EPUB Premium slot for the entry itself). **Scheduling, the month calendar view, and task queues** come from Weave’s incremental reading module—you need Weave installed and enabled.
 
 1. **Add the current chapter to incremental reading**: In the reader sidebar **table of contents**, use **Add to incremental reading** on a chapter (optionally pick an incremental-reading topic) to enqueue that chapter.
 2. **Schedule in the month calendar**: The chapter appears in Weave’s **incremental reading month calendar** alongside reading points from other books and chapters—**interleaved multi-book reading** instead of leaving many books half-open on the shelf.
@@ -384,51 +372,37 @@ This complements workflow A: **A is where captures go; E is when each chapter ge
 - **Fewer context switches**—no leaving Obsidian to capture a sentence.
 - **Excerpts become durable vault knowledge**—searchable in Markdown, Canvas, or decks—not clipboard history.
 - **Review keeps the source in view**—notes index what you read; the book shows the live context via deep links and rendering.
-- **Same workflow across devices**—books and notes live in the vault and follow your Obsidian sync setup (some progress features are Premium; see table below).
+- **Same workflow across devices**—books and notes live in the vault and follow your Obsidian sync setup.
 - **Rhythm for long or multiple books**—chapters enter the incremental reading calendar for scheduled, interleaved progress.
 
 More detail: [introduction and workflows (zh-CN)](./docs/user/zh-CN/00-introduction.md), [integrations · incremental reading (zh-CN)](./docs/user/zh-CN/06-integrations.md#weave-主插件可选).
 
-## Core capabilities
+## Essential experience and Premium support
 
-- **All platforms**: Desktop (Windows, macOS, Linux) and mobile (iOS, Android) with a consistent workflow
-- **Multi-format reading**: **EPUB** in the vault (free); MOBI, AZW3, FB2, FBZ (`fb2.zip`), CBZ, TXT, and more (**Premium** or inherited Weave license). Despite the name, the plugin is not EPUB-only
-- **Bookshelf and reading**: Import books, chapter TOC, paginated or continuous scrolling, typography and themes
-- **Paragraph reading mode** (Premium): Immersive single-paragraph view with in-paragraph paging and cross-paragraph navigation
-- **Excerpts, highlights, and annotations**: Select and annotate text; insert into Markdown, copy, or send to Canvas (Canvas writing is Premium)
-- **Two-way note sync**: Deletes, color changes, and type changes in notes update in-body highlights and rendering (usually within a few seconds)
-- **Live rendering**: Aggregate excerpts from Markdown, Canvas, and Weave decks and show them in the book
-- **Excerpts as Weave memory cards** (requires Weave): Make cards from selections; deck excerpts also render in the book
-- **Deep links and two-way tracing** (tracing is Premium): Jump from notes into the book; click a highlight in the reader to open the source note / Canvas / deck
-- **Add current chapter to incremental reading** (requires Weave): TOC “add to incremental reading”, with reading/resume points scheduled in Weave’s month calendar
-- **Footnote hover preview** (Premium)
-- **Automatic reading position** (Premium): Persisted progress, bookshelf progress, and last location
-- **Estimated remaining reading time** (Premium): Pace-based estimates for the book and current chapter
-- **Extensions**: Bookmarks, chapter export, screenshots, Canvas binding; AI entry points
+| Capability | Essential experience | Premium support |
+|------------|:--------------------:|:---------------:|
+| **All platforms** (desktop and mobile) | ✅ | ✅ |
+| Read **EPUB**, TOC, paginated/scroll modes, typography and themes | ✅ | ✅ |
+| Read **MOBI / AZW3 / FB2 / FBZ / CBZ / TXT** | 🔒 | ✅ |
+| **Five highlight colors**, annotations, excerpts, and **in-body rendering** | ✅ | ✅ |
+| **Underline / strikethrough / wavy underline** styling | 🔒 | ✅ |
+| **Two-way tracing** (anchor jumps, reader ↔ notes / Canvas / decks) | 🔒 | ✅ |
+| **Paragraph reading mode**, reference reading points | 🔒 | ✅ |
+| **Reading progress**, bookshelf progress, last location, remaining-time estimates | 🔒 | ✅ |
+| **Canvas** binding and automatic node creation | 🔒 | ✅ |
+| Current-page bookmarks | ✅ | ✅ |
+| Footnote hover preview; export current chapter to Markdown | 🔒 | ✅ |
 
-## Free and Premium
+> Legend: ✅ included · 🔒 requires Premium support
 
-| Capability | Free | Premium |
-|------------|:----:|:-------:|
-| Read **EPUB**, TOC, paginated/scroll modes, typography and themes | ✅ | — |
-| Read **MOBI / AZW3 / FB2 / FBZ / CBZ / TXT** | — | ✅ |
-| Current-page bookmarks | ✅ | — |
-| Basic highlights, annotations, excerpts, and **in-body rendering** | ✅ | — |
-| **Reading progress** persistence, auto-save, bookshelf progress, last location | — | ✅ |
-| Paragraph reading mode, reference reading points | — | ✅ |
-| Underline / strikethrough / wavy styled excerpts | — | ✅ |
-| **Canvas** binding and auto node creation | — | ✅ |
-| **Two-way source navigation** (reader ↔ notes / Canvas / decks) | — | ✅ |
-| Footnote hover preview, export current chapter to Markdown | — | ✅ |
-
-- **Activation**: EPUB-only license in reader settings, or inherit from an activated **Weave** main plugin.
-- **Card making / incremental reading / AI**: No separate EPUB Premium slot, but require Weave; AI also needs your own API key.
+- **Enable Premium support**: EPUB-only license in reader settings, or inherit from an activated **Weave** main plugin.
+- **Card making / incremental reading / AI**: No separate EPUB Premium-support license slot, but require Weave; AI also needs your own API key.
 
 Authoritative breakdown: [feature comparison (zh-CN)](./docs/user/zh-CN/00-feature-comparison.md). Activation: [premium guide (zh-CN)](./docs/user/zh-CN/08-premium-and-activation.md). Terms: [PREMIUM_TERMS.md](./PREMIUM_TERMS.md).
 
 ## Installation
 
-### Option 1: Community plugins (recommended when listed)
+### Option 1: Community plugins (recommended)
 
 1. Open **Settings → Community plugins → Browse**
 2. Search for **Weave EPUB Reader**, install, and enable
@@ -459,7 +433,7 @@ Authoritative breakdown: [feature comparison (zh-CN)](./docs/user/zh-CN/00-featu
 ## Privacy and network
 
 - Reading, rendering, excerpting, and backlinks are **local by default**; vault content is not uploaded proactively.
-- **Premium activation** may contact the license service (activation code, email, device fingerprint summary, etc.). See [PRIVACY.md](./PRIVACY.md).
+- **Premium support activation** may contact the license service (activation code, email, device fingerprint summary, etc.). See [PRIVACY.md](./PRIVACY.md).
 - **AI features** call the third-party services you configure.
 
 ## FAQ
@@ -468,13 +442,29 @@ Authoritative breakdown: [feature comparison (zh-CN)](./docs/user/zh-CN/00-featu
 
 Confirm the excerpt was created by this plugin, lives in Markdown / Canvas / Weave deck data, and you opened the **same book**. Recent edits refresh automatically after a short delay.
 
+### How does this relate to Weave?
+
+**Weave EPUB Reader works on its own**: without the [Weave](https://github.com/zhuzhige123/anki-obsidian-plugin) main plugin, you can still read EPUBs, use the bookshelf, and capture excerpts with in-body rendering. With Weave installed, you can also connect spaced-repetition cards, incremental reading calendar, AI actions, and inherit Weave licensing for Premium support. The two are **optional companions**, not a hard dependency.
+
+### Can excerpts and notes sync across platforms?
+
+**Yes.** Captures live in Markdown, Canvas, deck files, and other vault content, so they follow whatever Obsidian sync you already use (Obsidian Sync, iCloud, cloud-synced vaults, etc.) across desktop and mobile. Sync vault content; reader cache under the plugin folder usually does not need cross-device sync (see [Data and sync](#data-and-sync) above).
+
+### Can I export my notes?
+
+**Yes.** Excerpt and highlight data stays in your vault—you can read, edit, and export Markdown in Obsidian, and the reader offers chapter export and related tools. **Data is local by default**; your vault is not uploaded proactively.
+
+### Why is Premium support paid?
+
+Premium support **funds ongoing development** so the reader and excerpt workflow can keep improving. The **essential experience is free**—daily reading, five highlight colors, annotations, excerpts, and in-body rendering are fully usable without paying. Enable Premium support only when you want formats, two-way tracing, paragraph reading mode, and other advanced capabilities.
+
+### Subscription or one-time purchase?
+
+Premium support is **buy-once** (activate once, use long-term; see [Premium support terms](./PREMIUM_TERMS.md)), not a monthly subscription.
+
 ### Cannot open MOBI / AZW3 / FB2?
 
-Non-EPUB formats require **Premium**. EPUB works on the free tier.
-
-### Is Weave required?
-
-No for core EPUB reading and basic excerpts. Card making, incremental reading, and AI menus need Weave.
+See [Essential experience and Premium support](#essential-experience-and-premium-support) above.
 
 ### Plugin folder name?
 
@@ -483,11 +473,11 @@ Plugin ID: `weave-epub-reader` → `.obsidian/plugins/weave-epub-reader/`
 ## More documentation
 
 - [User manual (Simplified Chinese)](./docs/user/zh-CN/README.md)
-- [Privacy](./PRIVACY.md) · [Premium terms](./PREMIUM_TERMS.md) · [Support](./SUPPORT.md) · [Security](./SECURITY.md)
+- [Privacy](./PRIVACY.md) · [Premium support terms](./PREMIUM_TERMS.md) · [Support](./SUPPORT.md) · [Security](./SECURITY.md)
 
 ## License and author
 
-Source code is released under [GPL-3.0-or-later](LICENSE). Free core plus paid Premium is a product tier; it does not remove GPL rights for published source.
+Source code is released under [GPL-3.0-or-later](LICENSE).
 
 - Author: Rabbit (zhuzhige)
 - GitHub: https://github.com/zhuzhige123
