@@ -231,6 +231,7 @@ legacy-weave-archive/
 scratch/
 output/
 .windsurf/
+.cursor/
 .playwright-cli/
 开发规则.zh-CN.md
 版本更新文档/
@@ -280,6 +281,8 @@ scripts/*
 !scripts/check-mojibake.cjs
 !scripts/verify-no-dynamic-script.cjs
 !scripts/set-github-release-title.cjs
+!scripts/check-bundle-footprint.cjs
+!scripts/find-unreachable-src.cjs
 
 # 测试文件
 test/
