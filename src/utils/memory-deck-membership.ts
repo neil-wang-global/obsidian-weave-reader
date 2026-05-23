@@ -1,4 +1,4 @@
-import type { Deck } from "../data/types";
+import type { Deck } from "../data/epub-bridge-types";
 
 export type DeckIdentifierLookup = Pick<Deck, "id" | "name" | "purpose">;
 

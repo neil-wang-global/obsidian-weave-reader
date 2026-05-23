@@ -2,7 +2,7 @@
  * ViewCardModal相关类型定义
  */
 
-import type { Rating } from "../data/types";
+import type { Rating } from "../data/epub-bridge-types";
 
 /**
  * 标签页ID类型

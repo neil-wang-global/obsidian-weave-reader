@@ -4,7 +4,7 @@ import { logger } from "../utils/logger";
  * 提供类型安全的事件通信机制
  */
 
-import type { Card } from "../data/types";
+import type { Card } from "../data/epub-bridge-types";
 
 // TODO: 迁移到新模板系统 (newCardParsingTypes)
 type FieldTemplate = Record<string, unknown>;

@@ -1,5 +1,5 @@
 import { normalizePath } from "obsidian";
-import type { Card } from "../data/types";
+import type { Card } from "../data/epub-bridge-types";
 
 export type WDeckPersistenceCardLike = Pick<Card, "uuid" | "deckId" | "sourceFile" | "customFields">;
 

@@ -5,8 +5,7 @@
    */
   
   import { LEGACY_WEAVE_PRODUCT_IDS } from '../../../config/plugin-runtime';
-  import type { EffectiveLicenseState } from '../../../types/license';
-  import type { LicenseInfo } from '../types/settings-types';
+  import type { EffectiveLicenseState, LicenseInfo } from '../../../types/license';
   import { tr } from '../../../utils/i18n';
   import {
     formatLicenseDeviceStats,

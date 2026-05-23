@@ -1,5 +1,5 @@
 import type { App } from "obsidian";
-import type { ApiResponse, Card, Deck } from "../../data/types";
+import type { ApiResponse, Card, Deck } from "../../data/epub-bridge-types";
 import type { AIConfig } from "../../types/plugin-settings";
 
 export interface AIConfigHost {

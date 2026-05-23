@@ -1,7 +1,7 @@
 import type { App } from "obsidian";
 import { normalizePath } from "obsidian";
 import { emit as emitCardEditEvent, on as onCardEditEvent } from "../../events/CardEditEventBus";
-import type { Card } from "../../data/types";
+import type { Card } from "../../data/epub-bridge-types";
 import {
 	ensureWDeckPersistenceMeta,
 	readWDeckPersistenceSourcePath,

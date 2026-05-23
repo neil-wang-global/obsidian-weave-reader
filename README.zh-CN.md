@@ -19,7 +19,7 @@ Weave EPUB Reader 是一款面向 Obsidian 的多格式电子书阅读器插件�
 
 ## 项目定位
 
-这个仓库是一个**独立的图书阅读器项目**，不是完整 Weave 主插件的总仓库文档。源码树已按阅读器边界裁剪，主插件的学习/制卡/看板等模块不会打进 `main.js`。旧版 IR 续读点迁移通过 `EpubIrResumePointAccess` 直接读写 Vault JSON，不再打包完整 incremental-reading 服务栈。
+这个仓库是一个**独立的图书阅读器项目**，不是完整 Weave 主插件的总仓库文档。源码树已按阅读器边界裁剪，主插件的学习/制卡/看板等模块不会打进 `main.js`。旧版 IR 续读点迁移通过 `EpubIrResumePointAccess` 直接读写 Vault JSON，不再打包完整 incremental-reading 服务栈。可运行 `npm run verify:plugin-scope` 校验仓库内跟踪文件是否仍在阅读器范围内。
 
 与主 **Weave** 插件的可选集成（AI 拆分菜单、许可证继承、`.wdeck` 高亮同步）仍保留为桥接能力，需在 Obsidian 中安装并启用 Weave。
 

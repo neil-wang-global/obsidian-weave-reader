@@ -19,7 +19,7 @@ Minimum supported Obsidian version: `1.7.0`
 
 ## Project Scope
 
-This repository is a **standalone book reader project**, not the documentation hub for the full Weave plugin ecosystem. The source tree is pruned to EPUB reader code paths; legacy Weave study/card/kanban modules are not shipped in `main.js`. Legacy IR resume-point migration reads and writes vault JSON directly (`EpubIrResumePointAccess`) instead of bundling the full incremental-reading service stack.
+This repository is a **standalone book reader project**, not the documentation hub for the full Weave plugin ecosystem. The source tree is pruned to EPUB reader code paths; legacy Weave study/card/kanban modules are not shipped in `main.js`. Legacy IR resume-point migration reads and writes vault JSON directly (`EpubIrResumePointAccess`) instead of bundling the full incremental-reading service stack. Run `npm run verify:plugin-scope` to ensure tracked sources stay within the reader boundary.
 
 Optional integrations with the main **Weave** plugin (AI split menu, license inheritance, `.wdeck` highlight sync) remain as bridges when Weave is installed.
 
