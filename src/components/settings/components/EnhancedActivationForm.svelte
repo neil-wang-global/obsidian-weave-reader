@@ -14,6 +14,7 @@
     isActivationCodeFormatValid
   } from '../constants/activation-constants';
   
+  import { sanitizeCloudLicenseUserMessage } from '../../../utils/activation-privacy';
   import { licenseManager, ActivationAttemptLimiter } from '../../../utils/licenseManager';
   import { PremiumFeatureGuard } from '../../../services/premium/PremiumFeatureGuard';
   import {
@@ -30,6 +31,10 @@
   import { showNotification } from '../../../utils/notifications';
   import { showObsidianConfirm } from '../../../utils/obsidian-confirm';
   import { tr } from '../../../utils/i18n';
+  import {
+    formatLicenseDeviceStats,
+    resolveLicenseDeviceStats,
+  } from '../../../utils/license-device-stats';
 
   // ==================== Props ====================
   
@@ -100,6 +105,8 @@
 
   let currentLicenseInfo = $derived(effectiveLicenseState.primaryLicense || plugin.settings?.license || null);
 
+  let deviceStats = $derived(resolveLicenseDeviceStats(currentLicenseInfo, plugin?.app));
+
   let isLicenseActive = $derived(effectiveLicenseState.isPremiumActive);
   let helpInputTips = $derived.by(() => [
     t('epub.settings.license.activation.help.inputTip1'),
@@ -166,7 +173,9 @@
     // 检查激活尝试限制
     const attemptCheck = await ActivationAttemptLimiter.canAttemptActivation();
     if (!attemptCheck.canAttempt) {
-      activationError = attemptCheck.error || t('epub.settings.license.activation.errors.attemptLimitExceeded');
+      activationError = sanitizeCloudLicenseUserMessage(
+        attemptCheck.error || t('epub.settings.license.activation.errors.attemptLimitExceeded')
+      );
       validationState = 'invalid';
       return;
     }
@@ -214,11 +223,16 @@
           onActivationSuccess(result.licenseInfo);
         }
         
-        // 显示成功消息
+        if (result.cloudInfo?.replacedOldDevice) {
+          showNotification(t('epub.settings.license.activation.deviceReplaced'), 'info');
+        }
+
         showSuccessNotification();
       } else {
         // 激活失败
-        activationError = result.error || t('epub.settings.license.activation.errors.failed');
+        activationError = sanitizeCloudLicenseUserMessage(
+          result.error || t('epub.settings.license.activation.errors.failed')
+        );
         validationState = 'invalid';
         
         // 调用错误回调
@@ -231,7 +245,9 @@
       }
     } catch (error) {
       // 未预期的错误
-      activationError = error instanceof Error ? error.message : t('epub.settings.license.activation.errors.unknown');
+      activationError = sanitizeCloudLicenseUserMessage(
+        error instanceof Error ? error.message : t('epub.settings.license.activation.errors.unknown')
+      );
       validationState = 'invalid';
       
       // 记录失败
@@ -398,6 +414,14 @@
           {#if currentLicenseInfo.boundEmail}
             <p class="success-details">
               {t('epub.settings.license.activation.boundEmail')}: {currentLicenseInfo.boundEmail}
+            </p>
+          {/if}
+          {#if deviceStats}
+            <p class="success-details">
+              {t('epub.settings.license.activation.activatedDevices', {
+                used: deviceStats.used,
+                max: deviceStats.max,
+              })}
             </p>
           {/if}
           

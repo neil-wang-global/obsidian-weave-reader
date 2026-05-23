@@ -19,6 +19,7 @@ export default defineConfig({
     globals: true,
     clearMocks: true,
     restoreMocks: true,
+    fileParallelism: false,
     setupFiles: ['./src/tests/setup.ts', './src/tests/vitest-setup.ts'],
     include: [
       'src/components/epub/**/*.test.ts',
@@ -26,14 +27,20 @@ export default defineConfig({
       'src/components/settings/**/*.test.ts',
       'src/views/**/*.test.ts',
       'src/services/epub/__tests__/**/*.{test,spec}.{js,ts}',
+      'src/services/navigation/__tests__/**/*.{test,spec}.{js,ts}',
       'src/utils/__tests__/source-path-matcher.epub-links.test.ts',
       'src/utils/__tests__/yaml-utils.epub-source.test.ts',
       'src/utils/__tests__/license-sync-bridge.test.ts',
       'src/utils/__tests__/license-state.test.ts',
+      'src/utils/__tests__/license-owner-email.test.ts',
+      'src/utils/__tests__/activation-privacy.test.ts',
       'src/utils/__tests__/plugin-license.test.ts',
+      'src/utils/__tests__/license-device-stats.test.ts',
+      'src/utils/__tests__/device-fingerprint.test.ts',
       'src/utils/__tests__/mobile-edit-viewport.test.ts',
       'src/utils/__tests__/mobile-floating-viewport.test.ts',
-      'src/utils/__tests__/mobile-reading-viewport-lock.test.ts'
+      'src/utils/__tests__/mobile-reading-viewport-lock.test.ts',
+      'src/utils/__tests__/epub-reader-keyboard-guards.test.ts'
     ],
     exclude: ['node_modules', 'dist'],
     coverage: {

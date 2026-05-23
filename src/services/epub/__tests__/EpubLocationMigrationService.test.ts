@@ -1,22 +1,17 @@
 import type { EpubReaderEngine } from '../reader-engine-types';
 import { EpubLocationMigrationService } from '../EpubLocationMigrationService';
 
-const getTasksByEpubMock = vi.fn();
-const updateEpubResumePointMock = vi.fn();
+const listResumePointsByEpubMock = vi.fn();
+const updateResumeCfiMock = vi.fn();
 
-vi.mock('../../incremental-reading/IREpubBookmarkTaskService', () => ({
-	IREpubBookmarkTaskService: class MockIREpubBookmarkTaskService {
-		getTasksByEpub(filePath: string) {
-			return getTasksByEpubMock(filePath);
+vi.mock('../epub-ir-resume-point-access', () => ({
+	EpubIrResumePointAccess: class MockEpubIrResumePointAccess {
+		listResumePointsByEpub(filePath: string) {
+			return listResumePointsByEpubMock(filePath);
 		}
 
-	},
-}));
-
-vi.mock('../../incremental-reading/IRPointWriteService', () => ({
-	IRPointWriteService: class MockIRPointWriteService {
-		updateEpubResumePoint(taskId: string, cfi: string) {
-			return updateEpubResumePointMock(taskId, cfi);
+		updateResumeCfi(pointId: string, cfi: string) {
+			return updateResumeCfiMock(pointId, cfi);
 		}
 	},
 }));
@@ -26,14 +21,15 @@ function createStorageServiceMock() {
 		loadProgress: vi.fn(),
 		saveProgress: vi.fn(),
 		flushPendingProgress: vi.fn(),
+		ensureSourceIdentity: vi.fn(),
 	} as any;
 }
 
 describe('EpubLocationMigrationService', () => {
 	beforeEach(() => {
-		getTasksByEpubMock.mockReset();
-		updateEpubResumePointMock.mockReset();
-		updateEpubResumePointMock.mockResolvedValue({ kind: 'epub' });
+		listResumePointsByEpubMock.mockReset();
+		updateResumeCfiMock.mockReset();
+		updateResumeCfiMock.mockResolvedValue(true);
 	});
 
 	it('migrates legacy progress, bookmarks, and IR resume points into readium locators', async () => {
@@ -57,9 +53,10 @@ describe('EpubLocationMigrationService', () => {
 			canonicalizeLocation,
 		} as Partial<EpubReaderEngine> as EpubReaderEngine;
 
-		getTasksByEpubMock.mockResolvedValue([
+		listResumePointsByEpubMock.mockResolvedValue([
 			{
 				id: 'task-1',
+				epubFilePath: 'Books/demo.epub',
 				resumeCfi: 'epubcfi(/6/6!/4/2/6:3)',
 			},
 		]);
@@ -77,8 +74,8 @@ describe('EpubLocationMigrationService', () => {
 			percent: 42,
 		});
 		expect(storageService.flushPendingProgress).toHaveBeenCalledTimes(1);
-		expect(getTasksByEpubMock).toHaveBeenCalledWith('Books/demo.epub');
-		expect(updateEpubResumePointMock).toHaveBeenCalledWith('task-1', 'readium:resume');
+		expect(listResumePointsByEpubMock).toHaveBeenCalledWith('Books/demo.epub');
+		expect(updateResumeCfiMock).toHaveBeenCalledWith('task-1', 'readium:resume');
 	});
 
 	it('skips migration when the reader engine does not expose a canonicalize hook', async () => {
@@ -93,6 +90,6 @@ describe('EpubLocationMigrationService', () => {
 			resumePointsMigrated: 0,
 		});
 		expect(storageService.loadProgress).not.toHaveBeenCalled();
-		expect(getTasksByEpubMock).not.toHaveBeenCalled();
+		expect(listResumePointsByEpubMock).not.toHaveBeenCalled();
 	});
 });

@@ -6,7 +6,11 @@ import { logger } from '../utils/logger';
  */
 
 import '@testing-library/jest-dom';
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 type TestWindow = Window &
   typeof globalThis & {

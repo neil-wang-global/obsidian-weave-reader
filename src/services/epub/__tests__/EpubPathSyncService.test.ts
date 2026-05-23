@@ -1,4 +1,4 @@
-import { rewriteEpubReferences } from '../EpubPathSyncService';
+import { rewriteEpubReferences } from '../epub-path-rewrite';
 
 vi.mock('../../config/paths', () => ({
   getV2PathsFromApp: () => ({
@@ -11,12 +11,6 @@ vi.mock('../../config/paths', () => ({
 vi.mock('../../utils/logger', () => ({
   logger: {
     debug: vi.fn(),
-  },
-}));
-
-vi.mock('../../services/incremental-reading/IREpubBookmarkTaskService', () => ({
-  IREpubBookmarkTaskService: class {
-    updateEpubFileReferences = vi.fn(async () => 0);
   },
 }));
 

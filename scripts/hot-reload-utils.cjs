@@ -86,6 +86,14 @@ function resolveVaultPath(processEnv = process.env) {
 	return processEnv.OBSIDIAN_VAULT_PATH?.trim() || readEnvValueFromDotEnv("OBSIDIAN_VAULT_PATH");
 }
 
+function resolveHotReloadPluginId(processEnv = process.env) {
+	return (
+		processEnv.OBSIDIAN_PLUGIN_ID?.trim() ||
+		readEnvValueFromDotEnv("OBSIDIAN_PLUGIN_ID") ||
+		"weave-epub-reader"
+	);
+}
+
 function resolvePluginDir(pluginId, processEnv = process.env) {
 	const vaultPath = resolveVaultPath(processEnv);
 	if (!vaultPath) {
@@ -324,6 +332,7 @@ module.exports = {
 	pruneManagedRuntimeFiles,
 	pruneManagedRuntimeDirectories,
 	readEnvValueFromDotEnv,
+	resolveHotReloadPluginId,
 	resolvePluginDir,
 	resolveVaultPath,
 	syncRuntimeFiles,

@@ -6,10 +6,7 @@ vi.mock("obsidian", async () => {
 	const actual = await vi.importActual<typeof import("../../../tests/mocks/obsidian")>(
 		"../../../tests/mocks/obsidian"
 	);
-	return {
-		...actual,
-		parseYaml: vi.fn(),
-	};
+	return actual;
 });
 
 vi.mock("../../../utils/plugin-access", () => ({

@@ -1,7 +1,6 @@
 import type { App } from "obsidian";
 import { logger } from "../../utils/logger";
-import { IREpubBookmarkTaskService } from "../incremental-reading/IREpubBookmarkTaskService";
-import { IRPointWriteService } from "../incremental-reading/IRPointWriteService";
+import { EpubIrResumePointAccess } from "./epub-ir-resume-point-access";
 import type { EpubStorageService } from "./EpubStorageService";
 import type { EpubReaderEngine } from "./reader-engine-types";
 
@@ -69,9 +68,8 @@ export class EpubLocationMigrationService {
 	}
 
 	private async migrateResumePoints(filePath: string): Promise<number> {
-		const taskService = new IREpubBookmarkTaskService(this.app);
-		const pointWriteService = new IRPointWriteService(this.app);
-		const tasks = await taskService.getTasksByEpub(filePath);
+		const resumeAccess = new EpubIrResumePointAccess(this.app);
+		const tasks = await resumeAccess.listResumePointsByEpub(filePath, this.storageService);
 		let migratedCount = 0;
 
 		for (const task of tasks) {
@@ -84,8 +82,7 @@ export class EpubLocationMigrationService {
 				continue;
 			}
 
-			const updated = await pointWriteService.updateEpubResumePoint(task.id, nextCfi);
-			if (updated) {
+			if (await resumeAccess.updateResumeCfi(task.id, nextCfi)) {
 				migratedCount += 1;
 			}
 		}

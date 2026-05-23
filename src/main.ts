@@ -17,6 +17,8 @@ import {
 	normalizeContinuousReadingPositionAutoSavePages,
 } from "./config/reading-position-auto-save";
 import { PremiumFeatureGuard } from "./services/premium/PremiumFeatureGuard";
+import { configureNavigationHub } from "./services/navigation/navigation-hub-access";
+import { getBookSessionManager } from "./services/epub/session/book-session-manager-access";
 import {
 	registerEpubHost,
 	resolveEpubHost,
@@ -61,6 +63,7 @@ import {
 	resolveEffectiveLicenseState,
 } from "./utils/license-state";
 import { registerLicenseSyncBridge } from "./utils/license-sync-bridge";
+import { licenseManager } from "./utils/licenseManager";
 import { logger } from "./utils/logger";
 import { initI18n, i18n, syncI18nWithObsidianLanguage } from "./utils/i18n";
 import type { AIConfig } from "./types/plugin-settings";
@@ -85,6 +88,7 @@ interface StandaloneEpubPluginSettings {
 	lastSelectedIRDeckId: string;
 	selectionQuickCreateLastFolder: string;
 	epubMarkdownExportLastFolder: string;
+	sourceNavigationOpenInNewTab: boolean;
 }
 
 const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
@@ -93,7 +97,7 @@ const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
 	allowInheritedLicenses: true,
 	enableDebugMode: false,
 	showPremiumFeaturesPreview: false,
-	bookshelfAutoViewByLocationEnabled: true,
+	bookshelfAutoViewByLocationEnabled: false,
 	bookshelfDisplayMode: DEFAULT_BOOKSHELF_DISPLAY_MODE,
 	bookmarkFolder: DEFAULT_EPUB_BOOKMARK_FOLDER,
 	continuousReadingPositionAutoSaveEnabled:
@@ -102,6 +106,7 @@ const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
 	lastSelectedIRDeckId: "",
 	selectionQuickCreateLastFolder: "",
 	epubMarkdownExportLastFolder: "",
+	sourceNavigationOpenInNewTab: true,
 };
 
 type PersistedStandaloneEpubPluginSettings = Omit<
@@ -302,6 +307,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.syncPremiumPreviewSettings();
 		this.syncBookshelfDisplaySettings();
 		this.syncReadingPositionAutoSaveSettings();
+		this.settings.sourceNavigationOpenInNewTab = this.settings.sourceNavigationOpenInNewTab !== false;
 		if (licenseSettingsChanged || this.hasLegacyRememberedUiKeys(loadedData)) {
 			if (this.hasLegacyRememberedUiKeys(loadedData)) {
 				await this.getEpubStorageService().savePluginUiMemory(this.getRememberedUiMemory());
@@ -517,7 +523,16 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 	async onload(): Promise<void> {
 		await this.loadSettings();
 		initI18n();
+		licenseManager.initializeCloud(this.app);
 		registerEpubHost(this.app, this);
+		configureNavigationHub(this.app, {
+			getSourceNavigationOpenInNewTab: () => this.settings.sourceNavigationOpenInNewTab !== false,
+			getEnableDebugMode: () => this.settings.enableDebugMode === true,
+		});
+		getBookSessionManager(this.app, {
+			cardSyncDedupeMs: 600,
+			getEnableDebugMode: () => this.settings.enableDebugMode === true,
+		});
 		aiConfigStore.initialize(this as WeavePlugin);
 		this.addSettingTab(new EpubSettingsTab(this.app, this));
 		await PremiumFeatureGuard.getInstance().initializeForProduct({

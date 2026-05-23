@@ -16,23 +16,26 @@ vi.mock('obsidian', () => ({
 	normalizePath: (value: string) => String(value || '').replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, ''),
 }));
 
-const {
-	openEpubInPreferredLeafMock,
-	ensureEpubFileAccessMock,
-	ensureEpubPremiumFeatureMock,
-} = vi.hoisted(() => ({
-	openEpubInPreferredLeafMock: vi.fn(),
-	ensureEpubFileAccessMock: vi.fn(() => true),
+const { navigateMock, ensureEpubPremiumFeatureMock, ensureSourceIdentityMock } = vi.hoisted(() => ({
+	navigateMock: vi.fn(async () => ({ success: true, leaf: { id: "leaf-1" } })),
 	ensureEpubPremiumFeatureMock: vi.fn(() => true),
+	ensureSourceIdentityMock: vi.fn(async () => ({
+		sourceId: "epubsrc-test123456789",
+		sourceFingerprint: "demo-fingerprint",
+	})),
 }));
 
-vi.mock('../../../utils/epub-leaf-utils', () => ({
-	openEpubInPreferredLeaf: openEpubInPreferredLeafMock,
+vi.mock('../../navigation/navigation-hub-access', () => ({
+	getNavigationHub: () => ({
+		navigate: navigateMock,
+	}),
 }));
 
-vi.mock('../epub-premium', () => ({
-	ensureEpubFileAccess: ensureEpubFileAccessMock,
-	ensureEpubPremiumFeature: ensureEpubPremiumFeatureMock,
+vi.mock('../epub-storage-access', () => ({
+	getEpubStorageService: () => ({
+		ensureSourceIdentity: ensureSourceIdentityMock,
+		resolveSupportedBookFilePath: vi.fn(() => "Books/demo.epub"),
+	}),
 }));
 
 import { EpubLinkService } from '../EpubLinkService';
@@ -49,25 +52,21 @@ const buildCompactReadiumLocator = (href: string, progression: string, highlight
 };
 
 describe('EpubLinkService legacy link compatibility', () => {
-	it('blocks note-to-book location jumps when bidirectional source location is unavailable', async () => {
-		openEpubInPreferredLeafMock.mockReset();
-		ensureEpubFileAccessMock.mockClear();
-		ensureEpubPremiumFeatureMock.mockReturnValueOnce(false);
-		const app = {
-			workspace: {
-				setActiveLeaf: vi.fn(),
-			},
-		} as any;
+	it('routes note-to-book navigation through NavigationHub', async () => {
+		navigateMock.mockReset();
+		navigateMock.mockResolvedValueOnce({ success: true, leaf: { id: 'leaf-1' } });
+		const app = {} as any;
 		const service = new EpubLinkService(app);
 
 		await service.navigateToEpubLocation('Books/demo.epub', 'epubcfi(/6/2)', 'Hello');
 
-		expect(ensureEpubPremiumFeatureMock).toHaveBeenCalledWith(
-			app,
-			PREMIUM_FEATURES.EPUB_SOURCE_LOCATION,
-			expect.any(String)
+		expect(navigateMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				kind: 'book',
+				resourcePath: 'Books/demo.epub',
+				locate: { cfi: 'epubcfi(/6/2)', text: 'Hello' },
+			})
 		);
-		expect(openEpubInPreferredLeafMock).not.toHaveBeenCalled();
 	});
 
 	it('extracts the first EPUB wikilink for both current and legacy hash formats', () => {
@@ -321,28 +320,7 @@ describe('EpubLinkService legacy link compatibility', () => {
 
 	it('enriches existing epub links with source ids without changing the locator', async () => {
 		const writtenFiles = new Map<string, string>();
-		const service = new EpubLinkService({
-			vault: {
-				getAbstractFileByPath: () => null,
-				adapter: {
-					exists: async (path: string) =>
-						path === 'Books/demo.epub' ||
-						path === 'weave' ||
-						path === 'weave/incremental-reading' ||
-						path === 'weave/incremental-reading/epub-reading' ||
-						path === 'weave/incremental-reading/epub-reading/epub-source-registry.json',
-					readBinary: async () => new TextEncoder().encode('demo-binary'),
-					read: async () => writtenFiles.get('weave/incremental-reading/epub-reading/epub-source-registry.json') || '[]',
-					write: async (path: string, content: string) => {
-						writtenFiles.set(path, content);
-					},
-					mkdir: async () => {},
-				},
-			},
-			plugins: {
-				getPlugin: () => ({ settings: { weaveParentFolder: '' } }),
-			},
-		} as any);
+		const service = new EpubLinkService({} as any);
 
 		const result = await service.enrichEpubLinksWithSourceIdsInContent(
 			'前文 [[Books/demo.epub#weave-cfi=readium:abc|demo]] 后文'
@@ -355,28 +333,7 @@ describe('EpubLinkService legacy link compatibility', () => {
 
 	it('migrates legacy protocol epub links to new wikilinks before backfilling source ids', async () => {
 		const writtenFiles = new Map<string, string>();
-		const service = new EpubLinkService({
-			vault: {
-				getAbstractFileByPath: () => null,
-				adapter: {
-					exists: async (path: string) =>
-						path === 'Books/demo.epub' ||
-						path === 'weave' ||
-						path === 'weave/incremental-reading' ||
-						path === 'weave/incremental-reading/epub-reading' ||
-						path === 'weave/incremental-reading/epub-reading/epub-source-registry.json',
-					readBinary: async () => new TextEncoder().encode('demo-binary'),
-					read: async () => writtenFiles.get('weave/incremental-reading/epub-reading/epub-source-registry.json') || '[]',
-					write: async (path: string, content: string) => {
-						writtenFiles.set(path, content);
-					},
-					mkdir: async () => {},
-				},
-			},
-			plugins: {
-				getPlugin: () => ({ settings: { weaveParentFolder: '' } }),
-			},
-		} as any);
+		const service = new EpubLinkService({} as any);
 
 		const result = await service.enrichEpubLinksWithSourceIdsInContent(
 			'[EPUB来源](obsidian://weave-epub?vault=Vault&file=Books%2Fdemo.epub&cfi=epubcfi(/6/2)&text=Hello)',

@@ -5,10 +5,10 @@
   import {
     DEFAULT_EPUB_EXCERPT_SETTINGS,
     DEFAULT_EPUB_BOOKMARK_FOLDER,
+    EPUB_RUNTIME,
     getEpubStorageService,
     normalizeEpubBookmarkFolderPath,
   } from "../../services/epub";
-  import { EPUB_RUNTIME } from "../../services/epub";
   import {
     DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_ENABLED,
     DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
@@ -41,6 +41,7 @@
 
   let activeTab = $state<EpubSettingsTabId>("basic");
   let stateVersion = $state(0);
+  let premiumPreviewSettingsHost = $state<HTMLDivElement | null>(null);
   let readingSettingsHost = $state<HTMLDivElement | null>(null);
   let featureSettingsHost = $state<HTMLDivElement | null>(null);
   let diagnosticsSettingsHost = $state<HTMLDivElement | null>(null);
@@ -106,6 +107,11 @@
   let debugModeEnabled = $derived.by(() => {
     stateVersion;
     return plugin.settings?.enableDebugMode === true;
+  });
+
+  let sourceNavigationOpenInNewTab = $derived.by(() => {
+    stateVersion;
+    return plugin.settings?.sourceNavigationOpenInNewTab !== false;
   });
 
   let bookshelfDisplayMode = $derived.by(() => {
@@ -223,6 +229,15 @@
 		showNotification(enabled ? t("epub.settings.notifications.premiumPreviewEnabled") : t("epub.settings.notifications.premiumPreviewDisabled"), "success");
 	}
 
+  async function updateSourceNavigationOpenInNewTab(enabled: boolean): Promise<void> {
+    if (sourceNavigationOpenInNewTab === enabled) {
+      return;
+    }
+
+    plugin.settings.sourceNavigationOpenInNewTab = enabled;
+    await save();
+  }
+
   async function updateDebugMode(enabled: boolean): Promise<void> {
     if (debugModeEnabled === enabled) {
       return;
@@ -318,30 +333,47 @@
 		return premiumGuard.getFeatureEntryTitle(baseTitle, featureId, { page: "epub-settings" });
 	}
 
-	function openLicenseTabForPremiumSetting(): void {
-		activeTab = "license";
-		showNotification(t("epub.settings.notifications.premiumRequired"), "info");
+	function openPremiumFeaturePreviewForSetting(featureId: string): void {
+		if (typeof window === "undefined") {
+			return;
+		}
+		window.dispatchEvent(
+			new CustomEvent(EPUB_RUNTIME.events.premiumFeaturePreviewRequest, {
+				detail: { featureId },
+			})
+		);
+	}
+
+	function handlePremiumUiStateChanged(): void {
+		stateVersion += 1;
 	}
 
 	onMount(() => {
 		void syncAdvancedSettings();
 		const unsubscribePremium = premiumGuard.isPremiumActive.subscribe(() => {
-			stateVersion += 1;
+			handlePremiumUiStateChanged();
 		});
 		const unsubscribePreview = premiumGuard.premiumFeaturesPreviewEnabled.subscribe(() => {
-			stateVersion += 1;
+			handlePremiumUiStateChanged();
 		});
+		if (typeof window !== "undefined") {
+			window.addEventListener(EPUB_RUNTIME.events.premiumUiStateChanged, handlePremiumUiStateChanged);
+		}
 		return () => {
       clearBookmarkFolderCommitTimer();
       clearAutoSavePagesCommitTimer();
 			unsubscribePremium();
 			unsubscribePreview();
+			if (typeof window !== "undefined") {
+				window.removeEventListener(EPUB_RUNTIME.events.premiumUiStateChanged, handlePremiumUiStateChanged);
+			}
 		};
 	});
 
   $effect(() => {
     if (
       activeTab !== "basic"
+      || !premiumPreviewSettingsHost
       || !readingSettingsHost
       || !featureSettingsHost
       || !diagnosticsSettingsHost
@@ -350,6 +382,7 @@
     }
 
     const clearBasicSettingsHosts = () => {
+      premiumPreviewSettingsHost?.replaceChildren();
       readingSettingsHost?.replaceChildren();
       featureSettingsHost?.replaceChildren();
       diagnosticsSettingsHost?.replaceChildren();
@@ -359,24 +392,7 @@
 
     const cleanupFns: Array<() => void> = [];
 
-		const registerPremiumBlockedRow = (setting: Setting, restricted: boolean) => {
-			if (!restricted) {
-				return;
-			}
-			setting.settingEl.addClass("epub-premium-preview-setting");
-			const handleBlockedClick = (event: MouseEvent) => {
-				const target = event.target as HTMLElement | null;
-				if (target?.closest("a")) {
-					return;
-				}
-				event.preventDefault();
-				openLicenseTabForPremiumSetting();
-			};
-			setting.settingEl.addEventListener("click", handleBlockedClick);
-			cleanupFns.push(() => setting.settingEl.removeEventListener("click", handleBlockedClick));
-		};
-
-		new Setting(featureSettingsHost)
+		new Setting(premiumPreviewSettingsHost)
 			.setName(t("epub.settings.basic.showPremiumPreview"))
 			.setDesc(t("epub.settings.basic.showPremiumPreviewDesc"))
 			.setClass("epub-premium-preview-toggle-setting")
@@ -387,250 +403,215 @@
 				});
 			});
 
-    if (shouldShowPremiumSetting(PREMIUM_FEATURES.EPUB_READING_PROGRESS)) {
-      const readingProgressRestricted = !canUsePremiumSetting(PREMIUM_FEATURES.EPUB_READING_PROGRESS);
-      const setting = new Setting(readingSettingsHost)
-        .setName(getPremiumSettingTitle(t("epub.settings.basic.bookmarkFolder"), PREMIUM_FEATURES.EPUB_READING_PROGRESS))
-        .setDesc(t("epub.settings.basic.bookmarkFolderDesc"))
-        .setClass("epub-bookmark-setting");
+    const bookmarkFolderSetting = new Setting(readingSettingsHost)
+      .setName(t("epub.settings.basic.bookmarkFolder"))
+      .setDesc(t("epub.settings.basic.bookmarkFolderDesc"))
+      .setClass("epub-bookmark-setting");
 
-      registerPremiumBlockedRow(setting, readingProgressRestricted);
-
-      setting.addSearch((search) => {
-        search.setPlaceholder(t("epub.settings.basic.bookmarkFolderPlaceholder"));
-        search.setValue(bookmarkFolderValue);
-        search.setDisabled(readingProgressRestricted);
-        search.onChange((value) => {
-          bookmarkFolderInput = value;
-          if (readingProgressRestricted) {
-            return;
-          }
-          scheduleBookmarkFolderCommit(() => {
-            void updateBookmarkFolder(search.inputEl.value);
-          });
+    bookmarkFolderSetting.addSearch((search) => {
+      search.setPlaceholder(t("epub.settings.basic.bookmarkFolderPlaceholder"));
+      search.setValue(bookmarkFolderValue);
+      search.onChange((value) => {
+        bookmarkFolderInput = value;
+        scheduleBookmarkFolderCommit(() => {
+          void updateBookmarkFolder(search.inputEl.value);
         });
-
-        const inputEl = search.inputEl;
-        const suggest = new FolderSuggest(plugin.app, inputEl);
-
-        const handleFocus = () => {
-          if (readingProgressRestricted) {
-            openLicenseTabForPremiumSetting();
-            return;
-          }
-          inputEl.dispatchEvent(new Event("input", { bubbles: true }));
-        };
-
-        const handleBlur = () => {
-          clearBookmarkFolderCommitTimer();
-          if (readingProgressRestricted) {
-            bookmarkFolderInput = bookmarkFolderValue;
-            search.setValue(bookmarkFolderValue);
-            return;
-          }
-          void updateBookmarkFolder(inputEl.value);
-        };
-
-        const handleKeydown = (event: KeyboardEvent) => {
-          if (readingProgressRestricted) {
-            event.preventDefault();
-            openLicenseTabForPremiumSetting();
-            return;
-          }
-
-          if (event.key === "Enter") {
-            event.preventDefault();
-            clearBookmarkFolderCommitTimer();
-            void updateBookmarkFolder(inputEl.value);
-            return;
-          }
-
-          if (event.key === "Escape") {
-            bookmarkFolderInput = bookmarkFolderValue;
-            search.setValue(bookmarkFolderValue);
-            inputEl.blur();
-          }
-        };
-
-        inputEl.addEventListener("focus", handleFocus);
-        inputEl.addEventListener("blur", handleBlur);
-        inputEl.addEventListener("keydown", handleKeydown);
-
-        cleanupFns.push(() => inputEl.removeEventListener("focus", handleFocus));
-        cleanupFns.push(() => inputEl.removeEventListener("blur", handleBlur));
-        cleanupFns.push(() => inputEl.removeEventListener("keydown", handleKeydown));
-        cleanupFns.push(() => suggest.close());
       });
 
-      new Setting(readingSettingsHost)
-        .setName(getPremiumSettingTitle(t("epub.settings.basic.bookshelfDisplayMode"), PREMIUM_FEATURES.EPUB_READING_PROGRESS))
-        .setDesc(t("epub.settings.basic.bookshelfDisplayModeDesc"))
-        .setClass("epub-bookshelf-auto-view-setting")
-        .addDropdown((dropdown) => {
-          for (const option of getBookshelfDisplayModeOptions()) {
-            dropdown.addOption(option.mode, option.label);
-          }
-          dropdown.setValue(bookshelfDisplayMode);
-          dropdown.setDisabled(readingProgressRestricted);
-          dropdown.onChange(async (value) => {
-            if (readingProgressRestricted) {
-              openLicenseTabForPremiumSetting();
-              return;
-            }
-            await updateBookshelfDisplayMode(value);
-          });
-        });
+      const inputEl = search.inputEl;
+      const suggest = new FolderSuggest(plugin.app, inputEl);
 
-      const bookshelfAutoViewSettingEl = readingSettingsHost.lastElementChild as HTMLElement | null;
-      if (bookshelfAutoViewSettingEl && readingProgressRestricted) {
-        bookshelfAutoViewSettingEl.addClass("epub-premium-preview-setting");
-        const handleBlockedClick = (event: MouseEvent) => {
+      const handleFocus = () => {
+        inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+
+      const handleBlur = () => {
+        clearBookmarkFolderCommitTimer();
+        void updateBookmarkFolder(inputEl.value);
+      };
+
+      const handleKeydown = (event: KeyboardEvent) => {
+        if (event.key === "Enter") {
           event.preventDefault();
-          openLicenseTabForPremiumSetting();
-        };
-        bookshelfAutoViewSettingEl.addEventListener("click", handleBlockedClick);
-        cleanupFns.push(() => bookshelfAutoViewSettingEl.removeEventListener("click", handleBlockedClick));
-      }
+          clearBookmarkFolderCommitTimer();
+          void updateBookmarkFolder(inputEl.value);
+          return;
+        }
 
-      new Setting(readingSettingsHost)
+        if (event.key === "Escape") {
+          bookmarkFolderInput = bookmarkFolderValue;
+          search.setValue(bookmarkFolderValue);
+          inputEl.blur();
+        }
+      };
+
+      inputEl.addEventListener("focus", handleFocus);
+      inputEl.addEventListener("blur", handleBlur);
+      inputEl.addEventListener("keydown", handleKeydown);
+
+      cleanupFns.push(() => inputEl.removeEventListener("focus", handleFocus));
+      cleanupFns.push(() => inputEl.removeEventListener("blur", handleBlur));
+      cleanupFns.push(() => inputEl.removeEventListener("keydown", handleKeydown));
+      cleanupFns.push(() => suggest.close());
+    });
+
+    new Setting(readingSettingsHost)
+      .setName(t("epub.settings.basic.bookshelfDisplayMode"))
+      .setDesc(t("epub.settings.basic.bookshelfDisplayModeDesc"))
+      .setClass("epub-bookshelf-auto-view-setting")
+      .addDropdown((dropdown) => {
+        for (const option of getBookshelfDisplayModeOptions()) {
+          dropdown.addOption(option.mode, option.label);
+        }
+        dropdown.setValue(bookshelfDisplayMode);
+        dropdown.onChange(async (value) => {
+          await updateBookshelfDisplayMode(value);
+        });
+      });
+
+    if (shouldShowPremiumSetting(PREMIUM_FEATURES.EPUB_READING_PROGRESS)) {
+      const readingProgressRestricted = !canUsePremiumSetting(PREMIUM_FEATURES.EPUB_READING_PROGRESS);
+
+      const registerPremiumBlockedRow = (setting: Setting) => {
+        if (!readingProgressRestricted) {
+          return;
+        }
+        setting.settingEl.addClass("epub-premium-preview-setting");
+        const handleBlockedClick = (event: MouseEvent) => {
+          const target = event.target as HTMLElement | null;
+          if (target?.closest("a")) {
+            return;
+          }
+          event.preventDefault();
+          openPremiumFeaturePreviewForSetting(PREMIUM_FEATURES.EPUB_READING_PROGRESS);
+        };
+        setting.settingEl.addEventListener("click", handleBlockedClick);
+        cleanupFns.push(() => setting.settingEl.removeEventListener("click", handleBlockedClick));
+      };
+
+      const autoSaveSetting = new Setting(readingSettingsHost)
         .setName(getPremiumSettingTitle(t("epub.settings.basic.autoSaveReadingPosition"), PREMIUM_FEATURES.EPUB_READING_PROGRESS))
         .setDesc(t("epub.settings.basic.autoSaveReadingPositionDesc"))
-        .setClass("epub-reading-position-auto-save-toggle-setting")
-        .addToggle((toggle) => {
-          toggle.setValue(continuousReadingPositionAutoSaveEnabled);
-          toggle.setDisabled(readingProgressRestricted);
-          toggle.onChange(async (value) => {
-            if (readingProgressRestricted) {
-              openLicenseTabForPremiumSetting();
-              return;
-            }
-            await updateContinuousReadingPositionAutoSaveEnabled(value);
-          });
+        .setClass("epub-reading-position-auto-save-toggle-setting");
+
+      registerPremiumBlockedRow(autoSaveSetting);
+
+      autoSaveSetting.addToggle((toggle) => {
+        toggle.setValue(continuousReadingPositionAutoSaveEnabled);
+        toggle.setDisabled(readingProgressRestricted);
+        toggle.onChange(async (value) => {
+          if (readingProgressRestricted) {
+            openPremiumFeaturePreviewForSetting(PREMIUM_FEATURES.EPUB_READING_PROGRESS);
+            return;
+          }
+          await updateContinuousReadingPositionAutoSaveEnabled(value);
         });
+      });
 
-      const autoSaveSettingEl = readingSettingsHost.lastElementChild as HTMLElement | null;
-      if (autoSaveSettingEl && readingProgressRestricted) {
-        autoSaveSettingEl.addClass("epub-premium-preview-setting");
-        const handleBlockedClick = (event: MouseEvent) => {
-          event.preventDefault();
-          openLicenseTabForPremiumSetting();
-        };
-        autoSaveSettingEl.addEventListener("click", handleBlockedClick);
-        cleanupFns.push(() => autoSaveSettingEl.removeEventListener("click", handleBlockedClick));
-      }
-
-      new Setting(readingSettingsHost)
+      const autoSavePagesSetting = new Setting(readingSettingsHost)
         .setName(getPremiumSettingTitle(t("epub.settings.basic.autoSavePages"), PREMIUM_FEATURES.EPUB_READING_PROGRESS))
         .setDesc(t("epub.settings.basic.autoSavePagesDesc", {
           min: MIN_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
           max: MAX_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
           default: DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
         }))
-        .setClass("epub-reading-position-auto-save-pages-setting")
-        .addText((text) => {
-          text.inputEl.type = "number";
-          text.inputEl.min = String(MIN_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES);
-          text.inputEl.max = String(MAX_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES);
-          text.setPlaceholder(String(DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES));
-          text.setValue(continuousReadingPositionAutoSavePagesInput);
-          text.setDisabled(readingProgressRestricted || !continuousReadingPositionAutoSaveEnabled);
-          text.onChange((value) => {
-            continuousReadingPositionAutoSavePagesInput = value;
-            if (readingProgressRestricted || !continuousReadingPositionAutoSaveEnabled) {
-              return;
-            }
-            scheduleAutoSavePagesCommit(() => {
-              void updateContinuousReadingPositionAutoSavePages(text.inputEl.value);
-            });
+        .setClass("epub-reading-position-auto-save-pages-setting");
+
+      registerPremiumBlockedRow(autoSavePagesSetting);
+
+      autoSavePagesSetting.addText((text) => {
+        text.inputEl.type = "number";
+        text.inputEl.min = String(MIN_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES);
+        text.inputEl.max = String(MAX_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES);
+        text.setPlaceholder(String(DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES));
+        text.setValue(continuousReadingPositionAutoSavePagesInput);
+        text.setDisabled(readingProgressRestricted || !continuousReadingPositionAutoSaveEnabled);
+        text.onChange((value) => {
+          continuousReadingPositionAutoSavePagesInput = value;
+          if (readingProgressRestricted || !continuousReadingPositionAutoSaveEnabled) {
+            return;
+          }
+          scheduleAutoSavePagesCommit(() => {
+            void updateContinuousReadingPositionAutoSavePages(text.inputEl.value);
           });
-
-          const inputEl = text.inputEl;
-
-          const commitValue = () => {
-            if (readingProgressRestricted) {
-              continuousReadingPositionAutoSavePagesInput = String(continuousReadingPositionAutoSavePages);
-              text.setValue(String(continuousReadingPositionAutoSavePages));
-              openLicenseTabForPremiumSetting();
-              return;
-            }
-            if (!continuousReadingPositionAutoSaveEnabled) {
-              continuousReadingPositionAutoSavePagesInput = String(continuousReadingPositionAutoSavePages);
-              text.setValue(String(continuousReadingPositionAutoSavePages));
-              return;
-            }
-            void updateContinuousReadingPositionAutoSavePages(inputEl.value);
-          };
-
-          const handleBlur = () => {
-            clearAutoSavePagesCommitTimer();
-            commitValue();
-          };
-
-          const handleKeydown = (event: KeyboardEvent) => {
-            if (readingProgressRestricted) {
-              event.preventDefault();
-              openLicenseTabForPremiumSetting();
-              return;
-            }
-
-            if (event.key === "Enter") {
-              event.preventDefault();
-              clearAutoSavePagesCommitTimer();
-              commitValue();
-              return;
-            }
-
-            if (event.key === "Escape") {
-              continuousReadingPositionAutoSavePagesInput = String(continuousReadingPositionAutoSavePages);
-              text.setValue(String(continuousReadingPositionAutoSavePages));
-              inputEl.blur();
-            }
-          };
-
-          inputEl.addEventListener("blur", handleBlur);
-          inputEl.addEventListener("keydown", handleKeydown);
-
-          cleanupFns.push(() => inputEl.removeEventListener("blur", handleBlur));
-          cleanupFns.push(() => inputEl.removeEventListener("keydown", handleKeydown));
         });
 
-      const autoSavePagesSettingEl = readingSettingsHost.lastElementChild as HTMLElement | null;
-      if (autoSavePagesSettingEl && readingProgressRestricted) {
-        autoSavePagesSettingEl.addClass("epub-premium-preview-setting");
-        const handleBlockedClick = (event: MouseEvent) => {
-          event.preventDefault();
-          openLicenseTabForPremiumSetting();
+        const inputEl = text.inputEl;
+
+        const commitValue = () => {
+          if (readingProgressRestricted) {
+            continuousReadingPositionAutoSavePagesInput = String(continuousReadingPositionAutoSavePages);
+            text.setValue(String(continuousReadingPositionAutoSavePages));
+            openPremiumFeaturePreviewForSetting(PREMIUM_FEATURES.EPUB_READING_PROGRESS);
+            return;
+          }
+          if (!continuousReadingPositionAutoSaveEnabled) {
+            continuousReadingPositionAutoSavePagesInput = String(continuousReadingPositionAutoSavePages);
+            text.setValue(String(continuousReadingPositionAutoSavePages));
+            return;
+          }
+          void updateContinuousReadingPositionAutoSavePages(inputEl.value);
         };
-        autoSavePagesSettingEl.addEventListener("click", handleBlockedClick);
-        cleanupFns.push(() => autoSavePagesSettingEl.removeEventListener("click", handleBlockedClick));
-      }
+
+        const handleBlur = () => {
+          clearAutoSavePagesCommitTimer();
+          commitValue();
+        };
+
+        const handleKeydown = (event: KeyboardEvent) => {
+          if (readingProgressRestricted) {
+            event.preventDefault();
+            openPremiumFeaturePreviewForSetting(PREMIUM_FEATURES.EPUB_READING_PROGRESS);
+            return;
+          }
+
+          if (event.key === "Enter") {
+            event.preventDefault();
+            clearAutoSavePagesCommitTimer();
+            commitValue();
+            return;
+          }
+
+          if (event.key === "Escape") {
+            continuousReadingPositionAutoSavePagesInput = String(continuousReadingPositionAutoSavePages);
+            text.setValue(String(continuousReadingPositionAutoSavePages));
+            inputEl.blur();
+          }
+        };
+
+        inputEl.addEventListener("blur", handleBlur);
+        inputEl.addEventListener("keydown", handleKeydown);
+
+        cleanupFns.push(() => inputEl.removeEventListener("blur", handleBlur));
+        cleanupFns.push(() => inputEl.removeEventListener("keydown", handleKeydown));
+      });
     }
 
-    if (shouldShowPremiumSetting(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES)) {
-      const excerptRestricted = !canUsePremiumSetting(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-      const exportTemplateSetting = new Setting(featureSettingsHost)
-        .setName(getPremiumSettingTitle(t("epub.settings.basic.exportTemplate"), PREMIUM_FEATURES.EPUB_EXCERPT_NOTES))
-        .setDesc(t("epub.settings.basic.exportTemplateDesc"))
-        .setClass("epub-book-notes-template-setting");
-
-      registerPremiumBlockedRow(exportTemplateSetting, excerptRestricted);
-
-      exportTemplateSetting.addDropdown((dropdown) => {
+    new Setting(featureSettingsHost)
+      .setName(t("epub.settings.basic.exportTemplate"))
+      .setDesc(t("epub.settings.basic.exportTemplateDesc"))
+      .setClass("epub-book-notes-template-setting")
+      .addDropdown((dropdown) => {
         dropdown.addOption("template1", t("epub.settings.basic.template1"));
         dropdown.addOption("template2", t("epub.settings.basic.template2"));
         dropdown.setValue(bookNotesExportTemplate);
-        dropdown.setDisabled(excerptRestricted);
         dropdown.onChange(async (value) => {
-          if (excerptRestricted) {
-            openLicenseTabForPremiumSetting();
-            return;
-          }
           if (value === "template1" || value === "template2") {
             await updateBookNotesExportTemplate(value);
           }
         });
       });
-    }
+
+    new Setting(diagnosticsSettingsHost)
+      .setName(t("epub.settings.basic.sourceNavigationOpenInNewTab"))
+      .setDesc(t("epub.settings.basic.sourceNavigationOpenInNewTabDesc"))
+      .setClass("epub-source-navigation-setting")
+      .addToggle((toggle) => {
+        toggle.setValue(sourceNavigationOpenInNewTab);
+        toggle.onChange(async (value) => {
+          await updateSourceNavigationOpenInNewTab(value);
+        });
+      });
 
     new Setting(diagnosticsSettingsHost)
       .setName(t("epub.settings.basic.debugMode"))
@@ -668,6 +649,10 @@
   <div class="epub-settings-tab-panel" id={`epub-settings-panel-${activeTab}`}>
     {#if activeTab === "basic"}
       <section class="epub-settings-section epub-settings-section--compact">
+        <div class="epub-settings-group epub-settings-group--panel epub-settings-group--preview-first">
+          <div bind:this={premiumPreviewSettingsHost} class="epub-native-settings-host"></div>
+        </div>
+
         <div class="epub-settings-group epub-settings-group--panel">
           <div class="epub-settings-group-header">
             <h3 class="epub-settings-group-title with-accent-bar accent-purple">{t("epub.settings.groups.reading")}</h3>

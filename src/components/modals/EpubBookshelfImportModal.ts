@@ -5,6 +5,7 @@ import type {
 	EpubScanIndexEntry,
 } from "../../services/epub/EpubStorageService";
 import { getBookExtensionFromPath } from "../../services/epub/book-format";
+import { isPathAlreadyOnBookshelfForApp } from "../../services/epub/epub-vault-path";
 
 type ImportStatusFilter = "pending" | "added";
 
@@ -16,8 +17,9 @@ interface EpubBookshelfImportModalOptions {
 }
 
 export class EpubBookshelfImportModal extends Modal {
+	private readonly app: App;
 	private readonly entries: EpubScanIndexEntry[];
-	private readonly membershipPaths: Set<string>;
+	private readonly membershipPaths: string[];
 	private readonly onConfirm: (paths: string[]) => Promise<void> | void;
 	private readonly title: string;
 	private query = "";
@@ -32,8 +34,9 @@ export class EpubBookshelfImportModal extends Modal {
 
 	constructor(app: App, options: EpubBookshelfImportModalOptions) {
 		super(app);
+		this.app = app;
 		this.entries = [...options.entries].sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
-		this.membershipPaths = new Set(options.membership.map((entry) => entry.path));
+		this.membershipPaths = options.membership.map((entry) => entry.path);
 		this.onConfirm = options.onConfirm;
 		this.title = options.title ?? "扫描库中书籍和漫画";
 	}
@@ -140,7 +143,7 @@ export class EpubBookshelfImportModal extends Modal {
 	}
 
 	private isEntryAdded(entry: EpubScanIndexEntry): boolean {
-		return this.membershipPaths.has(entry.path);
+		return isPathAlreadyOnBookshelfForApp(this.app, entry.path, this.membershipPaths);
 	}
 
 	private getPendingCount(): number {

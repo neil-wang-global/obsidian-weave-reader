@@ -9,7 +9,7 @@
 	import { EpubBookmarkService, type EpubBookmarkRecord } from '../../services/epub/EpubBookmarkService';
   	import { epubActiveDocumentStore } from '../../stores/epub-active-document-store';
   	import type { EpubNavigationRequest, EpubSharedState } from '../../stores/epub-active-document-store';
-	import CardSearchInput from '../search/CardSearchInput.svelte';
+	import EpubSearchInput from './EpubSearchInput.svelte';
   	import TableOfContents from './TableOfContents.svelte';
 	import { resolveLastReadTocHref } from '../../utils/epub-toc-reading-position';
 	import EpubBookmarksPanel from './EpubBookmarksPanel.svelte';
@@ -762,7 +762,7 @@
 				<div class="epub-search-bar-row">
 					{#if activeTab === 'highlights' && sharedState.canUseExcerptNotes}
 						<div class="epub-search-input-card-shell">
-							<CardSearchInput
+							<EpubSearchInput
 								app={app}
 								bind:value={searchQuery}
 								placeholder={t('epub.globalSidebar.searchStartPlaceholder')}
@@ -774,7 +774,6 @@
 								availableHighlightColors={highlightSearchMeta.availableHighlightColors}
 								matchCount={highlightSearchMeta.matchCount}
 								totalCount={highlightSearchMeta.totalCount}
-								showSortButton={false}
 							/>
 						</div>
 					{:else}

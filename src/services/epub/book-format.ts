@@ -89,3 +89,42 @@ export function usesFoliateGenericBookLoader(extensionOrPath: string): boolean {
 		: normalizeBookExtension(extensionOrPath);
 	return normalized !== "" && normalized !== "epub" && normalized !== "txt";
 }
+
+const SUPPORTED_BOOK_LOCATOR_MARKERS = [
+	"weave-loc=",
+	"weave-cfi=",
+	"tuanki-cfi=",
+	"tuanki-cfi-",
+] as const;
+
+export function hasSupportedBookLocatorSubpath(subpath: string): boolean {
+	const normalized = String(subpath || "").trim();
+	if (!normalized) {
+		return false;
+	}
+	const hashContent = normalized.startsWith("#") ? normalized.slice(1) : normalized;
+	return SUPPORTED_BOOK_LOCATOR_MARKERS.some((marker) => hashContent.includes(marker));
+}
+
+export function splitSupportedBookLocatorHref(
+	href: string
+): { filePath: string; subpath: string } | null {
+	const normalized = String(href || "").trim();
+	const hashIdx = normalized.indexOf("#");
+	if (hashIdx === -1) {
+		return null;
+	}
+	const filePath = normalized.substring(0, hashIdx);
+	if (!isSupportedBookPath(filePath)) {
+		return null;
+	}
+	const subpath = normalized.substring(hashIdx);
+	if (!hasSupportedBookLocatorSubpath(subpath)) {
+		return null;
+	}
+	return { filePath, subpath };
+}
+
+export function isSupportedBookLocatorHref(href: string): boolean {
+	return splitSupportedBookLocatorHref(href) !== null;
+}

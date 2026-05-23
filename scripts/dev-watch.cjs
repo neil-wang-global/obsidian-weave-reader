@@ -1,13 +1,13 @@
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
-const { resolvePluginDir } = require("./hot-reload-utils.cjs");
+const { resolveHotReloadPluginId, resolvePluginDir } = require("./hot-reload-utils.cjs");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const LOCK_FILE = path.join(PROJECT_ROOT, ".dev-watch.lock.json");
 const VITE_ENTRY = path.join("node_modules", "vite", "bin", "vite.js");
 const MAX_OLD_SPACE_SIZE = process.env.WEAVE_DEV_MEMORY_MB || "4096";
-const PLUGIN_ID = "weave-epub-reader";
+const PLUGIN_ID = resolveHotReloadPluginId(process.env);
 const DESKTOP_SOURCE_DIR = process.env.WEAVE_DESKTOP_SOURCE_DIR?.trim()
 	? path.resolve(process.env.WEAVE_DESKTOP_SOURCE_DIR)
 	: path.resolve(PROJECT_ROOT, ".desktop-hot-reload");

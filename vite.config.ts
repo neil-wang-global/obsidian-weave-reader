@@ -19,11 +19,11 @@ const {
   copyFileAtomicWithRetry,
   pruneManagedRuntimeDirectories,
   pruneManagedRuntimeFiles,
+  resolveHotReloadPluginId,
   resolvePluginDir,
   syncRuntimeFiles,
 } = require("./scripts/hot-reload-utils.cjs");
 
-const STANDALONE_EPUB_PLUGIN_ID = "weave-epub-reader";
 const STANDALONE_MANIFEST = "manifest.json";
 
 function resolveInstalledPackageVersion(packageName: string): string {
@@ -93,11 +93,11 @@ export default defineConfig(({ mode }) => {
     "a11y_interactive_supports_focus",
     "css_unused_selector",
   ]);
-  const pluginId = STANDALONE_EPUB_PLUGIN_ID;
   const manifestFileName = STANDALONE_MANIFEST;
+  const hotReloadPluginDirId = resolveHotReloadPluginId(process.env);
 
   const resolvedPluginDir =
-    resolvePluginDir(pluginId, process.env) ?? path.resolve(process.cwd(), "dist");
+    resolvePluginDir(hotReloadPluginDirId, process.env) ?? path.resolve(process.cwd(), "dist");
   const buildOutDir = isMobileHotReloadBuild
     ? mobileHotReloadOutputDir
     : isDesktopHotReloadBuild

@@ -16,7 +16,10 @@ export interface EpubRuntimeConfig {
 		bookshelfRefreshRequest: string;
 		bookshelfDisplaySettingsChanged: string;
 		excerptSettingsChanged: string;
+		highlightSyncRequested: string;
 		navigate: string;
+		premiumFeaturePreviewRequest: string;
+		premiumUiStateChanged: string;
 	};
 	globals: {
 		pendingNavigationKey: string;
@@ -41,6 +44,9 @@ const bookshelfDisplaySettingsChangedEvent = isStandalone
 const excerptSettingsChangedEvent = isStandalone
 	? "WeaveEpubStandalone:epub-excerpt-settings-changed"
 	: "Weave:epub-excerpt-settings-changed";
+const highlightSyncRequestedEvent = isStandalone
+	? "WeaveEpubStandalone:epub-highlight-sync-requested"
+	: "Weave:epub-highlight-sync-requested";
 
 export const EPUB_RUNTIME: EpubRuntimeConfig = {
 	pluginId: isStandalone ? "weave-epub-reader" : "weave",
@@ -62,7 +68,14 @@ export const EPUB_RUNTIME: EpubRuntimeConfig = {
 		bookshelfRefreshRequest: bookshelfRefreshRequestEvent,
 		bookshelfDisplaySettingsChanged: bookshelfDisplaySettingsChangedEvent,
 		excerptSettingsChanged: excerptSettingsChangedEvent,
+		highlightSyncRequested: highlightSyncRequestedEvent,
 		navigate: isStandalone ? "WeaveEpubStandalone:epub-navigate" : "Weave:epub-navigate",
+		premiumFeaturePreviewRequest: isStandalone
+			? "WeaveEpubStandalone:epub-premium-feature-preview-request"
+			: "Weave:epub-premium-feature-preview-request",
+		premiumUiStateChanged: isStandalone
+			? "WeaveEpubStandalone:epub-premium-ui-state-changed"
+			: "Weave:epub-premium-ui-state-changed",
 	},
 	globals: {
 		pendingNavigationKey: isStandalone

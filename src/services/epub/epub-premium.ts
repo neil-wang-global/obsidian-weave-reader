@@ -1,4 +1,6 @@
 import { App, Notice } from "obsidian";
+import { EPUB_FEATURE_IDS, EPUB_PREMIUM_FEATURE_IDS } from "../../config/epub-feature-tier";
+import { EPUB_RUNTIME } from "./epub-runtime";
 import {
 	FEATURE_METADATA,
 	PremiumFeatureGuard,
@@ -39,50 +41,65 @@ const EPUB_FREE_FEATURE_PREVIEW_ITEMS: EpubFeatureTierPreviewItem[] = [
 		title: i18n.t("epub.premium.freeFeatures.excerptNotes.title"),
 		description: i18n.t("epub.premium.freeFeatures.excerptNotes.description"),
 	},
+	{
+		title: i18n.t("epub.premium.freeFeatures.incrementalReadingEntry.title"),
+		description: i18n.t("epub.premium.freeFeatures.incrementalReadingEntry.description"),
+	},
 ];
 
-const EPUB_PREMIUM_FEATURE_PREVIEW_ITEMS: EpubFeatureTierPreviewItem[] = [
-	{
-		featureId: PREMIUM_FEATURES.EPUB_NON_EPUB_FORMATS,
+const EPUB_PREMIUM_FEATURE_PREVIEW_META: Record<
+	(typeof EPUB_PREMIUM_FEATURE_IDS)[number],
+	EpubFeatureTierPreviewItem
+> = {
+	[EPUB_FEATURE_IDS.NON_EPUB_FORMATS]: {
+		featureId: EPUB_FEATURE_IDS.NON_EPUB_FORMATS,
 		title: i18n.t("epub.premium.premiumFeatures.nonEpubFormats.title"),
 		description: i18n.t("epub.premium.premiumFeatures.nonEpubFormats.description"),
 	},
-	{
-		featureId: PREMIUM_FEATURES.EPUB_READING_PROGRESS,
+	[EPUB_FEATURE_IDS.READING_PROGRESS]: {
+		featureId: EPUB_FEATURE_IDS.READING_PROGRESS,
 		title: i18n.t("epub.premium.premiumFeatures.readingProgress.title"),
 		description: i18n.t("epub.premium.premiumFeatures.readingProgress.description"),
 	},
-	{
-		featureId: PREMIUM_FEATURES.EPUB_PARAGRAPH_MODE,
+	[EPUB_FEATURE_IDS.READING_REFERENCE]: {
+		featureId: EPUB_FEATURE_IDS.READING_REFERENCE,
+		title: i18n.t("epub.premium.premiumFeatures.readingReference.title"),
+		description: i18n.t("epub.premium.premiumFeatures.readingReference.description"),
+	},
+	[EPUB_FEATURE_IDS.PARAGRAPH_MODE]: {
+		featureId: EPUB_FEATURE_IDS.PARAGRAPH_MODE,
 		title: i18n.t("epub.premium.premiumFeatures.paragraphMode.title"),
 		description: i18n.t("epub.premium.premiumFeatures.paragraphMode.description"),
 	},
-	{
-		featureId: PREMIUM_FEATURES.EPUB_STYLED_EXCERPTS,
-		title: "高级摘录样式",
-		description: "下划线、删除线、波浪线及相关摘录显示控制",
+	[EPUB_FEATURE_IDS.STYLED_EXCERPTS]: {
+		featureId: EPUB_FEATURE_IDS.STYLED_EXCERPTS,
+		title: i18n.t("epub.premium.premiumFeatures.styledExcerpts.title"),
+		description: i18n.t("epub.premium.premiumFeatures.styledExcerpts.description"),
 	},
-	{
-		featureId: PREMIUM_FEATURES.EPUB_SOURCE_LOCATION,
+	[EPUB_FEATURE_IDS.SOURCE_LOCATION]: {
+		featureId: EPUB_FEATURE_IDS.SOURCE_LOCATION,
 		title: i18n.t("epub.premium.premiumFeatures.sourceLocation.title"),
 		description: i18n.t("epub.premium.premiumFeatures.sourceLocation.description"),
 	},
-	{
-		featureId: PREMIUM_FEATURES.EPUB_CANVAS_EXCERPTS,
-		title: "脑图摘录联动",
-		description: "自动关联 Canvas 脑图摘录并在阅读器中管理绑定状态",
+	[EPUB_FEATURE_IDS.CANVAS_EXCERPTS]: {
+		featureId: EPUB_FEATURE_IDS.CANVAS_EXCERPTS,
+		title: i18n.t("epub.premium.premiumFeatures.canvasExcerpts.title"),
+		description: i18n.t("epub.premium.premiumFeatures.canvasExcerpts.description"),
 	},
-	{
-		featureId: PREMIUM_FEATURES.EPUB_FOOTNOTE_PREVIEW,
+	[EPUB_FEATURE_IDS.FOOTNOTE_PREVIEW]: {
+		featureId: EPUB_FEATURE_IDS.FOOTNOTE_PREVIEW,
 		title: i18n.t("epub.premium.premiumFeatures.footnotePreview.title"),
 		description: i18n.t("epub.premium.premiumFeatures.footnotePreview.description"),
 	},
-	{
-		featureId: PREMIUM_FEATURES.EPUB_CHAPTER_EXPORT,
+	[EPUB_FEATURE_IDS.CHAPTER_EXPORT]: {
+		featureId: EPUB_FEATURE_IDS.CHAPTER_EXPORT,
 		title: i18n.t("epub.premium.premiumFeatures.chapterExport.title"),
 		description: i18n.t("epub.premium.premiumFeatures.chapterExport.description"),
 	},
-];
+};
+
+const EPUB_PREMIUM_FEATURE_PREVIEW_ITEMS: EpubFeatureTierPreviewItem[] =
+	EPUB_PREMIUM_FEATURE_IDS.map((featureId) => EPUB_PREMIUM_FEATURE_PREVIEW_META[featureId]);
 
 export function getEpubFeatureTierPreview(): {
 	freeFeatures: EpubFeatureTierPreviewItem[];
@@ -136,6 +153,10 @@ export function canUseEpubReadingProgress(app: App): boolean {
 	return canUseEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_READING_PROGRESS);
 }
 
+export function canUseEpubReadingReference(app: App): boolean {
+	return canUseEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_READING_REFERENCE);
+}
+
 export function canUseEpubParagraphMode(app: App): boolean {
 	return canUseEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_PARAGRAPH_MODE);
 }
@@ -164,27 +185,44 @@ export function canUseEpubChapterExport(app: App): boolean {
 	return canUseEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_CHAPTER_EXPORT);
 }
 
+export function requestEpubPremiumFeaturePreview(app: App, featureId: string): void {
+	const normalizedFeatureId = String(featureId || "").trim();
+	if (!normalizedFeatureId) {
+		return;
+	}
+
+	void app;
+	if (typeof window !== "undefined") {
+		window.dispatchEvent(
+			new CustomEvent(EPUB_RUNTIME.events.premiumFeaturePreviewRequest, {
+				detail: { featureId: normalizedFeatureId },
+			})
+		);
+	}
+}
+
 export function ensureEpubFileAccess(app: App, filePath: string, noticeMessage?: string): boolean {
 	if (canOpenEpubFile(app, filePath)) {
 		return true;
 	}
 
 	const formatLabel = getBookFormatDisplayLabel(filePath);
-	new Notice(noticeMessage ?? i18n.t("epub.premium.lockedFormatNotice", { format: formatLabel }));
-	resolveEpubHost(app)?.openEpubPremiumSettings?.();
+	if (noticeMessage) {
+		new Notice(noticeMessage);
+	}
+	requestEpubPremiumFeaturePreview(app, PREMIUM_FEATURES.EPUB_NON_EPUB_FORMATS);
 	return false;
 }
 
 export function ensureEpubPremiumFeature(
 	app: App,
 	featureId: string,
-	noticeMessage: string
+	_noticeMessage?: string
 ): boolean {
 	if (canUseEpubPremiumFeature(app, featureId)) {
 		return true;
 	}
 
-	new Notice(noticeMessage);
-	resolveEpubHost(app)?.openEpubPremiumSettings?.();
+	requestEpubPremiumFeaturePreview(app, featureId);
 	return false;
 }

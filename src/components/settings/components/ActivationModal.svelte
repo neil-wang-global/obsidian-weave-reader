@@ -8,6 +8,10 @@
   import { ActivationModal } from './ActivationModalObsidian';
   import { tr } from '../../../utils/i18n';
   import { getPluginEffectiveLicenseState } from '../../../utils/plugin-license';
+  import {
+    formatLicenseDeviceStats,
+    resolveLicenseDeviceStats,
+  } from '../../../utils/license-device-stats';
   
   interface Props {
     plugin: any;
@@ -31,6 +35,8 @@
   let isLicenseActive = $derived(
     currentLicenseInfo?.isActivated && currentLicenseInfo?.activationCode
   );
+
+  let deviceStats = $derived(resolveLicenseDeviceStats(currentLicenseInfo, plugin?.app));
 
   async function handleSave() {
     await onSave();
@@ -56,8 +62,8 @@
             {#if currentLicenseInfo.boundEmail}
               {t('license.boundEmail')}: {currentLicenseInfo.boundEmail}
             {/if}
-            {#if currentLicenseInfo.cloudSync?.devicesUsed}
-              · {t('license.activatedDevices')}: {currentLicenseInfo.cloudSync.devicesUsed}/{currentLicenseInfo.cloudSync.devicesMax || 5}
+            {#if deviceStats}
+              · {t('license.activatedDevices')}: {formatLicenseDeviceStats(deviceStats)}
             {/if}
           </p>
         </div>

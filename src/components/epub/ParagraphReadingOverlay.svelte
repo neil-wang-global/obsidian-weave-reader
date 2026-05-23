@@ -2,6 +2,10 @@
 	import { onMount, untrack } from 'svelte';
 	import { setIcon } from 'obsidian';
 	import { tr } from '../../utils/i18n';
+	import {
+		isInteractiveFormTarget,
+		shouldIgnoreEpubReaderShortcut,
+	} from '../../utils/epub-reader-keyboard-guards';
 	import type {
 		EpubParagraphModeSurfaceStyle,
 		EpubParagraphModeTransitionStyle,
@@ -73,6 +77,7 @@
 	}: Props = $props();
 
 	let t = $derived($tr);
+	let overlayEl = $state<HTMLElement | null>(null);
 	let bodyEl = $state<HTMLElement | null>(null);
 	let textViewportEl = $state<HTMLElement | null>(null);
 	let textEl = $state<HTMLElement | null>(null);
@@ -334,12 +339,17 @@
 	}
 
 	function handleKeydown(event: KeyboardEvent): void {
-		if (!active) {
+		if (!active || !overlayEl || !isEventWithinOverlay(event)) {
+			return;
+		}
+		if (shouldIgnoreEpubReaderShortcut(event)) {
 			return;
 		}
 		if (event.key === 'Escape') {
-			event.preventDefault();
-			closeSettingsPanel();
+			if (settingsPanelOpen) {
+				closeSettingsPanel();
+				return;
+			}
 			clearSelection();
 			onClose?.();
 			return;
@@ -354,7 +364,7 @@
 			});
 			return;
 		}
-		if (event.key === 'ArrowRight' || event.key === 'PageDown' || event.key === ' ') {
+		if (event.key === 'ArrowRight' || event.key === 'PageDown') {
 			event.preventDefault();
 			void navigateWithinParagraph(1).then((handled) => {
 				if (!handled) {
@@ -362,7 +372,31 @@
 					void onNext?.();
 				}
 			});
+		}
+	}
+
+	function isEventWithinOverlay(event: Event): boolean {
+		if (!overlayEl) {
+			return false;
+		}
+		const target = event.target;
+		if (!(target instanceof Node)) {
+			return false;
+		}
+		return overlayEl === target || overlayEl.contains(target);
+	}
+
+	function focusOverlaySurface(): void {
+		if (!active || !overlayEl) {
 			return;
+		}
+		if (isInteractiveFormTarget(document.activeElement)) {
+			return;
+		}
+		try {
+			overlayEl.focus({ preventScroll: true });
+		} catch {
+			overlayEl.focus();
 		}
 	}
 
@@ -579,7 +613,6 @@
 
 		document.addEventListener('selectionchange', syncSelection);
 		document.addEventListener('pointerdown', handlePointerDown, true);
-		window.addEventListener('keydown', handleKeydown, true);
 		const resizeObserver = new ResizeObserver(() => {
 			syncSubpageMetrics(true);
 		});
@@ -595,14 +628,29 @@
 		return () => {
 			document.removeEventListener('selectionchange', syncSelection);
 			document.removeEventListener('pointerdown', handlePointerDown, true);
-			window.removeEventListener('keydown', handleKeydown, true);
 			resizeObserver.disconnect();
 		};
+	});
+
+	$effect(() => {
+		if (!active) {
+			return;
+		}
+		queueMicrotask(() => focusOverlaySurface());
 	});
 </script>
 
 {#if active && paragraph}
-	<div class="epub-paragraph-overlay" data-surface-style={surfaceStyle}>
+	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+	<div
+		class="epub-paragraph-overlay"
+		data-surface-style={surfaceStyle}
+		bind:this={overlayEl}
+		tabindex="-1"
+		onkeydown={handleKeydown}
+		onpointerdown={() => focusOverlaySurface()}
+	>
 		<div class="epub-paragraph-overlay__chrome">
 			<div class="epub-paragraph-overlay__meta">
 				<span class="epub-paragraph-overlay__chapter">{paragraph.chapterTitle}</span>

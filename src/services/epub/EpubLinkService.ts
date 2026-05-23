@@ -1,13 +1,9 @@
 import { App, TFile, normalizePath } from "obsidian";
 import type { EpubHighlightStyle } from "./types";
 import { inflateRaw } from "pako";
-import { openEpubInPreferredLeaf } from "../../utils/epub-leaf-utils";
 import { logger } from "../../utils/logger";
 import { EPUB_RUNTIME } from "./epub-runtime";
 import { i18n } from "../../utils/i18n";
-import { PREMIUM_FEATURES } from "../premium/PremiumFeatureGuard";
-import { ensureEpubFileAccess, ensureEpubPremiumFeature } from "./epub-premium";
-import { resolveEpubVaultPath } from "./epub-vault-path";
 
 export interface EpubLinkParams {
 	filePath: string;
@@ -858,45 +854,17 @@ export class EpubLinkService {
 		sourceMarkdownPath?: string
 	): Promise<void> {
 		try {
-			if (
-				!ensureEpubPremiumFeature(
-					this.app,
-					PREMIUM_FEATURES.EPUB_SOURCE_LOCATION,
-					i18n.t("epub.reader.sourceLocationFeatureNotice")
-				)
-			) {
-				return;
-			}
-			const normalizedLinkPath = normalizePath(String(filePath || "").trim());
-			const vaultPath =
-				resolveEpubVaultPath(this.app, normalizedLinkPath, sourceMarkdownPath) ||
-				normalizedLinkPath;
-			const { getEpubStorageService } = await import("./epub-storage-access");
-			const resolvedFilePath = await getEpubStorageService(this.app).resolveSourceFilePath(
-				sourceId,
-				vaultPath
-			);
-			if (!resolvedFilePath) {
-				logger.warn("[EpubLinkService] Unable to resolve EPUB source:", {
-					filePath: normalizedLinkPath,
-					vaultPath,
-					sourceId,
-					sourceMarkdownPath,
-				});
-				return;
-			}
-			if (!ensureEpubFileAccess(this.app, resolvedFilePath)) {
-				return;
-			}
-			const targetLeaf = await openEpubInPreferredLeaf(this.app, resolvedFilePath, {
-				pendingCfi: cfi,
-				pendingText: text,
+			const { getNavigationHub } = await import("../navigation/navigation-hub-access");
+			const result = await getNavigationHub(this.app).navigate({
+				kind: "book",
+				resourcePath: filePath,
+				locate: { cfi, text },
+				context: { sourceId, sourceMarkdownPath },
+				policy: { reuseLeaf: true, focus: true },
 			});
-			if (!targetLeaf) return;
-
-			this.app.workspace.setActiveLeaf(targetLeaf, { focus: true });
-
-			logger.debug("[EpubLinkService] Navigated to:", resolvedFilePath, cfi, sourceId);
+			if (result.success) {
+				logger.debug("[EpubLinkService] Navigated to:", filePath, cfi, sourceId);
+			}
 		} catch (error) {
 			logger.error("[EpubLinkService] Navigation failed:", error);
 		}

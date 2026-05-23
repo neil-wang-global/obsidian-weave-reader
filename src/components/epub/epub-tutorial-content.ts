@@ -256,8 +256,18 @@ export const EPUB_TUTORIAL_CONTENT_BY_LANG: Record<
 			{
 				title: "常用入口与快捷键",
 				shortcuts: [
-					{ keys: ["←", "→"], description: "翻页模式下切换前后页。" },
-					{ keys: ["Esc"], description: "关闭当前教程，或退出部分当前激活的弹层。" },
+					{
+						keys: ["←", "→"],
+						description: "翻页模式且 EPUB 视图获得焦点时切换前后页（连续滚动模式不占用方向键）。",
+					},
+					{
+						keys: ["←", "→", "PageUp", "PageDown"],
+						description: "段落阅读模式下面板获得焦点时，在段内或相邻段落间移动。",
+					},
+					{
+						keys: ["Esc"],
+						description: "关闭当前教程，或在已聚焦的阅读器弹层上退出当前层。",
+					},
 				],
 				buttons: [
 					{ icon: "list", label: "侧边栏", description: "切换目录、笔记、书签与书架相关入口。" },
@@ -519,11 +529,18 @@ export const EPUB_TUTORIAL_CONTENT_BY_LANG: Record<
 				shortcuts: [
 					{
 						keys: ["←", "→"],
-						description: "Switch between previous and next pages in paged mode.",
+						description:
+							"When paged mode is active and the EPUB view is focused, move to the previous or next page (scrolled mode does not use arrow keys).",
+					},
+					{
+						keys: ["←", "→", "PageUp", "PageDown"],
+						description:
+							"In paragraph reading mode, move within or across paragraphs when the paragraph panel is focused.",
 					},
 					{
 						keys: ["Esc"],
-						description: "Close the tutorial or exit some currently active overlays.",
+						description:
+							"Close the tutorial, or dismiss the currently focused reader overlay.",
 					},
 				],
 				buttons: [

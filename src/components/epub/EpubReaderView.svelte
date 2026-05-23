@@ -33,6 +33,7 @@
 		canUseExcerptNotes?: boolean;
 		getReadingPositionAutoSaveConfig?: () => { enabled: boolean; pages: number };
 		isParagraphModeActive?: () => boolean;
+		shouldSkipReadingProgressPersistOnRelocate?: () => boolean;
 		onAutoReadingPositionSaved?: (position: ReadingPosition) => void | Promise<void>;
 		hasPendingNavigation?: boolean;
 		onProgressChange?: (percent: number) => void;
@@ -56,6 +57,7 @@
 		canUseExcerptNotes = true,
 		getReadingPositionAutoSaveConfig,
 		isParagraphModeActive,
+		shouldSkipReadingProgressPersistOnRelocate,
 		onAutoReadingPositionSaved,
 		hasPendingNavigation = false,
 		onProgressChange: onProgressChangeProp,
@@ -708,7 +710,10 @@
 		if (detachRelocatedHandler) return;
 		detachRelocatedHandler = readerService.onRelocated(async (position) => {
 			const paginationInfo = await readerService.getPaginationInfo();
-			await syncReadingPositionPersistence(position, paginationInfo);
+			const skipPersist = shouldSkipReadingProgressPersistOnRelocate?.() === true;
+			if (!skipPersist) {
+				await syncReadingPositionPersistence(position, paginationInfo);
+			}
 			notifyProgressChange(canUseReadingProgress ? position.percent : 0);
 			notifyPaginationChange(paginationInfo);
 			notifyChapterChange(readerService.getCurrentChapterTitle());

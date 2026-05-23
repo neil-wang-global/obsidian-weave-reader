@@ -304,15 +304,23 @@
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
-		if (!open) {
+		if (!open || !popoverEl) {
+			return;
+		}
+		const target = event.target;
+		if (!(target instanceof Node) || !popoverEl.contains(target)) {
 			return;
 		}
 		if (event.key === 'Escape') {
-			event.preventDefault();
 			onClose();
 			return;
 		}
-		if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+		if (
+			(event.metaKey || event.ctrlKey)
+			&& event.key === 'Enter'
+			&& textareaEl
+			&& document.activeElement === textareaEl
+		) {
 			event.preventDefault();
 			onSave();
 		}
@@ -368,7 +376,6 @@
 		document.addEventListener('touchstart', handlePointerDownOutside as unknown as EventListener);
 		window.addEventListener('resize', handleWindowLayoutChange);
 		window.addEventListener('scroll', handleWindowLayoutChange, true);
-		window.addEventListener('keydown', handleKeydown);
 		return () => {
 			clearPendingFocus();
 			stopViewportTracking();
@@ -376,7 +383,6 @@
 			document.removeEventListener('touchstart', handlePointerDownOutside as unknown as EventListener);
 			window.removeEventListener('resize', handleWindowLayoutChange);
 			window.removeEventListener('scroll', handleWindowLayoutChange, true);
-			window.removeEventListener('keydown', handleKeydown);
 		};
 	});
 </script>
@@ -391,6 +397,8 @@
 		class:epub-comment-editor--keyboard-docked={keyboardDocked}
 		style={`top: ${posTop}px; left: ${posLeft}px; width: ${popoverWidth}px;`}
 		bind:this={popoverEl}
+		tabindex="-1"
+		onkeydown={handleKeydown}
 		use:optionalPortal={isMobileEditor}
 	>
 		<textarea

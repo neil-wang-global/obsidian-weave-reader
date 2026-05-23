@@ -76,18 +76,37 @@ vi.mock('./EpubSidebarView', () => ({
 }));
 
 vi.mock('obsidian', () => {
+	class Scope {
+		public destroyed = false;
+		register(): void {}
+		destroy(): void {
+			this.destroyed = true;
+		}
+	}
+
 	class ItemView {
 		public leaf: unknown;
 		public contentEl = enhanceDiv(document.createElement('div'));
+		public scope: InstanceType<typeof Scope> | null = null;
 
 		constructor(leaf: unknown) {
 			this.leaf = leaf;
+		}
+
+		addAction(): HTMLButtonElement {
+			const button = document.createElement('button');
+			(button as HTMLButtonElement & { toggleClass: (name: string, force?: boolean) => void }).toggleClass =
+				(name: string, force?: boolean) => {
+					button.classList.toggle(name, force);
+				};
+			return button;
 		}
 
 		async setState(): Promise<void> {}
 	}
 
 	return {
+		Scope,
 		ItemView,
 		MarkdownView: class {},
 		Menu: class {},
@@ -132,14 +151,17 @@ describe('EpubView', () => {
 
 		const pendingNavigation = (view as any).consumePendingNavigation();
 		const props = (view as any).buildReaderAppProps(
+			pendingNavigation.pendingLocate,
 			pendingNavigation.pendingCfi,
 			pendingNavigation.pendingText
 		) as {
+			pendingLocate?: { cfi?: string; text?: string };
 			pendingCfi?: string;
 			pendingText?: string;
 			onActionsReady?: (actions: { navigateToCfi?: (cfi: string, text: string) => void }) => void;
 		};
 
+		expect(props.pendingLocate?.cfi).toBe('epubcfi(/6/2!/4/2,/1:0,/1:9)');
 		expect(props.pendingCfi).toBe('epubcfi(/6/2!/4/2,/1:0,/1:9)');
 		expect(props.pendingText).toBe('demo excerpt');
 		expect((view as any).pendingCfi).toBe('');
@@ -184,7 +206,7 @@ describe('EpubView', () => {
 			expect.objectContaining({
 				active: false,
 				visible: true,
-				label: expect.stringContaining('(高级)'),
+				label: expect.stringContaining('🔒'),
 			})
 		);
 		expect(applyActionButtonState).toHaveBeenCalledWith(
@@ -192,9 +214,25 @@ describe('EpubView', () => {
 			expect.objectContaining({
 				active: false,
 				visible: true,
-				label: expect.stringContaining('(高级)'),
+				label: expect.stringContaining('🔒'),
 			})
 		);
+	});
+
+	it('creates a keymap scope before registering reader keyboard shortcuts', () => {
+		const parentScope = {};
+		const app = { scope: parentScope };
+		const view = new EpubView({ app } as any, { app } as any);
+		(view as any).app = app;
+
+		(view as any).registerReaderKeyboardShortcuts();
+
+		expect((view as any).scope).toBeTruthy();
+		expect((view as any).scope.destroyed).toBe(false);
+
+		(view as any).disposeReaderKeymapScope();
+
+		expect((view as any).scope).toBeNull();
 	});
 
 	it('opens the paragraph mode premium preview instead of toggling when the capability is unavailable', () => {

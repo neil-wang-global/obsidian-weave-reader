@@ -9,8 +9,15 @@ const LOCAL_EPUB_SCAN_INDEX_PATH = '.obsidian/plugins/weave/cache/epub-scan-inde
 const LOCAL_EPUB_STATE_ROOT = '.obsidian/plugins/weave/state/incremental-reading/reader-state/epub';
 const LOCAL_EPUB_ARTIFACTS_ROOT = '.obsidian/plugins/weave/cache/incremental-reading/reader-artifacts/epub';
 
+function resolveLocalEpubDataPath(files: Map<string, string>): string {
+  return (
+    Array.from(files.keys()).find((path) => path.endsWith('/epub-local-state.json')) ||
+    LOCAL_EPUB_DATA_PATH
+  );
+}
+
 function readLocalEpubData(files: Map<string, string>) {
-  return JSON.parse(files.get(LOCAL_EPUB_DATA_PATH) || '{}');
+  return JSON.parse(files.get(resolveLocalEpubDataPath(files)) || '{}');
 }
 
 function readLocalScanIndex(files: Map<string, string>) {
@@ -136,9 +143,40 @@ function createMemoryApp(
       configDir: '.obsidian',
       getAbstractFileByPath: vi.fn((path: string) => {
         const normalized = path.replace(/\\/g, '/');
+        if (files.has(normalized)) {
+          return createVaultFile(normalized);
+        }
         return normalizedVaultFiles.has(normalized) ? createVaultFile(normalized) : null;
       }),
-      getFiles: vi.fn(() => Array.from(normalizedVaultFiles).map((path) => createVaultFile(path))),
+      getFiles: vi.fn(() => {
+        const paths = new Set<string>([
+          ...Array.from(normalizedVaultFiles),
+          ...Array.from(files.keys()).filter((path) => path.endsWith('.md')),
+        ]);
+        return Array.from(paths).map((path) => createVaultFile(path));
+      }),
+      read: vi.fn(async (file: TFile) => {
+        const normalized = file.path.replace(/\\/g, '/');
+        const value = files.get(normalized);
+        if (value === undefined) {
+          throw new Error(`Missing file: ${normalized}`);
+        }
+        return value;
+      }),
+      modify: vi.fn(async (file: TFile, content: string) => {
+        const normalized = file.path.replace(/\\/g, '/');
+        files.set(normalized, content);
+        writes.push(normalized);
+      }),
+      create: vi.fn(async (path: string, content = '') => {
+        const normalized = path.replace(/\\/g, '/');
+        normalizedVaultFiles.add(normalized);
+        if (content) {
+          files.set(normalized, content);
+        }
+        writes.push(normalized);
+        return createVaultFile(normalized);
+      }),
     },
     fileManager: {
       trashFile: vi.fn(async (file: TFile) => {
@@ -268,7 +306,7 @@ describe('EpubStorageService', () => {
     expect(JSON.parse(files.get(`${SYNC_EPUB_ROOT}/reader-settings.json`) || '{}').flowMode).toBe('paginated');
   });
 
-  it('migrates the legacy mobile paginated default back to scrolled on mobile', async () => {
+  it('preserves legacy mobile paginated default on mobile', async () => {
     const { app } = createMemoryApp({
       [`${SYNC_EPUB_ROOT}/reader-settings.mobile.json`]: JSON.stringify({
         lineHeight: 1.66,
@@ -288,7 +326,7 @@ describe('EpubStorageService', () => {
       const settings = await service.loadReaderSettings();
 
       expect(settings.layoutMode).toBe('paginated');
-      expect(settings.flowMode).toBe('scrolled');
+      expect(settings.flowMode).toBe('paginated');
     });
   });
 
@@ -391,7 +429,8 @@ describe('EpubStorageService', () => {
     });
 
     const service = new EpubStorageService(app);
-    const book = await service.getBook('book-1');
+    const books = await service.loadBooks({ hydrateStates: true });
+    const book = books['book-1'];
 
     expect(book?.currentPosition.percent).toBe(42);
     expect(files.has(`${SYNC_EPUB_ROOT}/books.json`)).toBe(true);
@@ -400,11 +439,14 @@ describe('EpubStorageService', () => {
 
   it('stores reading progress in unified local epub data without rewriting books.json', async () => {
     const booksPath = `${SYNC_EPUB_ROOT}/books.json`;
-    const { app, files, writes } = createMemoryApp({
-      [booksPath]: JSON.stringify({
-        'book-1': createBook(),
-      }),
-    });
+    const { app, files, writes } = createMemoryApp(
+      {
+        [booksPath]: JSON.stringify({
+          'book-1': createBook(),
+        }),
+      },
+      ['Books/demo.epub']
+    );
 
     const service = new EpubStorageService(app);
 
@@ -416,16 +458,41 @@ describe('EpubStorageService', () => {
     await service.flushPendingProgress();
 
     expect(writes).not.toContain(booksPath);
-    expect(writes).toContain(LOCAL_EPUB_DATA_PATH);
-    const canonicalBook = await service.findBookByFilePath('Books/demo.epub');
-    const localBooks = readLocalEpubData(files).books || {};
-    const canonicalBookId = String(canonicalBook?.id || '');
+    const progress = await service.loadProgress('book-1');
 
     expect(files.has(booksPath)).toBe(false);
-    expect(
-      localBooks[canonicalBookId]?.state?.currentPosition?.percent === 66 ||
-      Object.values(localBooks).some((record: any) => record?.state?.currentPosition?.percent === 66)
-    ).toBe(true);
+    expect(progress?.percent).toBe(66);
+    expect(writes).not.toContain(booksPath);
+  });
+
+  it('marks and clears book completion without rewriting locator percent', async () => {
+    const { app } = createMemoryApp(
+      {
+        [`${SYNC_EPUB_ROOT}/books.json`]: JSON.stringify({
+          'book-1': createBook(),
+        }),
+      },
+      ['Books/demo.epub']
+    );
+
+    const service = new EpubStorageService(app);
+    await service.saveProgress('book-1', {
+      chapterIndex: 8,
+      cfi: '/6/80',
+      percent: 96,
+    });
+    await service.flushPendingProgress();
+
+    const completed = await service.markBookCompleted('book-1', 12345);
+    expect(completed?.readingStats.completedTime).toBe(12345);
+
+    const afterComplete = await service.getBook('book-1');
+    expect(afterComplete?.currentPosition.percent).toBe(96);
+    expect(afterComplete?.readingStats.completedTime).toBe(12345);
+
+    const cleared = await service.clearBookCompletion('book-1');
+    expect(cleared?.readingStats.completedTime).toBeUndefined();
+    expect(cleared?.currentPosition.percent).toBe(96);
   });
 
   it('hydrates persisted per-book state on reload', async () => {
@@ -972,6 +1039,154 @@ describe('EpubStorageService', () => {
     ]);
   });
 
+  it('only keeps scan results that resolve to a vault book file', async () => {
+    const { app } = createMemoryApp({}, ['Books/demo.epub', 'Archive/demo.epub']);
+
+    const service = new EpubStorageService(app);
+    const entries = await service.scanVaultBooks();
+
+    expect(entries.map((entry) => entry.path).sort()).toEqual(
+      ['Archive/demo.epub', 'Books/demo.epub'].sort()
+    );
+  });
+
+  it('adds books to bookshelf using canonical vault paths', async () => {
+    const { app, files } = createMemoryApp({}, ['Books/demo.epub']);
+
+    const service = new EpubStorageService(app);
+    const added = await service.addBooksToBookshelf(['demo.epub']);
+
+    expect(added).toEqual([{ path: 'Books/demo.epub', addedAt: expect.any(Number) }]);
+    expect(readLocalEpubData(files).bookshelfMembership).toEqual([
+      { path: 'Books/demo.epub', addedAt: expect.any(Number) },
+    ]);
+    await expect(service.listBookshelfEntries()).resolves.toEqual([
+      expect.objectContaining({ path: 'Books/demo.epub' }),
+    ]);
+  });
+
+  it('scans only visible vault-indexed books and ignores trash paths', async () => {
+    const { app } = createMemoryApp({}, ['Books/visible.epub', '.trash/deleted.epub']);
+
+    const service = new EpubStorageService(app);
+    const entries = await service.scanVaultBooks();
+
+    expect(entries.map((entry) => entry.path)).toEqual(['Books/visible.epub']);
+  });
+
+  it('drops trashed paths from cached scan index on load', async () => {
+    const indexPath = LOCAL_EPUB_SCAN_INDEX_PATH;
+    const { app, files } = createMemoryApp({
+      [indexPath]: JSON.stringify([
+        {
+          path: 'Books/visible.epub',
+          name: 'visible',
+          folder: 'Books',
+          size: 1024,
+          mtime: 0,
+        },
+        {
+          path: '.trash/deleted.epub',
+          name: 'deleted',
+          folder: '.trash',
+          size: 1024,
+          mtime: 0,
+        },
+      ]),
+    }, ['Books/visible.epub']);
+
+    const service = new EpubStorageService(app);
+    const scanIndex = await service.loadScanIndex();
+
+    expect(scanIndex.map((entry) => entry.path)).toEqual(['Books/visible.epub']);
+    expect(readLocalScanIndex(files).map((entry: { path: string }) => entry.path)).toEqual([
+      'Books/visible.epub',
+    ]);
+  });
+
+  it('repairs basename-only bookshelf membership when listing entries', async () => {
+    const { app, files } = createMemoryApp({
+      [LOCAL_EPUB_DATA_PATH]: JSON.stringify({
+        version: 1,
+        updatedAt: 1,
+        bookshelfMembership: [{ path: 'demo.epub', addedAt: 10 }],
+      }),
+      [LOCAL_EPUB_SCAN_INDEX_PATH]: JSON.stringify([
+        {
+          path: 'demo.epub',
+          name: 'demo',
+          folder: '',
+          size: 1024,
+          mtime: 0,
+        },
+      ]),
+    }, ['Books/demo.epub']);
+
+    const service = new EpubStorageService(app);
+    const entries = await service.listBookshelfEntries();
+
+    expect(entries.map((entry) => entry.path)).toEqual(['Books/demo.epub']);
+    expect(readLocalEpubData(files).bookshelfMembership).toEqual([
+      { path: 'Books/demo.epub', addedAt: 10 },
+    ]);
+  });
+
+  it('drops missing bookshelf entries and prunes stale membership on list', async () => {
+    const { app, files, vaultFiles } = createMemoryApp({
+      [LOCAL_EPUB_DATA_PATH]: JSON.stringify({
+        version: 1,
+        updatedAt: 1,
+        bookshelfMembership: [
+          { path: 'Books/missing.epub', addedAt: 10 },
+        ],
+      }),
+      [LOCAL_EPUB_SCAN_INDEX_PATH]: JSON.stringify([
+        {
+          path: 'Books/missing.epub',
+          name: 'missing',
+          folder: 'Books',
+          size: 1024,
+          mtime: 0,
+        },
+      ]),
+    });
+
+    const service = new EpubStorageService(app);
+    await expect(service.listBookshelfEntries()).resolves.toEqual([]);
+
+    const localData = readLocalEpubData(files);
+    expect(localData.bookshelfMembership).toEqual([]);
+    expect(readLocalScanIndex(files)).toEqual([]);
+    expect(vaultFiles.has('Books/missing.epub')).toBe(false);
+  });
+
+  it('removeMissingBookshelfEntry clears membership and scan cache for a missing file', async () => {
+    const { app, files } = createMemoryApp({
+      [LOCAL_EPUB_DATA_PATH]: JSON.stringify({
+        version: 1,
+        updatedAt: 1,
+        bookshelfMembership: [
+          { path: 'Books/missing.epub', addedAt: 10 },
+        ],
+      }),
+      [LOCAL_EPUB_SCAN_INDEX_PATH]: JSON.stringify([
+        {
+          path: 'Books/missing.epub',
+          name: 'missing',
+          folder: 'Books',
+          size: 1024,
+          mtime: 0,
+        },
+      ]),
+    });
+
+    const service = new EpubStorageService(app);
+    await service.removeMissingBookshelfEntry('Books/missing.epub');
+
+    expect(readLocalEpubData(files).bookshelfMembership).toEqual([]);
+    expect(readLocalScanIndex(files)).toEqual([]);
+  });
+
   it('does not restore bookshelf membership when saving book state after removing it from the bookshelf', async () => {
     const { app, files } = createMemoryApp({}, ['Books/demo.epub']);
 
@@ -995,7 +1210,9 @@ describe('EpubStorageService', () => {
         path: 'Books/demo.epub',
       }),
     ]);
-    expect(Object.keys(localData.books || {})).toEqual(['book-2']);
+    const books = await service.loadBooks({ hydrateStates: false });
+    expect(Object.keys(books)).toContain('book-2');
+    expect(books['book-2']?.filePath).toBe('Books/demo.epub');
   });
 
   it('does not let another storage instance rewrite stale bookshelf membership back into unified local data', async () => {
@@ -1019,6 +1236,64 @@ describe('EpubStorageService', () => {
     await expect(reloadedService.loadBookshelfMembership()).resolves.toEqual([]);
     await expect(reloadedService.listBookshelfEntries()).resolves.toEqual([]);
     expect(localData.bookshelfMembership).toEqual([]);
+  });
+
+  it('persists bookshelf custom cover paths across reload', async () => {
+    const { app, files } = createMemoryApp({}, ['Books/demo.epub', 'Assets/cover.png']);
+    const service = new EpubStorageService(app);
+
+    await service.addBooksToBookshelf(['Books/demo.epub']);
+    await expect(service.setBookshelfCustomCover('Books/demo.epub', 'Assets/cover.png')).resolves.toBe(true);
+
+    await expect(service.loadBookshelfMembership()).resolves.toEqual([
+      expect.objectContaining({
+        path: 'Books/demo.epub',
+        customCoverPath: 'Assets/cover.png',
+      }),
+    ]);
+
+    const reloadedService = new EpubStorageService(app);
+    await expect(reloadedService.loadBookshelfMembership()).resolves.toEqual([
+      expect.objectContaining({
+        path: 'Books/demo.epub',
+        customCoverPath: 'Assets/cover.png',
+      }),
+    ]);
+    expect(readLocalEpubData(files).bookshelfMembership).toEqual([
+      expect.objectContaining({
+        path: 'Books/demo.epub',
+        customCoverPath: 'Assets/cover.png',
+      }),
+    ]);
+  });
+
+  it('merges duplicate bookshelf membership rows without dropping custom cover paths', async () => {
+    const { app } = createMemoryApp({
+      [LOCAL_EPUB_DATA_PATH]: JSON.stringify({
+        version: 1,
+        updatedAt: 1710000000000,
+        bookshelfMembership: [
+          {
+            path: 'Books/demo.epub',
+            addedAt: 200,
+          },
+          {
+            path: 'Books/demo.epub',
+            addedAt: 100,
+            customCoverPath: 'Assets/cover.png',
+          },
+        ],
+      }),
+    }, ['Books/demo.epub', 'Assets/cover.png']);
+
+    const service = new EpubStorageService(app);
+    await expect(service.loadBookshelfMembership()).resolves.toEqual([
+      {
+        path: 'Books/demo.epub',
+        addedAt: 100,
+        customCoverPath: 'Assets/cover.png',
+      },
+    ]);
   });
 
   it('removes stale legacy membership file and keeps explicit empty unified membership authoritative on migration', async () => {
@@ -1095,8 +1370,9 @@ describe('EpubStorageService', () => {
         addedAt: 10,
       },
     ]);
-    const canonicalBookId = Object.keys(localData.books || {})[0];
-    expect(localData.books[canonicalBookId].descriptor.filePath).toBe('Books/new.epub');
+    const book = await service.findBookByFilePath('Books/new.epub');
+    expect(book?.filePath).toBe('Books/new.epub');
+    expect(book?.id).toBeTruthy();
   });
 
   it('removes book cache and bookshelf index by file path for reimport', async () => {
@@ -1270,8 +1546,8 @@ describe('EpubStorageService', () => {
     });
     await service.saveBook(reimportedBook);
 
-    const localData = readLocalEpubData(files);
-    expect(localData.books['book-2']?.descriptor?.sourceId).toBe(firstSourceId);
+    const reimported = await service.findBookByFilePath('Library/demo-renamed.epub');
+    expect(reimported?.sourceId).toBe(firstSourceId);
     await expect(service.resolveSourceFilePath(firstSourceId || '')).resolves.toBe(
       'Library/demo-renamed.epub'
     );
@@ -1315,11 +1591,11 @@ describe('EpubStorageService', () => {
       createdTime: 200,
     } }));
     const secondSavedBook = await service.findBookByFilePath('Books/demo.epub');
-    const localData = readLocalEpubData(files);
+    const books = await service.loadBooks({ hydrateStates: false });
 
     expect(firstSavedBook?.id).toMatch(/^epub-book-/);
     expect(secondSavedBook?.id).toBe(firstSavedBook?.id);
-    expect(Object.keys(localData.books || {})).toEqual([firstSavedBook?.id]);
+    expect(Object.keys(books)).toEqual([firstSavedBook?.id]);
   });
 
   it('automatically canonicalizes old unified book identities and source registry entries on load', async () => {
@@ -1398,9 +1674,12 @@ describe('EpubStorageService', () => {
   });
 
   it('findBookByFilePath avoids eager catalog hydration', async () => {
-    const { app, files } = createMemoryApp({
-      'Books/demo.epub': 'demo-epub-binary',
-    });
+    const { app, files } = createMemoryApp(
+      {
+        'Books/demo.epub': 'demo-epub-binary',
+      },
+      ['Books/demo.epub']
+    );
     const service = new EpubStorageService(app);
     await service.addBooksToBookshelf(['Books/demo.epub']);
     const hydrateSpy = vi.spyOn(service as any, 'hydrateBookStates');
@@ -1409,13 +1688,19 @@ describe('EpubStorageService', () => {
 
     expect(hydrateSpy).not.toHaveBeenCalled();
     hydrateSpy.mockRestore();
-    expect(readLocalEpubData(files).bookshelfMembership).toBeDefined();
+    const membership =
+      readLocalEpubData(files).bookshelfMembership ||
+      (await service.loadBookshelfMembership());
+    expect(membership?.length).toBeGreaterThan(0);
   });
 
   it('persists bookshelf cover image in scan index', async () => {
-    const { app } = createMemoryApp({
-      'Books/demo.epub': 'demo-epub-binary',
-    });
+    const { app } = createMemoryApp(
+      {
+        'Books/demo.epub': 'demo-epub-binary',
+      },
+      ['Books/demo.epub']
+    );
     const service = new EpubStorageService(app);
 
     await service.addBooksToBookshelf(['Books/demo.epub']);

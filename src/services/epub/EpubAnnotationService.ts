@@ -4,6 +4,7 @@ import type { EpubBacklinkHighlightService } from "./EpubBacklinkHighlightServic
 import { EpubLinkService } from "./EpubLinkService";
 import type { EpubStorageService } from "./EpubStorageService";
 import type { HighlightSourceLocator, ReaderHighlight } from "./reader-engine-types";
+import { resolveDisplayProgress } from "./book-progress";
 import type { ConcealedText, HighlightColor } from "./types";
 
 export class EpubAnnotationService {
@@ -105,7 +106,7 @@ export class EpubAnnotationService {
 		if (book.metadata.isbn) {
 			markdown += `- **ISBN**: ${book.metadata.isbn}\n`;
 		}
-		markdown += `- **${t("epub.export.readingProgress")}**: ${book.currentPosition.percent}%\n`;
+		markdown += `- **${t("epub.export.readingProgress")}**: ${resolveDisplayProgress(book)}%\n`;
 		markdown += "\n";
 
 		if (highlights.length > 0) {
@@ -306,18 +307,23 @@ export class EpubAnnotationService {
 	async collectAllHighlights(
 		bookId: string,
 		filePath: string,
-		backlinkService: EpubBacklinkHighlightService
+		backlinkService: EpubBacklinkHighlightService,
+		options?: { additionalSourcePaths?: string[] }
 	): Promise<ReaderHighlight[]> {
 		const boundCanvasPath = await this.storageService.getCanvasBinding(bookId);
+		const hasAdditionalSourcePaths =
+			Array.isArray(options?.additionalSourcePaths) && options.additionalSourcePaths.length > 0;
 		const cacheKey = this.buildCollectedHighlightsCacheKey(bookId, filePath, boundCanvasPath);
-		const cached = this.collectedHighlightsCache.get(cacheKey);
-		if (cached) {
-			return this.cloneCollectedHighlights(cached);
-		}
+		if (!hasAdditionalSourcePaths) {
+			const cached = this.collectedHighlightsCache.get(cacheKey);
+			if (cached) {
+				return this.cloneCollectedHighlights(cached);
+			}
 
-		const inflight = this.inflightCollectedHighlights.get(cacheKey);
-		if (inflight) {
-			return this.cloneCollectedHighlights(await inflight);
+			const inflight = this.inflightCollectedHighlights.get(cacheKey);
+			if (inflight) {
+				return this.cloneCollectedHighlights(await inflight);
+			}
 		}
 
 		const loadPromise = (async () => {
@@ -326,7 +332,11 @@ export class EpubAnnotationService {
 			// 现在统一以 md/canvas/卡片中的真实摘录为准，因此这里直接移除遗留缓存文件。
 			await this.clearLegacyHighlightCache(bookId);
 
-			const backlinkHighlights = await backlinkService.collectHighlights(filePath, boundCanvasPath);
+			const backlinkHighlights = await backlinkService.collectHighlights(
+				filePath,
+				boundCanvasPath,
+				hasAdditionalSourcePaths ? options : undefined
+			);
 			for (const bh of backlinkHighlights) {
 				const bhNorm = EpubLinkService.normalizeCfi(bh.cfiRange);
 				const incomingLocators = this.collectHighlightSourceLocators(bh);
@@ -395,11 +405,15 @@ export class EpubAnnotationService {
 			}
 
 			const snapshot = this.cloneCollectedHighlights(allHighlights);
-			this.collectedHighlightsCache.set(cacheKey, snapshot);
+			if (!hasAdditionalSourcePaths) {
+				this.collectedHighlightsCache.set(cacheKey, snapshot);
+			}
 			return snapshot;
 		})();
 
-		this.inflightCollectedHighlights.set(cacheKey, loadPromise);
+		if (!hasAdditionalSourcePaths) {
+			this.inflightCollectedHighlights.set(cacheKey, loadPromise);
+		}
 		try {
 			return this.cloneCollectedHighlights(await loadPromise);
 		} finally {

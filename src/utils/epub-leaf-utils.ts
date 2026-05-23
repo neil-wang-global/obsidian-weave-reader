@@ -1,7 +1,11 @@
-import { TFile, type App, type WorkspaceLeaf } from "obsidian";
+import { normalizePath, TFile, type App, type WorkspaceLeaf } from "obsidian";
 import { getEpubStorageService } from "../services/epub";
 import { EPUB_RUNTIME } from "../services/epub/epub-runtime";
 import { isSupportedBookPath } from "../services/epub/book-format";
+import {
+	epubVaultPathsReferToSameBook,
+	resolveSupportedBookFilePath,
+} from "../services/epub/epub-vault-path";
 import { epubActiveDocumentStore } from "../stores/epub-active-document-store";
 import { VIEW_TYPE_EPUB } from "../views/EpubView";
 import { getLeafLocation } from "./view-location-utils";
@@ -119,12 +123,24 @@ function isExistingEpubPath(app: App, filePath: string | null | undefined): file
 	return file instanceof TFile && isSupportedBookPath(file.path);
 }
 
+export function pathsReferToSameOpenBook(left: string, right: string): boolean {
+	const normalizedLeft = normalizePath(String(left || "").trim());
+	const normalizedRight = normalizePath(String(right || "").trim());
+	if (!normalizedLeft || !normalizedRight) {
+		return false;
+	}
+	return epubVaultPathsReferToSameBook(normalizedLeft, normalizedRight);
+}
+
 export function findOpenEpubLeaf(app: App, filePath?: string): WorkspaceLeaf | null {
 	const leaves = getAllOpenEpubLeaves(app);
 
 	if (filePath) {
+		const canonicalPath =
+			resolveSupportedBookFilePath(app, filePath) || normalizePath(filePath);
 		const matchedLeaf = leaves.find((leaf) => {
-			return getOpenEpubFilePath(leaf) === filePath;
+			const openPath = getOpenEpubFilePath(leaf);
+			return openPath ? pathsReferToSameOpenBook(openPath, canonicalPath) : false;
 		});
 		return matchedLeaf ?? null;
 	}
@@ -179,14 +195,60 @@ export async function openEpubInPreferredLeaf(
 		return null;
 	}
 
+	const canonicalPath = resolveSupportedBookFilePath(app, filePath) || normalizePath(filePath);
+
 	await leaf.setViewState({
 		type: viewType,
 		active: true,
 		state: {
-			filePath,
+			filePath: canonicalPath,
 			...state,
 		},
 	});
+	void app.workspace.revealLeaf(leaf);
+	return leaf;
+}
+
+/**
+ * Open or focus a book for excerpt source navigation from notes.
+ * Never reuses the active markdown/note leaf; reuses an existing reader leaf for the same book or opens a new tab.
+ */
+export async function openBookForSourceNavigation(
+	app: App,
+	filePath: string,
+	state: Record<string, unknown> = {},
+	options: { focus?: boolean } = {}
+): Promise<WorkspaceLeaf | null> {
+	const { focus = true } = options;
+	const viewType = resolveRegisteredEpubViewType(app, filePath);
+	if (!viewType) {
+		return null;
+	}
+
+	const canonicalPath = resolveSupportedBookFilePath(app, filePath) || normalizePath(filePath);
+	const existingLeaf = findOpenEpubLeaf(app, canonicalPath);
+	const leaf = existingLeaf ?? app.workspace.getLeaf("tab");
+
+	await leaf.setViewState({
+		type: viewType,
+		active: true,
+		state: {
+			filePath: canonicalPath,
+			...state,
+		},
+	});
+
+	try {
+		if (typeof app.workspace.setActiveLeaf === "function") {
+			try {
+				app.workspace.setActiveLeaf(leaf, { focus });
+			} catch {
+				app.workspace.setActiveLeaf(leaf, focus);
+			}
+		}
+	} catch {
+		/* ignore focus failures */
+	}
 	void app.workspace.revealLeaf(leaf);
 	return leaf;
 }

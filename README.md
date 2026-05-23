@@ -5,7 +5,7 @@
 <div align="center">
 
 ![Weave EPUB Reader](https://img.shields.io/badge/Obsidian-EPUB%20Reader-8a5cf6?style=for-the-badge)
-![Version](https://img.shields.io/badge/version-0.6.5-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-0.6.8-green?style=for-the-badge)
 ![Min Obsidian](https://img.shields.io/badge/Obsidian-1.7.0+-purple?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange?style=for-the-badge)
 
@@ -19,7 +19,9 @@ Minimum supported Obsidian version: `1.7.0`
 
 ## Project Scope
 
-This repository is a **standalone book reader project**, not the documentation hub for the full Weave plugin ecosystem.
+This repository is a **standalone book reader project**, not the documentation hub for the full Weave plugin ecosystem. The source tree is pruned to EPUB reader code paths; legacy Weave study/card/kanban modules are not shipped in `main.js`. Legacy IR resume-point migration reads and writes vault JSON directly (`EpubIrResumePointAccess`) instead of bundling the full incremental-reading service stack.
+
+Optional integrations with the main **Weave** plugin (AI split menu, license inheritance, `.wdeck` highlight sync) remain as bridges when Weave is installed.
 
 This plugin is designed for users who want to:
 
@@ -49,6 +51,15 @@ This plugin is designed for users who want to:
 - `txt`
 
 So although the plugin is named EPUB Reader, the current project is **not limited to EPUB only**.
+
+## Recent architecture updates (0.6.x)
+
+- **NavigationHub**: Bookshelf opens, deep links, and Markdown / Canvas / card source tracing now go through a single `NavigationIntent` pipeline. Bookshelf opens use `preferredLeaf`; locate jumps still require the premium source-location capability.
+- **ExcerptPipeline**: In-reader highlights and deck excerpts sync through an indexed pipeline to avoid redundant full rescans. `.wdeck` excerpts use `persistenceSourcePath` / `customFields.wdeck.sourcePath`, separate from the EPUB semantic source in `we_source`.
+- **BookSessionManager**: Per-book parse/render sessions are released when no leaf still references them.
+- **Settings**: New **Open source navigation in a new tab by default** option (`sourceNavigationOpenInNewTab`, on by default).
+
+See [`src/services/navigation/NAVIGATION_ENTRYPOINTS.md`](src/services/navigation/NAVIGATION_ENTRYPOINTS.md) for migration notes.
 
 ## Core Features
 
@@ -119,7 +130,7 @@ Weave EPUB Reader follows a model of free core functionality with optional paid 
 
 ### Option 1: Manual installation
 
-1. Get the following files from a [GitHub release](https://github.com/zhuzhige123/obsidian-weave-reader/releases) tagged with the version in `manifest.json` (for example `0.6.5`):
+1. Get the following files from a [GitHub release](https://github.com/zhuzhige123/obsidian-weave-reader/releases) tagged with the version in `manifest.json` (for example `0.6.8`):
    - `main.js`
    - `manifest.json`
    - `styles.css`
@@ -298,7 +309,7 @@ npm run build
 npm run verify:release
 ```
 
-Each GitHub Release **title** must match its tag exactly (for example `0.6.5`). An empty title makes ObsidianReviewBot report `` as the release name. Edit the release on GitHub (**Releases → Edit → Title**) or run `gh release edit 0.6.5 --title 0.6.5` before the directory review.
+Each GitHub Release **title** must match its tag exactly (for example `0.6.8`). An empty title makes ObsidianReviewBot report `` as the release name. Edit the release on GitHub (**Releases → Edit → Title**) or run `gh release edit 0.6.8 --title 0.6.8` before the directory review.
 
 The repository ships the standard [GPL-3.0](./LICENSE) text (see [COPYRIGHT](./COPYRIGHT) for the notice) so GitHub and the review bot can recognize the license. See [PLUGIN_AUDIT.md](./PLUGIN_AUDIT.md) for review-bot capability notes.
 

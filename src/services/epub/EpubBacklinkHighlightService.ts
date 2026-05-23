@@ -8,6 +8,12 @@ import { logger } from "../../utils/logger";
 import { EpubLinkService } from "./EpubLinkService";
 import type { EpubStorageService } from "./EpubStorageService";
 import { getEpubStorageService } from "./epub-storage-access";
+import {
+	isEphemeralEditorHighlightSourcePath,
+	isPersistedExcerptStorageSourcePath,
+	resolveEpubHighlightPersistenceSourcePath,
+	type EpubHighlightPersistenceSourceCandidate,
+} from "./epub-highlight-source-path";
 import { epubVaultPathsReferToSameBook, resolveEpubVaultPath } from "./epub-vault-path";
 import { resolveEpubHost } from "./epub-host";
 import { getEpubRuntime } from "./epub-runtime";
@@ -71,6 +77,9 @@ type JsonCardLike = {
 	sourceFile?: string;
 	sourceKind?: string;
 	sourceSubunitKey?: string;
+	deckId?: string;
+	persistenceSourcePath?: string;
+	customFields?: EpubHighlightPersistenceSourceCandidate["customFields"];
 };
 
 type CanvasNodeLike = {
@@ -259,21 +268,32 @@ export class EpubBacklinkHighlightService {
 
 	async collectHighlights(
 		epubFilePath: string,
-		boundCanvasPath?: string | null
+		boundCanvasPath?: string | null,
+		options?: { additionalSourcePaths?: string[] }
 	): Promise<BacklinkHighlight[]> {
 		const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
-		const fastCached = await this.tryReadValidBookCacheFast(targetIdentity, boundCanvasPath);
-		if (fastCached) {
-			logger.debug(
-				`[EpubBacklinkHighlightService] Fast cache hit for ${epubFilePath} (${fastCached.length})`
-			);
-			return fastCached;
+		const hasAdditionalSourcePaths =
+			Array.isArray(options?.additionalSourcePaths) && options.additionalSourcePaths.length > 0;
+		if (!hasAdditionalSourcePaths) {
+			const fastCached = await this.tryReadValidBookCacheFast(targetIdentity, boundCanvasPath);
+			if (fastCached) {
+				logger.debug(
+					`[EpubBacklinkHighlightService] Fast cache hit for ${epubFilePath} (${fastCached.length})`
+				);
+				return fastCached;
+			}
 		}
 
 		const store = await this.loadDiskCacheStore();
 		const cacheKey = this.buildCacheKey(targetIdentity, boundCanvasPath);
 		const priorManifest = store.entries[cacheKey]?.manifest;
 		const sourcePathSet = new Set(this.discoverLinkingSourcePaths(targetIdentity));
+		for (const path of options?.additionalSourcePaths || []) {
+			const normalizedPath = normalizePath(String(path || "").trim());
+			if (normalizedPath && this.isPotentialSourceIndexPath(normalizedPath)) {
+				sourcePathSet.add(normalizedPath);
+			}
+		}
 		if (priorManifest) {
 			for (const stamp of [
 				...priorManifest.markdownSources,
@@ -323,6 +343,16 @@ export class EpubBacklinkHighlightService {
 				targetIdentity,
 				boundCanvasPath
 			);
+		} else {
+			const supplemented = await this.supplementScopedHighlightsFromSourceIndex(
+				highlights,
+				manifest,
+				targetIdentity,
+				boundCanvasPath,
+				options?.additionalSourcePaths
+			);
+			highlights = supplemented.highlights;
+			manifest = supplemented.manifest;
 		}
 
 		const normalizedHighlights = this.cloneHighlightsForCache(highlights);
@@ -338,6 +368,68 @@ export class EpubBacklinkHighlightService {
 				`(markdown=${manifest.markdownSources.length}, canvas=${manifest.canvasSources.length}, cardData=${manifest.cardDataSources.length})`
 		);
 		return normalizedHighlights;
+	}
+
+	async savedCardReferencesEpubFile(
+		card: JsonCardLike,
+		epubFilePath: string,
+		bookSourceId?: string | null
+	): Promise<boolean> {
+		const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
+		if (bookSourceId && !targetIdentity.sourceIds.includes(bookSourceId)) {
+			targetIdentity.sourceIds = [...targetIdentity.sourceIds, bookSourceId];
+		}
+		const cardContent = typeof card?.content === "string" ? card.content : "";
+		if (cardContent && this.contentMayReferenceTarget(cardContent, targetIdentity)) {
+			return true;
+		}
+		const resolvedLink = this.resolveCardDataEpubLink(card);
+		return Boolean(resolvedLink && this.isSameEpubTarget(resolvedLink, targetIdentity));
+	}
+
+	/**
+	 * Read highlights from a single vault source file (card json/wdeck, md, or canvas).
+	 * Avoids full-book cache invalidation and vault-wide source-index scans.
+	 */
+	async collectHighlightsFromSourcePath(
+		epubFilePath: string,
+		sourcePath: string,
+		boundCanvasPath?: string | null
+	): Promise<BacklinkHighlight[]> {
+		const normalizedPath = normalizePath(String(sourcePath || "").trim());
+		if (!normalizedPath) {
+			return [];
+		}
+		const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
+		const { highlights } = await this.collectHighlightsFromSourcePaths(
+			targetIdentity,
+			[normalizedPath],
+			boundCanvasPath
+		);
+		return highlights;
+	}
+
+	async extractHighlightsFromSavedCard(
+		card: JsonCardLike,
+		epubFilePath: string,
+		bookSourceId?: string | null
+	): Promise<BacklinkHighlight[]> {
+		const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
+		if (bookSourceId && !targetIdentity.sourceIds.includes(bookSourceId)) {
+			targetIdentity.sourceIds = [...targetIdentity.sourceIds, bookSourceId];
+		}
+		const explicitPersistencePath = normalizePath(
+			String(card?.persistenceSourcePath || "").trim()
+		);
+		const persistenceSourceFile =
+			(explicitPersistencePath && isPersistedExcerptStorageSourcePath(explicitPersistencePath)
+				? explicitPersistencePath
+				: undefined) ||
+			resolveEpubHighlightPersistenceSourcePath(card) ||
+			(typeof card?.sourceFile === "string" && isPersistedExcerptStorageSourcePath(card.sourceFile)
+				? card.sourceFile
+				: "");
+		return this.parseHighlightsFromCardDataCard(card, targetIdentity, persistenceSourceFile);
 	}
 
 	private async tryReadValidBookCacheFast(
@@ -467,6 +559,116 @@ export class EpubBacklinkHighlightService {
 		return null;
 	}
 
+	private async supplementScopedHighlightsFromSourceIndex(
+		scopedHighlights: BacklinkHighlight[],
+		scopedManifest: EpubBacklinkHighlightsCacheManifest,
+		targetIdentity: EpubTargetIdentity,
+		boundCanvasPath?: string | null,
+		prioritySourcePaths: string[] = []
+	): Promise<{ highlights: BacklinkHighlight[]; manifest: EpubBacklinkHighlightsCacheManifest }> {
+		const indexedCardPaths = new Set(scopedManifest.cardDataSources.map((stamp) => stamp.path));
+		const missingPriorityPaths = Array.from(
+			new Set(
+				prioritySourcePaths
+					.map((path) => normalizePath(String(path || "").trim()))
+					.filter(
+						(path) =>
+							path &&
+							this.isPotentialSourceIndexPath(path) &&
+							!indexedCardPaths.has(path)
+					)
+			)
+		);
+
+		if (missingPriorityPaths.length > 0) {
+			const collected = await this.collectHighlightsFromSourcePaths(
+				targetIdentity,
+				missingPriorityPaths,
+				boundCanvasPath
+			);
+			if (collected.highlights.length > 0) {
+				return {
+					highlights: this.mergeBacklinkHighlightsByCfi(
+						scopedHighlights,
+						collected.highlights
+					),
+					manifest: this.mergeHighlightSourceManifests(scopedManifest, collected.manifest),
+				};
+			}
+		}
+
+		const sourceIndex = await this.ensureSourceIndexSnapshotUpToDate();
+		const needsIndexScan = sourceIndex.files.some(
+			(record) =>
+				record.kind === "cardData" &&
+				!indexedCardPaths.has(record.path) &&
+				record.directHighlights.some((entry) =>
+					this.isSameIndexedTarget(entry.target, targetIdentity)
+				)
+		);
+		if (!needsIndexScan) {
+			return { highlights: scopedHighlights, manifest: scopedManifest };
+		}
+
+		const indexHighlights = this.collectHighlightsFromSourceIndexSnapshot(
+			sourceIndex,
+			targetIdentity,
+			boundCanvasPath
+		);
+		return {
+			highlights: this.mergeBacklinkHighlightsByCfi(scopedHighlights, indexHighlights),
+			manifest: this.buildHighlightSourceManifestFromSourceIndex(
+				sourceIndex,
+				targetIdentity,
+				boundCanvasPath
+			),
+		};
+	}
+
+	private mergeHighlightSourceManifests(
+		primary: EpubBacklinkHighlightsCacheManifest,
+		secondary: EpubBacklinkHighlightsCacheManifest
+	): EpubBacklinkHighlightsCacheManifest {
+		const mergeBucket = (
+			left: HighlightSourceFileStamp[],
+			right: HighlightSourceFileStamp[]
+		): HighlightSourceFileStamp[] => {
+			const merged = new Map(left.map((stamp) => [stamp.path, stamp] as const));
+			for (const stamp of right) {
+				merged.set(stamp.path, stamp);
+			}
+			return Array.from(merged.values()).sort((leftStamp, rightStamp) =>
+				leftStamp.path.localeCompare(rightStamp.path, "zh-CN")
+			);
+		};
+
+		const boundCanvasPath = normalizePath(
+			String(primary.boundCanvasPath || secondary.boundCanvasPath || "").trim()
+		);
+		return this.normalizeCacheManifest({
+			markdownSources: mergeBucket(primary.markdownSources, secondary.markdownSources),
+			canvasSources: mergeBucket(primary.canvasSources, secondary.canvasSources),
+			cardDataSources: mergeBucket(primary.cardDataSources, secondary.cardDataSources),
+			...(boundCanvasPath ? { boundCanvasPath } : {}),
+		});
+	}
+
+	private mergeBacklinkHighlightsByCfi(
+		existing: BacklinkHighlight[],
+		incoming: BacklinkHighlight[]
+	): BacklinkHighlight[] {
+		const merged = new Map<string, BacklinkHighlight>();
+		for (const highlight of [...existing, ...incoming]) {
+			const key = EpubLinkService.normalizeCfi(highlight.cfiRange);
+			if (!key) {
+				continue;
+			}
+			const prior = merged.get(key);
+			merged.set(key, prior ? { ...prior, ...highlight } : { ...highlight });
+		}
+		return Array.from(merged.values());
+	}
+
 	private async collectHighlightsFromSourcePaths(
 		targetIdentity: EpubTargetIdentity,
 		sourcePaths: string[],
@@ -527,6 +729,9 @@ export class EpubBacklinkHighlightService {
 	): Promise<boolean> {
 		const normalizedSourcePath = normalizePath(String(sourcePath || "").trim());
 		if (!normalizedSourcePath) {
+			return false;
+		}
+		if (isEphemeralEditorHighlightSourcePath(this.app, normalizedSourcePath)) {
 			return false;
 		}
 		const normalizedBoundCanvasPath = normalizePath(String(boundCanvasPath || "").trim());
@@ -831,6 +1036,9 @@ export class EpubBacklinkHighlightService {
 	private isPotentialSourceIndexPath(path: string): boolean {
 		const normalizedPath = normalizePath(String(path || "").trim());
 		if (!normalizedPath) {
+			return false;
+		}
+		if (isEphemeralEditorHighlightSourcePath(this.app, normalizedPath)) {
 			return false;
 		}
 		if (this.isPluginInternalPath(normalizedPath)) {

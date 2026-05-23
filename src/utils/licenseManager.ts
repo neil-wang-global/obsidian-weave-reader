@@ -18,7 +18,18 @@ import {
 	mapActivationDataToEntitlements,
 	normalizeLicenseInfo,
 } from "./license-state";
+import {
+	isCloudLicenseConfigured,
+	LICENSE_CLOUD_MAX_DEVICES,
+	LICENSE_CLOUD_REVALIDATION_DAYS,
+} from "../config/license-cloud-config";
+import { sanitizeCloudLicenseUserMessage } from "./activation-privacy";
 import { CloudLicenseValidator } from "./cloudLicenseValidator";
+import { assertSubmittedEmailMatchesActivationOwner } from "./license-owner-email";
+import {
+	DEVICE_FINGERPRINT_VERSION,
+	generateStableDeviceFingerprint,
+} from "./device-fingerprint";
 
 // 重新导出类型供其他模块使用（向后兼容）
 export type { LicenseInfo, CloudSyncInfo, ActivationCodeData };
@@ -37,15 +48,30 @@ function getRuntimePlatformLabel(): string {
 export class LicenseManager {
 	// 云端验证器
 	private cloudValidator: CloudLicenseValidator;
+	private app: App | null = null;
 
 	constructor() {
 		this.cloudValidator = new CloudLicenseValidator();
 	}
 
+	initializeCloud(app: App): void {
+		this.app = app;
+		this.cloudValidator.setApp(app);
+		ActivationAttemptLimiter.setApp(app);
+	}
+
 	/**
-	 * 生成增强的设备指纹
+	 * 生成稳定的设备指纹（与 Weave 主插件共用同一安装级 device id）。
 	 */
 	private async generateDeviceFingerprint(): Promise<string> {
+		if (!this.app) {
+			return this.generateDeviceFingerprintLegacy();
+		}
+		return generateStableDeviceFingerprint(this.app);
+	}
+
+	/** @deprecated 仅作 app 未注入时的兜底 */
+	private async generateDeviceFingerprintLegacy(): Promise<string> {
 		const components = await this.collectDeviceComponents();
 		const fingerprint = components.join("|");
 		return this.sha256(fingerprint);
@@ -279,8 +305,12 @@ export class LicenseManager {
 				return { isValid: false, error: "激活码签名验证失败" };
 			}
 
-			// 解析数据
-			const data: ActivationCodeData = JSON.parse(parsed.data);
+			let data: ActivationCodeData;
+			try {
+				data = JSON.parse(parsed.data) as ActivationCodeData;
+			} catch {
+				return { isValid: false, error: "激活码内容损坏，请重新复制完整激活码" };
+			}
 
 			const entitlements = mapActivationDataToEntitlements(data);
 			if (entitlements.length === 0) {
@@ -329,8 +359,7 @@ export class LicenseManager {
 	}
 
 	/**
-	 * 激活许可证（临时禁用云端验证 - 仅本地RSA验证）
-	 * 注意：云端验证功能暂时禁用，后续版本会恢复
+	 * 激活许可证：本地 RSA 验签 + 云端邮箱绑定与设备登记
 	 */
 	async activateLicense(
 		activationCode: string,
@@ -367,35 +396,74 @@ export class LicenseManager {
 
 			const data = validation.data;
 
-			logger.info("许可证激活成功，已完成当前验证流程");
+			const ownerEmailCheck = assertSubmittedEmailMatchesActivationOwner(sanitizedEmail, data);
+			if (!ownerEmailCheck.ok) {
+				return { success: false, error: ownerEmailCheck.error };
+			}
 
-			// 创建许可证信息（本地模式）
+			if (!isCloudLicenseConfigured()) {
+				return {
+					success: false,
+					error: "云服务未配置，无法完成激活。请稍后再试或联系支持。",
+				};
+			}
+
+			const cloudResult = await this.cloudValidator.activate(
+				activationCode,
+				deviceFingerprint,
+				sanitizedEmail,
+				getRuntimePlatformLabel()
+			);
+
+			if (!cloudResult.success) {
+				return {
+					success: false,
+					error: cloudResult.error || "云端激活失败",
+				};
+			}
+
+			const maxDevices = Math.min(
+				cloudResult.max_devices ?? data.maxDevices ?? LICENSE_CLOUD_MAX_DEVICES,
+				LICENSE_CLOUD_MAX_DEVICES
+			);
+			const nowIso = new Date().toISOString();
+
 			const licenseInfo: LicenseInfo = {
 				activationCode,
 				isActivated: true,
-				activatedAt: new Date().toISOString(),
+				activatedAt: nowIso,
 				deviceFingerprint,
-				expiresAt: data.expiresAt,
+				expiresAt: cloudResult.expires_at || data.expiresAt,
 				productVersion: CURRENT_PLUGIN_VERSION,
 				licenseType: data.licenseType,
 				issuedProductId: data.productId,
 				entitlements: mapActivationDataToEntitlements(data),
 				features: Array.isArray(data.features) ? [...data.features] : [],
 				userId: data.userId,
-				maxDevices: data.maxDevices,
-				fingerprintVersion: 2, // 新版本指纹（不含vault路径）
-				boundEmail: sanitizedEmail, // 邮箱绑定
-				cloudSync: undefined, // 临时禁用云端同步
+				maxDevices,
+				fingerprintVersion: DEVICE_FINGERPRINT_VERSION,
+				boundEmail: sanitizedEmail,
+				cloudSync: {
+					status: "synced",
+					syncedAt: nowIso,
+					lastValidatedAt: nowIso,
+					devicesUsed: cloudResult.devices_count ?? 1,
+					devicesMax: maxDevices,
+				},
 				source: "local",
 				metadata: data.metadata,
 			};
+
+			logger.info("EPUB 许可证云端激活成功");
 
 			return {
 				success: true,
 				licenseInfo,
 				cloudInfo: {
-					devicesUsed: 1,
-					devicesMax: data.maxDevices,
+					isFirstActivation: (cloudResult.devices_count ?? 1) <= 1,
+					replacedOldDevice: cloudResult.replaced_old_device,
+					devicesUsed: cloudResult.devices_count,
+					devicesMax: maxDevices,
 				},
 			};
 		} catch (error) {
@@ -512,20 +580,35 @@ export class LicenseManager {
 			// 验证设备指纹
 			const currentFingerprint = await this.generateDeviceFingerprint();
 
-			// 向后兼容性处理：自动迁移旧版本指纹
-			if (!normalizedLicense.fingerprintVersion || normalizedLicense.fingerprintVersion === 1) {
-				logger.debug("检测到旧版本设备指纹，正在迁移到新版本...");
+			if (
+				!normalizedLicense.fingerprintVersion ||
+				normalizedLicense.fingerprintVersion < DEVICE_FINGERPRINT_VERSION
+			) {
+				logger.debug("迁移设备指纹到跨插件稳定版本...");
 				normalizedLicense.deviceFingerprint = currentFingerprint;
-				normalizedLicense.fingerprintVersion = 2;
-				warnings.push("设备指纹已自动更新到新版本");
+				normalizedLicense.fingerprintVersion = DEVICE_FINGERPRINT_VERSION;
+				if (normalizedLicense.cloudSync) {
+					normalizedLicense.cloudSync = {
+						...normalizedLicense.cloudSync,
+						lastValidatedAt: "",
+					};
+				}
+				this.cloudValidator.clearCache();
+				warnings.push(
+					"设备指纹已更新；主插件与阅读器将共用同一设备位。若设备数仍异常，请重新激活一次"
+				);
 			}
 
-			if (normalizedLicense.boundEmail) {
-				logger.debug("检测到许可证绑定邮箱信息");
+			if (normalizedLicense.boundEmail && isCloudLicenseConfigured()) {
+				const cloudCheck = await this.performCloudValidation(
+					normalizedLicense,
+					currentFingerprint,
+					warnings
+				);
+				if (!cloudCheck.ok) {
+					return { isValid: false, error: cloudCheck.error };
+				}
 			}
-
-			// 临时禁用云端验证（后续版本会恢复）
-			// await this.performCloudValidation(licenseInfo, currentFingerprint, warnings);
 
 			// 重新验证激活码
 			const validation = await this.validateActivationCode(normalizedLicense.activationCode, undefined, options);
@@ -626,51 +709,69 @@ export class LicenseManager {
 		licenseInfo: LicenseInfo,
 		currentFingerprint: string,
 		warnings: string[]
-	): Promise<void> {
+	): Promise<{ ok: boolean; error?: string }> {
 		try {
-			// 检查是否需要云端验证
-			const needsValidation = this.shouldPerformCloudValidation(licenseInfo);
-
-			if (!needsValidation) {
-				// 缓存有效，跳过云端验证
-				return;
+			if (!licenseInfo.boundEmail) {
+				return { ok: true };
 			}
 
-			// 执行云端验证
+			const needsValidation = this.shouldPerformCloudValidation(licenseInfo);
+			if (!needsValidation) {
+				return { ok: true };
+			}
+
 			const cloudResult = await this.cloudValidator.validate(
 				licenseInfo.activationCode,
 				currentFingerprint,
-				licenseInfo.boundEmail!
+				licenseInfo.boundEmail,
+				{ bypassCache: true }
 			);
 
 			if (cloudResult.valid) {
-				// 云端验证成功，更新同步状态
-				if (licenseInfo.cloudSync) {
-					licenseInfo.cloudSync.lastValidatedAt = new Date().toISOString();
-					licenseInfo.cloudSync.devicesUsed = cloudResult.devices_count;
-					licenseInfo.cloudSync.status = "synced";
-				}
-			} else if (cloudResult.is_network_error) {
-				// 网络错误，宽容处理
-				logger.warn("许可证验证暂时不可用，将稍后重试");
-				warnings.push("许可证验证暂时不可用，请稍后重试");
-			} else {
-				// 云端拒绝，设备可能被替换
-				throw new Error(cloudResult.error || "云端验证失败，此设备可能已被移除");
+				const nowIso = new Date().toISOString();
+				licenseInfo.cloudSync = {
+					status: "synced",
+					syncedAt: licenseInfo.cloudSync?.syncedAt || nowIso,
+					lastValidatedAt: nowIso,
+					devicesUsed: cloudResult.devices_count ?? licenseInfo.cloudSync?.devicesUsed,
+					devicesMax: cloudResult.max_devices ?? licenseInfo.cloudSync?.devicesMax ?? licenseInfo.maxDevices,
+				};
+				return { ok: true };
 			}
+
+			if (cloudResult.is_network_error) {
+				logger.warn("许可证云端验证暂时不可用");
+				warnings.push("许可证验证暂时不可用，请稍后重试");
+				return { ok: true };
+			}
+
+			return {
+				ok: false,
+				error: sanitizeCloudLicenseUserMessage(
+					cloudResult.error || "云端验证失败，此设备可能已被其他设备挤占，请重新激活"
+				),
+			};
 		} catch (error) {
-			// 云端验证失败
 			logger.error("云端验证错误:", error);
-			warnings.push(error instanceof Error ? error.message : "云端验证异常");
+			return {
+				ok: false,
+				error: error instanceof Error ? error.message : "云端验证异常",
+			};
 		}
 	}
 
-	/**
-	 * 判断是否需要执行云端验证（临时禁用）
-	 */
-	private shouldPerformCloudValidation(_licenseInfo: LicenseInfo): boolean {
-		// 临时禁用定期云端验证（后续版本会恢复）
-		return false;
+	private shouldPerformCloudValidation(licenseInfo: LicenseInfo): boolean {
+		if (!isCloudLicenseConfigured() || !licenseInfo.boundEmail) {
+			return false;
+		}
+
+		if (!licenseInfo.cloudSync?.lastValidatedAt) {
+			return true;
+		}
+
+		const lastValidated = new Date(licenseInfo.cloudSync.lastValidatedAt).getTime();
+		const daysSince = (Date.now() - lastValidated) / (1000 * 60 * 60 * 24);
+		return daysSince >= LICENSE_CLOUD_REVALIDATION_DAYS;
 	}
 }
 

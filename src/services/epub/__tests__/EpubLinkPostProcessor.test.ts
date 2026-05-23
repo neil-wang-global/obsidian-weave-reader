@@ -98,7 +98,48 @@ describe('EpubLinkPostProcessor', () => {
 		link!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 
 		expect(navigateSpy).toHaveBeenCalledTimes(1);
-		expect(navigateSpy).toHaveBeenCalledWith('Books/demo.epub', 'readium:abc', 'Hello world');
+		expect(navigateSpy).toHaveBeenCalledWith(
+			'Books/demo.epub',
+			'readium:abc',
+			'Hello world',
+			undefined,
+			undefined
+		);
+	});
+
+	it('binds MOBI excerpt source links and routes clicks through navigateToEpubLocation', async () => {
+		const navigateSpy = vi
+			.spyOn(EpubLinkService.prototype, 'navigateToEpubLocation')
+			.mockResolvedValue(undefined);
+
+		const container = document.createElement('div');
+		container.innerHTML = [
+			'<div class="callout" data-callout="epub" data-callout-metadata="red">',
+			'  <div class="callout-title">',
+			'    <a class="internal-link" href="附件/demo.mobi#weave-cfi=epubcfi(/6/62!/4/12,/1:0,/1:136)">Jobs</a>',
+			'  </div>',
+			'  <div class="callout-content">',
+			'    <blockquote><p>七月，李·克劳接到史蒂夫·乔布斯的电话。</p></blockquote>',
+			'  </div>',
+			'</div>',
+		].join('');
+
+		const processor = createEpubLinkPostProcessor({} as any);
+		processor(container, {} as any);
+
+		const link = container.querySelector('a');
+		expect(link).not.toBeNull();
+
+		link!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+		expect(navigateSpy).toHaveBeenCalledTimes(1);
+		expect(navigateSpy).toHaveBeenCalledWith(
+			'附件/demo.mobi',
+			'epubcfi(/6/62!/4/12,/1:0,/1:136)',
+			'七月，李·克劳接到史蒂夫·乔布斯的电话。',
+			undefined,
+			undefined
+		);
 	});
 
 	it('supports legacy tuanki-cfi equals links even when the anchor is not marked as an internal link', async () => {
@@ -118,6 +159,12 @@ describe('EpubLinkPostProcessor', () => {
 		link!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 
 		expect(navigateSpy).toHaveBeenCalledTimes(1);
-		expect(navigateSpy).toHaveBeenCalledWith('Books/demo.epub', 'epubcfi(/6/2[chapter-1]!/4/4)', '');
+		expect(navigateSpy).toHaveBeenCalledWith(
+			'Books/demo.epub',
+			'epubcfi(/6/2[chapter-1]!/4/4)',
+			'',
+			undefined,
+			undefined
+		);
 	});
 });

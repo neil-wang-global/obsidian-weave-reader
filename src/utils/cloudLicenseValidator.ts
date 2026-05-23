@@ -1,15 +1,21 @@
-import { requestUrl } from "obsidian";
+import { requestUrl, type RequestUrlResponse } from "obsidian";
 import type { App } from "obsidian";
 import { logger } from "../utils/logger";
-/**
- * Sealos云端License验证器
- */
+import { vaultStorage } from "./vault-local-storage";
+import {
+	getLicenseCloudApiBaseUrl,
+	isCloudLicenseConfigured,
+	LICENSE_CLOUD_CACHE_DAYS,
+} from "../config/license-cloud-config";
+import { formatCloudLicenseApiError } from "./cloud-license-api-error";
 
 export interface CloudActivationResult {
 	success: boolean;
 	message?: string;
 	devices_count?: number;
 	max_devices?: number;
+	replaced_old_device?: boolean;
+	expires_at?: string;
 	error?: string;
 	is_network_error?: boolean;
 }
@@ -23,28 +29,63 @@ export interface CloudValidationResult {
 	is_network_error?: boolean;
 }
 
+function parseCloudResponseBody(
+	response: RequestUrlResponse
+): { data: Record<string, unknown> | null; parseError?: string } {
+	const rawText = (response.text ?? "").trim();
+	if (!rawText) {
+		return { data: null, parseError: "云端返回为空" };
+	}
+
+	try {
+		return { data: JSON.parse(rawText) as Record<string, unknown> };
+	} catch (error) {
+		logger.error("云端响应不是合法 JSON:", rawText.slice(0, 300), error);
+		return {
+			data: null,
+			parseError: `云端返回格式异常（HTTP ${response.status}），请检查函数日志`,
+		};
+	}
+}
+
 export class CloudLicenseValidator {
-	private readonly apiUrl = "https://ahwhophvla.bja.sealos.run";
-	private readonly cacheKey = "weave_cloud_cache";
-	private readonly cacheTTL = 7 * 24 * 60 * 60 * 1000; // 7天
+	private readonly cacheKey = "weave_epub_cloud_cache";
 	private app: App | null = null;
 
 	setApp(app: App): void {
 		this.app = app;
+		vaultStorage.setApp(app);
 	}
 
-	/**
-	 * 激活设备
-	 */
+	isConfigured(): boolean {
+		return isCloudLicenseConfigured();
+	}
+
+	private get cacheTTL(): number {
+		return LICENSE_CLOUD_CACHE_DAYS * 24 * 60 * 60 * 1000;
+	}
+
+	private get apiBaseUrl(): string {
+		return getLicenseCloudApiBaseUrl();
+	}
+
 	async activate(
 		activationCode: string,
 		deviceFingerprint: string,
 		email: string,
 		platform: string
 	): Promise<CloudActivationResult> {
+		if (!this.isConfigured()) {
+			return {
+				success: false,
+				error: "云服务未配置，请联系插件维护者完成授权服务器部署",
+				is_network_error: false,
+			};
+		}
+
 		try {
 			const response = await requestUrl({
-				url: `${this.apiUrl}/activate`,
+				url: `${this.apiBaseUrl}/activate`,
 				method: "POST",
 				contentType: "application/json",
 				body: JSON.stringify({
@@ -56,21 +97,33 @@ export class CloudLicenseValidator {
 				throw: false,
 			});
 
-			const data = response.json;
+			const parsed = parseCloudResponseBody(response);
+			if (!parsed.data) {
+				return {
+					success: false,
+					error: parsed.parseError || "激活失败",
+					is_network_error: false,
+				};
+			}
+			const data = parsed.data;
 
 			if (response.status !== 200 || !data.success) {
 				return {
 					success: false,
-					error: data.error || "激活失败",
+					error: formatCloudLicenseApiError(response, data, "激活"),
 					is_network_error: false,
 				};
 			}
 
+			this.clearCache();
+
 			return {
 				success: true,
-				message: data.message,
-				devices_count: data.devices_count,
-				max_devices: data.max_devices,
+				message: typeof data.message === "string" ? data.message : undefined,
+				devices_count: typeof data.devices_count === "number" ? data.devices_count : undefined,
+				max_devices: typeof data.max_devices === "number" ? data.max_devices : undefined,
+				replaced_old_device: Boolean(data.replaced_old_device),
+				expires_at: typeof data.expires_at === "string" ? data.expires_at : undefined,
 			};
 		} catch (error) {
 			logger.error("激活请求失败:", error);
@@ -80,29 +133,36 @@ export class CloudLicenseValidator {
 
 			return {
 				success: false,
-				error: isNetworkError ? "网络连接失败" : "激活失败",
+				error: isNetworkError ? "网络连接失败，请检查网络后重试" : "激活失败",
 				is_network_error: isNetworkError,
 			};
 		}
 	}
 
-	/**
-	 * 验证设备
-	 */
 	async validate(
 		activationCode: string,
 		deviceFingerprint: string,
-		email: string
+		email: string,
+		options?: { bypassCache?: boolean }
 	): Promise<CloudValidationResult> {
+		if (!this.isConfigured()) {
+			return {
+				valid: false,
+				error: "云服务未配置",
+				is_network_error: false,
+			};
+		}
+
 		try {
-			// 检查缓存
-			const cache = this.getCache();
-			if (cache && this.isCacheValid(cache)) {
-				return cache.result;
+			if (!options?.bypassCache) {
+				const cache = this.getCache();
+				if (cache && this.isCacheValid(cache)) {
+					return cache.result;
+				}
 			}
 
 			const response = await requestUrl({
-				url: `${this.apiUrl}/validate`,
+				url: `${this.apiBaseUrl}/validate`,
 				method: "POST",
 				contentType: "application/json",
 				body: JSON.stringify({
@@ -113,21 +173,29 @@ export class CloudLicenseValidator {
 				throw: false,
 			});
 
-			const data = response.json;
+			const parsed = parseCloudResponseBody(response);
+			if (!parsed.data) {
+				return {
+					valid: false,
+					error: parsed.parseError || "验证失败",
+					is_network_error: false,
+				};
+			}
+			const data = parsed.data;
 
 			if (response.status !== 200 || !data.valid) {
 				return {
 					valid: false,
-					error: data.error || "验证失败",
+					error: formatCloudLicenseApiError(response, data, "验证"),
 					is_network_error: false,
 				};
 			}
 
 			const result: CloudValidationResult = {
 				valid: true,
-				expires_at: data.expires_at,
-				devices_count: data.devices_count,
-				max_devices: data.max_devices,
+				expires_at: typeof data.expires_at === "string" ? data.expires_at : undefined,
+				devices_count: typeof data.devices_count === "number" ? data.devices_count : undefined,
+				max_devices: typeof data.max_devices === "number" ? data.max_devices : undefined,
 			};
 
 			this.setCache(result);
@@ -148,7 +216,7 @@ export class CloudLicenseValidator {
 
 	private getCache(): { result: CloudValidationResult; cached_at: number } | null {
 		try {
-			const cached = this.app?.loadLocalStorage(this.cacheKey);
+			const cached = vaultStorage.getItem(this.cacheKey);
 			return cached ? JSON.parse(cached) : null;
 		} catch {
 			return null;
@@ -161,7 +229,7 @@ export class CloudLicenseValidator {
 
 	private setCache(result: CloudValidationResult): void {
 		try {
-			this.app?.saveLocalStorage(
+			vaultStorage.setItem(
 				this.cacheKey,
 				JSON.stringify({
 					result,
@@ -175,7 +243,7 @@ export class CloudLicenseValidator {
 
 	clearCache(): void {
 		try {
-			this.app?.saveLocalStorage(this.cacheKey, undefined as any);
+			vaultStorage.removeItem(this.cacheKey);
 		} catch {
 			// 忽略
 		}

@@ -5,7 +5,7 @@
 <div align="center">
 
 ![Weave EPUB Reader](https://img.shields.io/badge/Obsidian-EPUB%20Reader-8a5cf6?style=for-the-badge)
-![Version](https://img.shields.io/badge/version-0.6.5-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-0.6.8-green?style=for-the-badge)
 ![Min Obsidian](https://img.shields.io/badge/Obsidian-1.7.0+-purple?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange?style=for-the-badge)
 
@@ -19,7 +19,9 @@ Weave EPUB Reader 是一款面向 Obsidian 的多格式电子书阅读器插件�
 
 ## 项目定位
 
-这个仓库是一个**独立的图书阅读器项目**，不是完整 Weave 主插件的总仓库文档。
+这个仓库是一个**独立的图书阅读器项目**，不是完整 Weave 主插件的总仓库文档。源码树已按阅读器边界裁剪，主插件的学习/制卡/看板等模块不会打进 `main.js`。旧版 IR 续读点迁移通过 `EpubIrResumePointAccess` 直接读写 Vault JSON，不再打包完整 incremental-reading 服务栈。
+
+与主 **Weave** 插件的可选集成（AI 拆分菜单、许可证继承、`.wdeck` 高亮同步）仍保留为桥接能力，需在 Obsidian 中安装并启用 Weave。
 
 如果你关心的是以下需求，这个插件就是为它们设计的：
 
@@ -49,6 +51,15 @@ Weave EPUB Reader 是一款面向 Obsidian 的多格式电子书阅读器插件�
 - `txt`
 
 这意味着插件名称虽然是 EPUB Reader，但当前项目并**不只限于 EPUB**。
+
+## 近期架构更新（0.6.x）
+
+- **NavigationHub**：书架打开、深链接、笔记/Canvas/卡片溯源等导航统一经 `NavigationIntent` 调度；书架打开走 `preferredLeaf`，带定位的跳转仍校验高级版能力。
+- **ExcerptPipeline**：正文高亮与牌组摘录通过索引管道同步，减少重复扫描与全量重载；`.wdeck` 摘录使用 `persistenceSourcePath` / `customFields.wdeck.sourcePath`，与 EPUB 语义来源（`we_source`）分离。
+- **BookSessionManager**：按书管理解析/渲染会话，标签页关闭时自动释放无引用会话。
+- **设置**：新增「溯源跳转默认在新标签页打开」（`sourceNavigationOpenInNewTab`，默认开启）。
+
+开发者入口说明见 [`src/services/navigation/NAVIGATION_ENTRYPOINTS.md`](src/services/navigation/NAVIGATION_ENTRYPOINTS.md)。
 
 ## 核心功能
 

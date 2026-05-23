@@ -140,6 +140,7 @@
     {#if effectiveLicenseState.isPremiumActive}
       <EnhancedLicenseStatusCard
         license={currentLicense}
+        app={plugin.app}
         effectiveState={effectiveLicenseState}
         showActions={true}
         isSavingCode={isSavingCode}

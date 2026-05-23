@@ -1,6 +1,6 @@
 import { Notice, Plugin, TFile, type App, type WorkspaceLeaf } from "obsidian";
 import type { EpubViewHost } from "../../views/epub-view-host";
-import { openEpubInPreferredLeaf } from "../../utils/epub-leaf-utils";
+import { getNavigationHub } from "../navigation/navigation-hub-access";
 import { logger } from "../../utils/logger";
 import {
 	EpubBookshelfSidebarView,
@@ -173,8 +173,12 @@ export async function openEpubReader(
 			return;
 		}
 
-		const leaf = await openEpubInPreferredLeaf(app, targetFile.path);
-		if (!leaf) {
+		const result = await getNavigationHub(app).navigate({
+			kind: "book",
+			resourcePath: targetFile.path,
+			policy: { preferredLeaf: true, focus: true },
+		});
+		if (!result.success || !result.leaf) {
 			logger.error(`${logPrefix} openEpubReader: cannot create leaf`);
 			return;
 		}

@@ -10,16 +10,23 @@
         import {
                 EpubBacklinkHighlightService,
                 EPUB_RUNTIME,
+                canUseEpubReadingProgress,
                 getEpubStorageService,
                 resolveEpubHost
         } from '../../services/epub';
+        import { PremiumFeatureGuard } from '../../services/premium/PremiumFeatureGuard';
         import { getBookFormatDisplayLabel, isSupportedBookFile, stripSupportedBookExtension } from '../../services/epub/book-format';
         import { FoliateVaultPublicationParser } from '../../services/epub/FoliateVaultPublicationParser';
         import type { BookMetadata, EpubBook } from '../../services/epub';
+        import {
+                resolveBookshelfReadingStatus,
+                resolveDisplayProgress,
+                type BookshelfReadingStatus,
+        } from '../../services/epub/book-progress';
         import { epubActiveDocumentStore } from '../../stores/epub-active-document-store';
-        import { openEpubInPreferredLeaf } from '../../utils/epub-leaf-utils';
+        import { getNavigationHub } from '../../services/navigation/navigation-hub-access';
         import { tr } from '../../utils/i18n';
-        import CardSearchInput from '../search/CardSearchInput.svelte';
+        import EpubSearchInput from './EpubSearchInput.svelte';
         import { parseSearchQuery, type DateRange, type SearchQuery } from '../../utils/search-parser';
         import {
                 getBookshelfDisplayModeOptions,
@@ -55,6 +62,7 @@
                 progress: number;
                 lastReadTime: number;
                 createdTime: number;
+                readingStatus: BookshelfReadingStatus;
         }
 
         interface DisplayBookItem extends EpubFileInfo {
@@ -90,8 +98,6 @@
                 available: boolean;
         }
 
-        type BookshelfReadingStatus = '未开始' | '阅读中' | '已读完';
-
         interface Props {
                 app: App;
                 onSwitchBook?: (filePath: string) => void | Promise<void>;
@@ -124,6 +130,11 @@
         let bookshelfSearchReady = false;
         let bookshelfSearchPersistTimer: ReturnType<typeof setTimeout> | null = null;
         let bookshelfDisplayMode = $state<BookshelfDisplayMode>('adaptive');
+        let bookshelfPremiumUiRevision = $state(0);
+        let canShowBookshelfProgress = $derived.by(() => {
+                bookshelfPremiumUiRevision;
+                return canUseEpubReadingProgress(app);
+        });
         let detectedSurfaceContext = $state<'main' | 'sidebar'>('main');
         let bookshelfRootEl = $state<HTMLDivElement | null>(null);
         let surfaceContextObserver: MutationObserver | null = null;
@@ -212,20 +223,11 @@
                         translator: book.metadata.translator?.trim() || undefined,
                         publisher: book.metadata.publisher?.trim() || undefined,
                         coverImage: book.metadata.coverImage?.trim() || undefined,
-                        progress: Number.isFinite(book.currentPosition?.percent) ? Math.max(0, Math.round(book.currentPosition.percent)) : 0,
+                        progress: resolveDisplayProgress(book),
                         lastReadTime: Number.isFinite(book.readingStats?.lastReadTime) ? book.readingStats.lastReadTime : 0,
-                        createdTime: Number.isFinite(book.readingStats?.createdTime) ? book.readingStats.createdTime : 0
+                        createdTime: Number.isFinite(book.readingStats?.createdTime) ? book.readingStats.createdTime : 0,
+                        readingStatus: resolveBookshelfReadingStatus(book),
                 };
-        }
-
-        function getReadingStatus(progress: number, lastReadTime: number): BookshelfReadingStatus {
-                if (progress >= 100) {
-                        return '已读完';
-                }
-                if (progress > 0 || lastReadTime > 0) {
-                        return '阅读中';
-                }
-                return '未开始';
         }
 
         function normalizeSearchText(value: string | undefined): string {
@@ -886,6 +888,21 @@
                 bookMetaByPath = new Map(bookMetaByPath);
         }
 
+        async function removeMissingBookshelfEntry(filePath: string) {
+                const normalizedPath = normalizePath(filePath || '');
+                if (!normalizedPath) {
+                        return;
+                }
+
+                removeInvalidFile(normalizedPath);
+                try {
+                        await storageService.removeMissingBookshelfEntry(normalizedPath);
+                        notifyBookshelfChanged(false);
+                } catch (error) {
+                        logger.error('Failed to remove missing bookshelf entry:', error);
+                }
+        }
+
         function resetBookStateInList(filePath: string) {
                 bookMetaByPath.delete(filePath);
                 bookMetaByPath = new Map(bookMetaByPath);
@@ -905,9 +922,14 @@
                         return null;
                 }
 
-                const directFile = app.vault.getAbstractFileByPath(normalizedPath);
-                if (directFile instanceof TFile && isSupportedBookFile(directFile)) {
-                        return directFile.path;
+                const canonicalPath = storageService.resolveSupportedBookFilePath(normalizedPath);
+                if (canonicalPath) {
+                        if (canonicalPath !== normalizedPath) {
+                                await storageService.updateBookFileReferences(normalizedPath, canonicalPath);
+                                removeInvalidFile(normalizedPath);
+                                await refreshBookshelf();
+                        }
+                        return canonicalPath;
                 }
 
                 const existingBook = await storageService.findBookByFilePath(normalizedPath);
@@ -916,12 +938,13 @@
                         return null;
                 }
 
-                if (resolvedPath !== normalizedPath) {
-                        await storageService.updateBookFileReferences(normalizedPath, resolvedPath);
+                const registryCanonicalPath = storageService.resolveSupportedBookFilePath(resolvedPath) || resolvedPath;
+                if (registryCanonicalPath !== normalizedPath) {
+                        await storageService.updateBookFileReferences(normalizedPath, registryCanonicalPath);
                         await refreshBookshelf();
                 }
 
-                return resolvedPath;
+                return registryCanonicalPath;
         }
 
         function closeOpenEpubLeaves(filePath: string) {
@@ -941,11 +964,21 @@
                 refreshRunId++;
                 cancelScheduledCoverLoading();
                 const resolvedPath = await resolveActiveBookPath(filePath);
-                const file = resolvedPath ? app.vault.getAbstractFileByPath(resolvedPath) : null;
+                if (!resolvedPath) {
+                        if (await storageService.isBookshelfSourceMissing(filePath)) {
+                                await removeMissingBookshelfEntry(filePath);
+                                new Notice(t('epub.bookshelf.notFoundRemoved'));
+                        }
+                        openingBookPath = null;
+                        return;
+                }
+
+                const file = app.vault.getAbstractFileByPath(resolvedPath);
                 if (!(file instanceof TFile) || !isSupportedBookFile(file)) {
-                        removeInvalidFile(filePath);
-                        await storageService.pruneMissingBooks();
-                        new Notice(t('epub.bookshelf.notFoundRemoved'));
+                        if (await storageService.isBookshelfSourceMissing(filePath)) {
+                                await removeMissingBookshelfEntry(filePath);
+                                new Notice(t('epub.bookshelf.notFoundRemoved'));
+                        }
                         openingBookPath = null;
                         return;
                 }
@@ -977,7 +1010,11 @@
                                 return;
                         }
 
-                        await openEpubInPreferredLeaf(app, filePath);
+                        await getNavigationHub(app).navigate({
+                                kind: 'book',
+                                resourcePath: filePath,
+                                policy: { preferredLeaf: true, focus: true },
+                        });
                 } catch (error) {
                         logger.error('Failed to open EPUB:', error);
                 }
@@ -1012,9 +1049,10 @@
                 const file = app.vault.getAbstractFileByPath(targetPath);
 
                 if (!(file instanceof TFile) || !isSupportedBookFile(file)) {
-                        removeInvalidFile(filePath);
-                        await storageService.pruneMissingBooks();
-                        new Notice(t('epub.bookshelf.notFoundRemoved'));
+                        if (await storageService.isBookshelfSourceMissing(filePath)) {
+                                await removeMissingBookshelfEntry(filePath);
+                                new Notice(t('epub.bookshelf.notFoundRemoved'));
+                        }
                         return null;
                 }
 
@@ -1094,7 +1132,9 @@
                                 fileName: context.file.name,
                                 fileSize: context.file.stat.size,
                                 metadata: context.metadata,
-                                progress: context.storedBook?.currentPosition?.percent ?? 0,
+                                progress: context.storedBook
+                                        ? resolveDisplayProgress(context.storedBook)
+                                        : 0,
                                 highlightStats,
                         });
                         const confirmed = await modal.openAndWait();
@@ -1145,7 +1185,9 @@
                                 fileName: context.file.name,
                                 fileSize: context.file.stat.size,
                                 metadata: context.metadata,
-                                progress: context.storedBook?.currentPosition?.percent ?? 0,
+                                progress: context.storedBook
+                                        ? resolveDisplayProgress(context.storedBook)
+                                        : 0,
                                 readingStats: context.storedBook?.readingStats ?? null,
                                 noteStats,
                         });
@@ -1217,8 +1259,41 @@
                 }
         }
 
+        async function markBookCompletedFromShelf(filePath: string) {
+                try {
+                        const context = await resolveBookContext(filePath);
+                        if (!context?.storedBook?.id) {
+                                return;
+                        }
+                        await storageService.markBookCompleted(context.storedBook.id);
+                        await refreshBookshelf();
+                        notifyBookshelfChanged(false);
+                        const title = context.metadata.title?.trim() || context.file.name;
+                        new Notice(t('epub.reader.bookCompletionMarked', { title }));
+                } catch (error) {
+                        logger.error('Failed to mark book as completed:', error);
+                }
+        }
+
+        async function clearBookCompletionFromShelf(filePath: string) {
+                try {
+                        const context = await resolveBookContext(filePath);
+                        if (!context?.storedBook?.id) {
+                                return;
+                        }
+                        await storageService.clearBookCompletion(context.storedBook.id);
+                        await refreshBookshelf();
+                        notifyBookshelfChanged(false);
+                        const title = context.metadata.title?.trim() || context.file.name;
+                        new Notice(t('epub.reader.bookCompletionCleared', { title }));
+                } catch (error) {
+                        logger.error('Failed to clear book completion:', error);
+                }
+        }
+
         function handleContextMenu(e: MouseEvent, filePath: string) {
                 e.preventDefault();
+                const meta = bookMetaByPath.get(filePath);
                 const menu = new Menu();
                 menu.addItem((item) => {
                         item.setTitle(t('epub.bookshelf.menu.openInNewTab'))
@@ -1232,6 +1307,23 @@
                                         void showBookInfo(filePath);
                                 });
                 });
+                if (meta?.readingStatus === '已读完') {
+                        menu.addItem((item) => {
+                                item.setTitle(t('epub.bookshelf.menu.clearCompleted'))
+                                        .setIcon('rotate-ccw')
+                                        .onClick(() => {
+                                                void clearBookCompletionFromShelf(filePath);
+                                        });
+                        });
+                } else {
+                        menu.addItem((item) => {
+                                item.setTitle(t('epub.bookshelf.menu.markCompleted'))
+                                        .setIcon('check-circle')
+                                        .onClick(() => {
+                                                void markBookCompletedFromShelf(filePath);
+                                        });
+                        });
+                }
                 menu.addItem((item) => {
                         item.setTitle(t('epub.bookshelf.menu.customCover'))
                                 .setIcon('image')
@@ -1315,7 +1407,7 @@
                                         progress,
                                         lastReadTime,
                                         addedAt,
-                                        readingStatus: getReadingStatus(progress, lastReadTime)
+                                        readingStatus: meta?.readingStatus ?? '未开始'
                                 } satisfies DisplayBookItem;
                         })
                         .sort((a, b) => {
@@ -1428,12 +1520,16 @@
                         entries,
                         membership,
                         title: t('epub.bookshelf.vaultScanTitle'),
-                        onConfirm: async (paths: string[]) => {
-                                const addedEntries = await storageService.addBooksToBookshelf(paths);
-                                if (addedEntries.length === 0) {
-                                        new Notice(t('epub.bookshelf.vaultScanAlreadyAdded'));
-                                        return;
-                                }
+                                onConfirm: async (paths: string[]) => {
+                                        const addedEntries = await storageService.addBooksToBookshelf(paths);
+                                        if (addedEntries.length === 0) {
+                                                new Notice(
+                                                        paths.length > 0
+                                                                ? t('epub.bookshelf.vaultScanAddFailed')
+                                                                : t('epub.bookshelf.vaultScanAlreadyAdded')
+                                                );
+                                                return;
+                                        }
 
                                 await refreshBookshelf();
                                 notifyBookshelfChanged(false);
@@ -1555,6 +1651,13 @@
                 window.addEventListener(BOOKSHELF_DATA_CHANGED_EVENT, handleBookshelfSettingsChanged);
                 window.addEventListener(BOOKSHELF_REFRESH_REQUEST_EVENT, handleBookshelfRefreshRequest);
                 window.addEventListener(BOOKSHELF_DISPLAY_SETTINGS_CHANGED_EVENT, handleBookshelfDisplaySettingsChanged);
+                const premiumGuard = PremiumFeatureGuard.getInstance();
+                const handleBookshelfPremiumUiChanged = () => {
+                        bookshelfPremiumUiRevision += 1;
+                };
+                const unsubscribePremiumActive = premiumGuard.isPremiumActive.subscribe(handleBookshelfPremiumUiChanged);
+                const unsubscribePremiumPreview = premiumGuard.premiumFeaturesPreviewEnabled.subscribe(handleBookshelfPremiumUiChanged);
+                window.addEventListener(EPUB_RUNTIME.events.premiumUiStateChanged, handleBookshelfPremiumUiChanged);
                 const renameRef = app.vault.on('rename', (file, oldPath) => {
                         handleVaultRename(file, oldPath);
                 });
@@ -1564,6 +1667,9 @@
                         removeInvalidFile(deletedPath);
                 });
                 return () => {
+                        unsubscribePremiumActive();
+                        unsubscribePremiumPreview();
+                        window.removeEventListener(EPUB_RUNTIME.events.premiumUiStateChanged, handleBookshelfPremiumUiChanged);
                         app.vault.offref(renameRef);
                         app.vault.offref(deleteRef);
                         surfaceContextObserver?.disconnect();
@@ -2486,21 +2592,23 @@
 				</div>
 			{/if}
 		</div>
-		<div
-			class={`book-progress-badge ${getBookshelfProgressToneClass(file.progress)}`}
-			style={`--book-progress:${clampProgress(file.progress)}%;`}
-			role="img"
-			aria-label={t('epub.bookshelf.progress', { progress: clampProgress(file.progress) })}
-			title={t('epub.bookshelf.progress', { progress: clampProgress(file.progress) })}
-		>
-			<span>{clampProgress(file.progress)}%</span>
-		</div>
+		{#if canShowBookshelfProgress}
+			<div
+				class={`book-progress-badge ${getBookshelfProgressToneClass(file.progress)}`}
+				style={`--book-progress:${clampProgress(file.progress)}%;`}
+				role="img"
+				aria-label={t('epub.bookshelf.progress', { progress: clampProgress(file.progress) })}
+				title={t('epub.bookshelf.progress', { progress: clampProgress(file.progress) })}
+			>
+				<span>{clampProgress(file.progress)}%</span>
+			</div>
+		{/if}
 	</div>
 {/snippet}
 
 {#if searching}
         <div class="epub-bookshelf-search">
-                <CardSearchInput
+                <EpubSearchInput
                         app={app}
                         bind:value={searchQuery}
                         onClear={clearSearchCriteria}
@@ -2512,7 +2620,6 @@
                         availableFormats={availableFormatOptions}
                         matchCount={filteredFiles.length}
                         totalCount={displayBooks.length}
-                        showSortButton={false}
                         autoFocus={!hasActiveSearchCriteria()}
                 />
         </div>
@@ -2562,8 +2669,12 @@
 					onkeydown={(event) => handleBookKeydown(event, file.path)}
 					role="button"
 					tabindex="0"
-					aria-label={`${file.displayTitle}, ${t('epub.bookshelf.progress', { progress: clampProgress(file.progress) })}`}
-					title={`${file.displayTitle} · ${clampProgress(file.progress)}%`}
+					aria-label={canShowBookshelfProgress
+						? `${file.displayTitle}, ${t('epub.bookshelf.progress', { progress: clampProgress(file.progress) })}`
+						: file.displayTitle}
+					title={canShowBookshelfProgress
+						? `${file.displayTitle} · ${clampProgress(file.progress)}%`
+						: file.displayTitle}
 				>
 					<div class="cover-tile-media">
 						{#if covers.get(file.path)}
@@ -2575,13 +2686,15 @@
 							</div>
 						{/if}
 					</div>
-					<div class="cover-tile-footer">
-						<div
-							class={`cover-tile-progress ${getBookshelfProgressToneClass(file.progress)}`}
-							style={`--cover-progress:${clampProgress(file.progress)}%;`}
-							aria-hidden="true"
-						></div>
-					</div>
+					{#if canShowBookshelfProgress}
+						<div class="cover-tile-footer">
+							<div
+								class={`cover-tile-progress ${getBookshelfProgressToneClass(file.progress)}`}
+								style={`--cover-progress:${clampProgress(file.progress)}%;`}
+								aria-hidden="true"
+							></div>
+						</div>
+					{/if}
 				</div>
 			{:else if effectiveViewMode === 'grid'}
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
@@ -2614,15 +2727,17 @@
 								{/each}
 							</div>
 						{/if}
-						<div class="card-progress">
-							<div class="card-progress-bar">
-								<div
-									class={`card-progress-fill ${getBookshelfProgressToneClass(file.progress)}`}
-									style="width: {clampProgress(file.progress)}%"
-								></div>
+						{#if canShowBookshelfProgress}
+							<div class="card-progress">
+								<div class="card-progress-bar">
+									<div
+										class={`card-progress-fill ${getBookshelfProgressToneClass(file.progress)}`}
+										style="width: {clampProgress(file.progress)}%"
+									></div>
+								</div>
+								<span class="card-progress-text">{clampProgress(file.progress)}%</span>
 							</div>
-							<span class="card-progress-text">{clampProgress(file.progress)}%</span>
-						</div>
+						{/if}
 					</div>
 				</div>
 			{:else}

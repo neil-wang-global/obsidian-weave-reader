@@ -34,8 +34,17 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 						description: "免费打开 EPUB 文件，支持正文阅读、章节切换与目录跳转。",
 					},
 					bookmarksAndNavigation: {
-						title: "书签与定位",
-						description: "免费使用当前页书签、章节导航与全文搜索。",
+						title: "书签",
+						description: "免费使用书签目录、当前页书签保存与书签列表跳转。",
+					},
+					readingProgress: {
+						title: "阅读进度与连续阅读",
+						description:
+							"自动保存与恢复阅读位置、书架进度展示、连续阅读自动保存，以及上次阅读点记录。",
+					},
+					incrementalReadingEntry: {
+						title: "增量阅读入口",
+						description: "目录中可将章节加入增量阅读（需安装增量阅读插件，当前为基础免费入口）。",
 					},
 					typographyAndView: {
 						title: "阅读排版与视图",
@@ -60,10 +69,17 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 						title: "非 EPUB 格式阅读",
 						description: "解锁 MOBI、AZW3、FB2、FBZ、TXT、CBZ 等扩展格式。",
 					},
-					readingProgress: {
-						title: "阅读进度同步",
-						description:
-							"自动保存与恢复阅读位置，并覆盖书签目录、连续阅读页数、顶部贴纸和参考阅读点。",
+					readingReference: {
+						title: "参考阅读点与顶部贴纸",
+						description: "手动记录参考阅读位置，并在阅读器顶部展示可配置的贴纸提示。",
+					},
+					styledExcerpts: {
+						title: "高级摘录样式",
+						description: "下划线、删除线、波浪线及相关摘录显示控制。",
+					},
+					canvasExcerpts: {
+						title: "脑图摘录联动",
+						description: "自动关联 Canvas 脑图摘录，并在阅读器中管理绑定状态。",
 					},
 					paragraphMode: {
 						title: "段落阅读模式",
@@ -209,11 +225,15 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				vaultScanEmpty: "我的书架：当前仓库中未发现书籍或漫画",
 				vaultScanTitle: "扫描库中书籍和漫画",
 				vaultScanAlreadyAdded: "我的书架：所选书籍或漫画已在书架中",
+				vaultScanAddFailed:
+					"我的书架：所选书籍无法加入（路径无法解析或存在重名冲突），请刷新扫描后重试",
 				vaultScanAdded: "我的书架：已加入 {count} 本书籍或漫画",
 				vaultScanFailed: "我的书架：扫描书籍和漫画失败",
 				menu: {
 					openInNewTab: "在新标签页打开",
 					viewFullInfo: "查看书籍完整信息",
+					markCompleted: "标记为已读完",
+					clearCompleted: "取消已读完标记",
 					customCover: "自定义书籍封面",
 					removeFromShelf: "从书架中移除",
 					deleteBookFile: "删除书籍文件",
@@ -343,15 +363,17 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				referenceJumpFailed: "跳转到参考阅读位置失败",
 				referenceCleared: "已清除参考阅读位置",
 				referenceClearFailed: "清除参考阅读位置失败",
-				referenceJumpMenu: "跳转到参考阅读位置",
-				referenceUpdateMenu: "更新参考阅读位置",
-				referenceClearMenu: "清除参考阅读位置",
+				referenceRecordMenu: "记录当前阅读位置",
+				referenceJumpMenu: "跳转到已记录位置",
+				referenceUpdateMenu: "更新为当前位置",
+				referenceClearMenu: "清除已记录位置",
+				readingPositionAutoSaveMenu: "连续阅读后自动更新",
 				referenceFallbackTitle: "参考阅读位置",
 				lastReadingPointSavedStatus: "已保存最后阅读点：{title}",
 				referenceSavedStatus: "已记录参考位置：{title}",
 				referenceJumpedStatus: "已跳转到参考位置：{title}",
 				timestampFeature: "摘录时间戳",
-				readingProgressFeatureNotice: "阅读进度同步是高级功能，请激活许可证后使用",
+				readingReferenceFeatureNotice: "参考阅读点与顶部贴纸是高级功能，请激活许可证后使用",
 				paragraphModeFeatureNotice: "段落阅读模式是高级功能，请激活许可证后使用",
 				styledExcerptFeatureNotice: "下划线、删除线和波浪线是高级摘录功能，请激活许可证后使用",
 				sourceLocationFeatureNotice: "双向链接定位是高级功能，请激活许可证后使用",
@@ -361,6 +383,12 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				scanVault: "扫描库中书籍和漫画",
 				refreshBookshelf: "刷新书架",
 				nextChapterExists: "已经是最后一章节",
+				bookCompletionConfirmTitle: "标记为已读完",
+				bookCompletionConfirmMessage:
+					"你已到达《{title}》的末尾。是否将本书标记为已读完？\n\n标记后阅读进度将保持 100%，续读位置仍会照常记录。",
+				bookCompletionConfirmButton: "标记已读完",
+				bookCompletionMarked: "已标记《{title}》为已读完",
+				bookCompletionCleared: "已取消《{title}》的已读完标记",
 				markdownEditorMissing: "未找到活动的 Markdown 编辑器",
 				copiedToClipboard: "已复制到剪贴板",
 				copyFailed: "复制失败",
@@ -492,6 +520,20 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 					title: "书籍阅读器使用教程",
 				},
 			},
+			export: {
+				author: "作者",
+				bookInfo: "图书信息",
+				colorBlue: "蓝色",
+				colorGreen: "绿色",
+				colorPurple: "紫色",
+				colorRed: "红色",
+				colorYellow: "黄色",
+				highlights: "高亮",
+				notes: "笔记",
+				publisher: "出版社",
+				readingNotes: "阅读笔记",
+				readingProgress: "阅读进度",
+			},
 			settings: {
 				tabs: {
 					basic: "基础",
@@ -546,7 +588,7 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 					showPremiumPreviewDesc:
 						"开启后，基础设置页与阅读器中会显示锁定状态的高级功能入口，点击后可查看功能分层说明。",
 					bookmarkFolder: "书签目录",
-					bookmarkFolderDesc: "书签文件会保存到所选文件夹，属于阅读进度与位置记录能力的一部分。",
+					bookmarkFolderDesc: "书签文件会保存到所选文件夹，属于基础免费能力。",
 					bookmarkFolderPlaceholder: "选择文件夹路径",
 					bookshelfDisplayMode: "我的书架默认显示模式",
 					bookshelfDisplayModeDesc:
@@ -563,6 +605,9 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 					template2: "模板 2",
 					debugMode: "调试模式",
 					debugModeDesc: "开启后会输出更完整的调试日志，便于排查脚注预览、阅读器渲染与热重载问题。",
+					sourceNavigationOpenInNewTab: "溯源跳转时在新标签页打开笔记",
+					sourceNavigationOpenInNewTabDesc:
+						"从阅读器跳转到 Markdown、Canvas 或 JSON 来源时，优先复用已打开的标签页；关闭后会在新标签页打开，便于与当前书籍并排阅读。",
 				},
 				license: {
 					title: "授权与激活",
@@ -606,6 +651,7 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 							source: "授权来源",
 							localCount: "当前产品授权数",
 							inheritedCount: "共享授权数",
+							deviceUsage: "激活设备",
 							activatedAt: "激活时间",
 							expiresAt: "到期时间",
 						},
@@ -648,9 +694,12 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 						remainingAttempts: "剩余尝试次数：{count}",
 						successTitle: "激活成功",
 						successMessage: "许可证已成功激活，高级功能已启用",
+						deviceReplaced: "已自动替换一台旧设备的激活记录",
+						activatedDevices: "已激活设备：{used}/{max}",
 						errors: {
 							attemptLimitExceeded: "激活尝试次数过多",
 							failed: "激活失败",
+							emailAlreadyBound: "该激活码已被绑定，请输入正确的邮箱",
 							unknown: "激活过程中发生未知错误",
 						},
 						codeCopied: "激活码已复制到剪贴板",
@@ -672,7 +721,8 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 							troubleshootingTitle: "故障排除",
 							troubleshootingTip1: "如果提示格式错误，请检查是否完整复制了激活码。",
 							troubleshootingTip2: "如果提示已过期，请联系客服获取新的激活码。",
-							troubleshootingTip3: "如果提示设备不匹配，可能需要进行设备迁移。",
+							troubleshootingTip3:
+								"若提示「已被绑定」，请使用购买/登记时填写的同一邮箱，系统不会显示具体邮箱以防泄露。",
 							troubleshootingTip4: "如果多次尝试失败，请等待15分钟后重试。",
 							contactTitle: "联系支持",
 							contactIntro: "如需帮助，请联系：",
@@ -718,8 +768,18 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 							"Open EPUB files for free with chapter navigation and table of contents browsing.",
 					},
 					bookmarksAndNavigation: {
-						title: "Bookmarks and navigation",
-						description: "Use page bookmarks, chapter navigation, and full-text search for free.",
+						title: "Bookmarks",
+						description: "Use bookmark folders, page bookmarks, and bookmark list navigation for free.",
+					},
+					readingProgress: {
+						title: "Reading progress and continuous reading",
+						description:
+							"Automatically save and restore reading position, bookshelf progress, continuous auto-save, and last-reading-point recording.",
+					},
+					incrementalReadingEntry: {
+						title: "Incremental reading entry",
+						description:
+							"Add chapters to incremental reading from the table of contents (requires the IR plugin; currently a free entry point).",
 					},
 					typographyAndView: {
 						title: "Typography and views",
@@ -745,10 +805,18 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 						title: "Non-EPUB format reading",
 						description: "Unlock MOBI, AZW3, FB2, FBZ, TXT, CBZ, and other formats.",
 					},
-					readingProgress: {
-						title: "Reading progress sync",
+					readingReference: {
+						title: "Reading reference point and top sticker",
 						description:
-							"Automatically save and restore reading position, bookmarks, continuous reading pages, top stickers, and reference points.",
+							"Manually record a reference reading position and show configurable top sticker hints in the reader.",
+					},
+					styledExcerpts: {
+						title: "Advanced excerpt styles",
+						description: "Underline, strikethrough, wavy underline, and related display controls.",
+					},
+					canvasExcerpts: {
+						title: "Canvas excerpt linking",
+						description: "Link Canvas mind-map excerpts and manage bindings inside the reader.",
 					},
 					paragraphMode: {
 						title: "Paragraph reading mode",
@@ -902,11 +970,15 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				vaultScanTitle: "Scan books and comics in the vault",
 				vaultScanAlreadyAdded:
 					"My Bookshelf: The selected books or comics are already in the bookshelf",
+				vaultScanAddFailed:
+					"My Bookshelf: Selected books could not be added (unresolvable path or duplicate name conflict). Rescan and try again.",
 				vaultScanAdded: "My Bookshelf: Added {count} books or comics",
 				vaultScanFailed: "My Bookshelf: Failed to scan books and comics",
 				menu: {
 					openInNewTab: "Open in new tab",
 					viewFullInfo: "View full book information",
+					markCompleted: "Mark as finished",
+					clearCompleted: "Clear finished mark",
 					customCover: "Custom book cover",
 					removeFromShelf: "Remove from bookshelf",
 					deleteBookFile: "Delete book file",
@@ -1037,16 +1109,18 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				referenceJumpFailed: "Failed to jump to the reading reference point",
 				referenceCleared: "Reading reference point cleared",
 				referenceClearFailed: "Failed to clear the reading reference point",
-				referenceJumpMenu: "Jump to reading reference point",
-				referenceUpdateMenu: "Update reading reference point",
-				referenceClearMenu: "Clear reading reference point",
+				referenceRecordMenu: "Record current reading position",
+				referenceJumpMenu: "Jump to recorded position",
+				referenceUpdateMenu: "Update to current position",
+				referenceClearMenu: "Clear recorded position",
+				readingPositionAutoSaveMenu: "Auto-update after continuous reading",
 				referenceFallbackTitle: "Reading reference point",
 				lastReadingPointSavedStatus: "Last reading point saved: {title}",
 				referenceSavedStatus: "Reference point recorded: {title}",
 				referenceJumpedStatus: "Jumped to reference point: {title}",
 				timestampFeature: "Excerpt timestamp",
-				readingProgressFeatureNotice:
-					"Reading progress sync is a premium feature. Please activate a license to use it",
+				readingReferenceFeatureNotice:
+					"Reading reference points and top stickers are premium features. Please activate a license to use them",
 				paragraphModeFeatureNotice:
 					"Paragraph reading mode is a premium feature. Please activate a license to use it",
 				styledExcerptFeatureNotice:
@@ -1060,6 +1134,12 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				scanVault: "Scan books and comics in the vault",
 				refreshBookshelf: "Refresh bookshelf",
 				nextChapterExists: "This is already the last chapter",
+				bookCompletionConfirmTitle: "Mark as finished",
+				bookCompletionConfirmMessage:
+					"You have reached the end of “{title}”. Mark this book as finished?\n\nProgress will stay at 100% while your resume position keeps updating.",
+				bookCompletionConfirmButton: "Mark finished",
+				bookCompletionMarked: "Marked “{title}” as finished",
+				bookCompletionCleared: "Cleared the finished mark for “{title}”",
 				markdownEditorMissing: "No active Markdown editor was found",
 				copiedToClipboard: "Copied to clipboard",
 				copyFailed: "Copy failed",
@@ -1199,6 +1279,20 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 					title: "Reader tutorial",
 				},
 			},
+			export: {
+				author: "Author",
+				bookInfo: "Book info",
+				colorBlue: "Blue",
+				colorGreen: "Green",
+				colorPurple: "Purple",
+				colorRed: "Red",
+				colorYellow: "Yellow",
+				highlights: "Highlights",
+				notes: "Notes",
+				publisher: "Publisher",
+				readingNotes: "Reading notes",
+				readingProgress: "Reading progress",
+			},
 			settings: {
 				tabs: {
 					basic: "Basic",
@@ -1274,6 +1368,9 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 					debugMode: "Debug mode",
 					debugModeDesc:
 						"Enable more complete debug logs to troubleshoot footnote previews, reader rendering, and hot-reload issues.",
+					sourceNavigationOpenInNewTab: "Open source notes in a new tab when locating",
+					sourceNavigationOpenInNewTabDesc:
+						"When jumping from the reader to Markdown, Canvas, or JSON sources, reuse an open tab when possible. When disabled, sources open in a new tab for side-by-side reading.",
 				},
 				license: {
 					title: "License and activation",
@@ -1320,6 +1417,7 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 							source: "Authorization source",
 							localCount: "Local licenses",
 							inheritedCount: "Shared licenses",
+							deviceUsage: "Activated devices",
 							activatedAt: "Activated at",
 							expiresAt: "Expires at",
 						},
@@ -1363,9 +1461,13 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 						remainingAttempts: "Remaining attempts: {count}",
 						successTitle: "Activation successful",
 						successMessage: "The license has been activated and premium features are now enabled",
+						deviceReplaced: "An older device activation was replaced automatically",
+						activatedDevices: "Activated devices: {used}/{max}",
 						errors: {
 							attemptLimitExceeded: "Too many activation attempts",
 							failed: "Activation failed",
+							emailAlreadyBound:
+								"This activation code is already bound. Enter the correct email.",
 							unknown: "An unknown error occurred during activation",
 						},
 						codeCopied: "Activation code copied to clipboard",
@@ -1389,7 +1491,8 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 							troubleshootingTip1:
 								"If the format is invalid, check whether the full code was copied.",
 							troubleshootingTip2: "If the code has expired, contact support for a new one.",
-							troubleshootingTip3: "If the device does not match, you may need device migration.",
+							troubleshootingTip3:
+								"If you see an already-bound message, use the same email used at first activation. The bound email is never shown for privacy.",
 							troubleshootingTip4:
 								"If repeated attempts fail, wait 15 minutes before trying again.",
 							contactTitle: "Contact support",

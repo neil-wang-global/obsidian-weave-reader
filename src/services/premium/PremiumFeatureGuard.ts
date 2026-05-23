@@ -4,6 +4,8 @@
  */
 
 import { writable, get, type Writable } from "svelte/store";
+import { EPUB_CORE_FEATURE_ID_SET } from "../../config/epub-feature-tier";
+import { EPUB_RUNTIME } from "../epub/epub-runtime";
 import { licenseManager } from "../../utils/licenseManager";
 import type { EffectiveLicenseState, LicenseInfo, LicensedProduct } from "../../types/license";
 import { LICENSED_PRODUCTS, resolveEffectiveLicenseState } from "../../utils/license-state";
@@ -12,13 +14,9 @@ import { LICENSED_PRODUCTS, resolveEffectiveLicenseState } from "../../utils/lic
  * 高级功能ID定义
  */
 export const PREMIUM_FEATURES = {
-	AI_ASSISTANT: "ai-assistant",
-	INCREMENTAL_READING: "incremental-reading",
-	BATCH_PARSING: "batch-parsing",
-	PROGRESSIVE_CLOZE: "progressive-cloze",
-	VIEW_SOURCE: "view-source",
 	EPUB_NON_EPUB_FORMATS: "epub-non-epub-formats",
 	EPUB_READING_PROGRESS: "epub-reading-progress",
+	EPUB_READING_REFERENCE: "epub-reading-reference",
 	EPUB_PARAGRAPH_MODE: "epub-paragraph-mode",
 	EPUB_EXCERPT_NOTES: "epub-excerpt-notes",
 	EPUB_STYLED_EXCERPTS: "epub-styled-excerpts",
@@ -27,6 +25,13 @@ export const PREMIUM_FEATURES = {
 	EPUB_FOOTNOTE_PREVIEW: "epub-footnote-preview",
 	EPUB_CHAPTER_EXPORT: "epub-chapter-export",
 } as const;
+
+/** 未激活时在功能入口标题后追加的锁定标记（语言无关，适用于菜单/工具栏/设置项） */
+export const PREMIUM_LOCKED_ENTRY_SUFFIX = " 🔒";
+
+export function appendPremiumLockedEntrySuffix(baseTitle: string): string {
+	return `${baseTitle}${PREMIUM_LOCKED_ENTRY_SUFFIX}`;
+}
 
 /**
  * 功能元数据
@@ -39,40 +44,20 @@ export const FEATURE_METADATA: Record<
 		icon?: string;
 	}
 > = {
-	[PREMIUM_FEATURES.AI_ASSISTANT]: {
-		name: "AI智能助手",
-		description: "智能批量生成高质量记忆卡片",
-		icon: "robot",
-	},
-	[PREMIUM_FEATURES.INCREMENTAL_READING]: {
-		name: "渐进性阅读",
-		description: "支持增量阅读工作流",
-		icon: "book-reader",
-	},
-	[PREMIUM_FEATURES.BATCH_PARSING]: {
-		name: "批量解析系统",
-		description: "自动解析文档中的卡片，支持文件夹映射和智能触发",
-		icon: "sync-alt",
-	},
-	[PREMIUM_FEATURES.PROGRESSIVE_CLOZE]: {
-		name: "渐进式挖空",
-		description: "智能渐进式挖空学习，逐步掌握复杂知识点",
-		icon: "layers",
-	},
-	[PREMIUM_FEATURES.VIEW_SOURCE]: {
-		name: "查看原文",
-		description: "快速查看卡片来源文档和上下文",
-		icon: "file-text",
-	},
 	[PREMIUM_FEATURES.EPUB_NON_EPUB_FORMATS]: {
 		name: "非 EPUB 格式阅读",
 		description: "解锁 MOBI、AZW3、FB2、FBZ、TXT、CBZ 等格式阅读能力",
 		icon: "library",
 	},
 	[PREMIUM_FEATURES.EPUB_READING_PROGRESS]: {
-		name: "阅读进度同步",
-		description: "保存、恢复并同步阅读位置与参考阅读点",
+		name: "阅读进度与书签",
+		description: "书签目录、当前页书签、阅读位置保存恢复与连续阅读自动保存",
 		icon: "history",
+	},
+	[PREMIUM_FEATURES.EPUB_READING_REFERENCE]: {
+		name: "参考阅读点与顶部贴纸",
+		description: "手动记录参考阅读位置、顶部贴纸展示与相关阅读节奏控制",
+		icon: "flag",
 	},
 	[PREMIUM_FEATURES.EPUB_PARAGRAPH_MODE]: {
 		name: "段落阅读模式",
@@ -112,16 +97,13 @@ export const FEATURE_METADATA: Record<
 };
 
 export const PREMIUM_BENEFIT_FEATURE_ORDER = [
-	PREMIUM_FEATURES.INCREMENTAL_READING,
-	PREMIUM_FEATURES.PROGRESSIVE_CLOZE,
+	PREMIUM_FEATURES.EPUB_NON_EPUB_FORMATS,
+	PREMIUM_FEATURES.EPUB_READING_PROGRESS,
+	PREMIUM_FEATURES.EPUB_SOURCE_LOCATION,
+	PREMIUM_FEATURES.EPUB_PARAGRAPH_MODE,
 ] as const;
 
-const FREE_FEATURE_IDS = new Set<string>([
-	PREMIUM_FEATURES.AI_ASSISTANT,
-	PREMIUM_FEATURES.BATCH_PARSING,
-	PREMIUM_FEATURES.VIEW_SOURCE,
-	PREMIUM_FEATURES.EPUB_EXCERPT_NOTES,
-]);
+const FREE_FEATURE_IDS = new Set<string>([...EPUB_CORE_FEATURE_ID_SET]);
 
 /**
  * 高级功能守卫类
@@ -194,6 +176,7 @@ export class PremiumFeatureGuard {
 		const effectiveState = await this.validateLicenseState();
 		this.effectiveState = effectiveState;
 		this.isPremiumActive.set(effectiveState.isPremiumActive);
+		this.dispatchPremiumUiStateChanged();
 	}
 
 	/**
@@ -211,6 +194,7 @@ export class PremiumFeatureGuard {
 		const effectiveState = await this.validateLicenseState();
 		this.effectiveState = effectiveState;
 		this.isPremiumActive.set(effectiveState.isPremiumActive);
+		this.dispatchPremiumUiStateChanged();
 	}
 
 	getEffectiveState(): EffectiveLicenseState {
@@ -222,6 +206,16 @@ export class PremiumFeatureGuard {
 	 */
 	setPremiumFeaturesPreview(enabled: boolean): void {
 		this.premiumFeaturesPreviewEnabled.set(enabled);
+		this.dispatchPremiumUiStateChanged();
+	}
+
+	private dispatchPremiumUiStateChanged(): void {
+		if (typeof window === "undefined") {
+			return;
+		}
+		window.dispatchEvent(
+			new CustomEvent(EPUB_RUNTIME.events.premiumUiStateChanged)
+		);
 	}
 
 	/**
@@ -334,7 +328,9 @@ export class PremiumFeatureGuard {
 			return `${baseTitle} (限时开放)`;
 		}
 
-		return this.canUseAnyFeature(featureIds, context) ? baseTitle : `${baseTitle} (高级)`;
+		return this.canUseAnyFeature(featureIds, context)
+			? baseTitle
+			: appendPremiumLockedEntrySuffix(baseTitle);
 	}
 
 	getFeatureEntryTitle(
@@ -350,7 +346,9 @@ export class PremiumFeatureGuard {
 			return `${baseTitle} (限时开放)`;
 		}
 
-		return this.canUseFeature(featureId, context) ? baseTitle : `${baseTitle} (高级)`;
+		return this.canUseFeature(featureId, context)
+			? baseTitle
+			: appendPremiumLockedEntrySuffix(baseTitle);
 	}
 
 	/**

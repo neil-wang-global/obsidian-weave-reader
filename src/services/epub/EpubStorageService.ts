@@ -19,6 +19,12 @@ import {
 	isSupportedBookPath,
 	stripSupportedBookExtension,
 } from "./book-format";
+import {
+	epubVaultPathsReferToSameBook,
+	isVisibleVaultBookPath,
+	resolveSupportedBookFile,
+	resolveSupportedBookFilePath as resolveCanonicalSupportedBookFilePath,
+} from "./epub-vault-path";
 import { EpubBookmarkService } from "./EpubBookmarkService";
 import { normalizeReadingPaceStats } from "./reading-pace";
 import type {
@@ -626,6 +632,27 @@ export class EpubStorageService {
 						: undefined,
 			}))
 			.filter((entry) => Boolean(entry.path));
+	}
+
+	private dedupeBookshelfMembershipEntries(
+		entries: EpubBookshelfMembershipEntry[]
+	): EpubBookshelfMembershipEntry[] {
+		const byPath = new Map<string, EpubBookshelfMembershipEntry>();
+		for (const entry of this.normalizeBookshelfMembershipEntries(entries)) {
+			const existing = byPath.get(entry.path);
+			if (!existing) {
+				byPath.set(entry.path, entry);
+				continue;
+			}
+			byPath.set(entry.path, {
+				path: entry.path,
+				addedAt: Math.min(existing.addedAt, entry.addedAt),
+				customCoverPath: existing.customCoverPath || entry.customCoverPath,
+			});
+		}
+		return Array.from(byPath.values()).sort(
+			(a, b) => a.addedAt - b.addedAt || a.path.localeCompare(b.path, "zh-CN")
+		);
 	}
 
 	private normalizeLegacySourceIds(value: unknown, canonicalSourceId?: string): string[] | undefined {
@@ -1675,71 +1702,18 @@ export class EpubStorageService {
 		return this.app.vault
 			.getFiles()
 			.filter(
-				(file) => this.isEpubFile(file) && this.isPathWithinFolder(file.path, normalizedFolder)
+				(file) =>
+					this.isEpubFile(file) &&
+					isVisibleVaultBookPath(file.path) &&
+					this.isPathWithinFolder(file.path, normalizedFolder)
 			)
 			.map((file) => normalizePath(file.path));
 	}
 
-	private async collectEpubPathsFromAdapter(folderPath?: string): Promise<string[]> {
-		const adapter = this.app.vault.adapter as {
-			list?: (path: string) => Promise<{ files: string[]; folders: string[] }>;
-		};
-		if (typeof adapter.list !== "function") {
-			return [];
-		}
-
-		const normalizedFolder = this.normalizeScanFolderScope(folderPath);
-		const pendingDirs = normalizedFolder ? [normalizedFolder] : [""];
-		const visitedDirs = new Set<string>();
-		const paths = new Set<string>();
-
-		while (pendingDirs.length > 0) {
-			const currentDir = normalizePath(pendingDirs.pop() || "");
-			if (visitedDirs.has(currentDir)) {
-				continue;
-			}
-			visitedDirs.add(currentDir);
-
-			let listing: { files: string[]; folders: string[] };
-			try {
-				const listTarget = currentDir || "/";
-				listing = await adapter.list(listTarget);
-			} catch (error) {
-				if (currentDir === normalizedFolder) {
-					logger.warn("[EpubStorageService] Failed to list book scan directory:", {
-						dir: currentDir || "/",
-						error,
-					});
-				}
-				continue;
-			}
-
-			for (const filePath of Array.isArray(listing.files) ? listing.files : []) {
-				const normalizedFilePath = normalizePath(filePath || "");
-				if (!this.isEpubPath(normalizedFilePath)) {
-					continue;
-				}
-				if (!this.isPathWithinFolder(normalizedFilePath, normalizedFolder)) {
-					continue;
-				}
-				paths.add(normalizedFilePath);
-			}
-
-			for (const nextDir of Array.isArray(listing.folders) ? listing.folders : []) {
-				const normalizedNextDir = normalizePath(nextDir || "");
-				if (!normalizedNextDir) {
-					continue;
-				}
-				pendingDirs.push(normalizedNextDir);
-			}
-		}
-
-		return Array.from(paths);
-	}
-
 	private async createScanIndexEntryFromPath(filePath: string): Promise<EpubScanIndexEntry> {
-		const normalizedPath = normalizePath(filePath || "");
-		const file = this.app.vault.getAbstractFileByPath(normalizedPath);
+		const resolvedFile = resolveSupportedBookFile(this.app, filePath);
+		const normalizedPath = resolvedFile?.path || normalizePath(filePath || "");
+		const file = resolvedFile || this.app.vault.getAbstractFileByPath(normalizedPath);
 		const slashIndex = normalizedPath.lastIndexOf("/");
 
 		let size = file instanceof TFile ? file.stat.size : 0;
@@ -1788,16 +1762,18 @@ export class EpubStorageService {
 	}
 
 	private async scanVaultBookshelfEntries(folderPath?: string): Promise<EpubScanIndexEntry[]> {
-		const pathSet = new Set<string>();
-		for (const path of this.collectEpubPathsFromVaultIndex(folderPath)) {
-			pathSet.add(path);
-		}
-		for (const path of await this.collectEpubPathsFromAdapter(folderPath)) {
-			pathSet.add(path);
+		const pathSet = new Set<string>(this.collectEpubPathsFromVaultIndex(folderPath));
+
+		const canonicalPaths = new Set<string>();
+		for (const path of pathSet) {
+			const canonicalPath = this.resolveSupportedBookFilePath(path);
+			if (canonicalPath) {
+				canonicalPaths.add(canonicalPath);
+			}
 		}
 
 		const entries = await Promise.all(
-			Array.from(pathSet).map((path) => this.createScanIndexEntryFromPath(path))
+			Array.from(canonicalPaths).map((path) => this.createScanIndexEntryFromPath(path))
 		);
 
 		return entries.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
@@ -1844,33 +1820,49 @@ export class EpubStorageService {
 	}
 
 	private async hasExistingEpubFile(filePath: string): Promise<boolean> {
-		const normalizedPath = normalizePath(filePath || "");
-		if (!this.isEpubPath(normalizedPath)) {
+		return this.resolveSupportedBookFilePath(filePath) !== null;
+	}
+
+	private isBookshelfMemberPath(
+		filePath: string,
+		membership: EpubBookshelfMembershipEntry[]
+	): boolean {
+		const canonicalPath = this.resolveSupportedBookFilePath(filePath);
+		if (!canonicalPath) {
 			return false;
 		}
+		return membership.some((entry) => epubVaultPathsReferToSameBook(entry.path, canonicalPath));
+	}
 
-		const file = this.app.vault.getAbstractFileByPath(normalizedPath);
-		if (file instanceof TFile && this.isEpubFile(file)) {
+	resolveSupportedBookFilePath(filePath: string): string | null {
+		return resolveCanonicalSupportedBookFilePath(this.app, filePath);
+	}
+
+	async isBookshelfSourceMissing(filePath: string): Promise<boolean> {
+		if (this.resolveSupportedBookFilePath(filePath)) {
+			return false;
+		}
+		const normalizedPath = normalizePath(filePath || "");
+		if (!normalizedPath || !this.isEpubPath(normalizedPath)) {
 			return true;
 		}
-
 		const adapter = this.app.vault.adapter as { exists?: (path: string) => Promise<boolean> };
 		if (typeof adapter.exists !== "function") {
-			return false;
+			return true;
 		}
-
 		try {
-			return await adapter.exists(normalizedPath);
+			return !(await adapter.exists(normalizedPath));
 		} catch {
-			return false;
+			return true;
 		}
 	}
 
 	private async filterExistingBookshelfEntries(
 		entries: EpubScanIndexEntry[]
 	): Promise<EpubScanIndexEntry[]> {
+		const visibleEntries = entries.filter((entry) => isVisibleVaultBookPath(entry.path));
 		const results = await Promise.all(
-			entries.map(async (entry) => ({
+			visibleEntries.map(async (entry) => ({
 				entry,
 				exists: await this.hasExistingEpubFile(entry.path),
 			}))
@@ -2334,19 +2326,10 @@ export class EpubStorageService {
 			}
 		}
 
-		const dedupedEntries = Array.from(
-			new Map(
-				entries
-					.map((entry) => ({
-						path: normalizePath(entry.path || ""),
-						addedAt: typeof entry.addedAt === "number" ? entry.addedAt : 0,
-					}))
-					.filter((entry) => entry.path)
-					.map((entry) => [entry.path, entry] as const)
-			).values()
-		).sort((a, b) => a.addedAt - b.addedAt || a.path.localeCompare(b.path, "zh-CN"));
+		const normalizedEntries = this.normalizeBookshelfMembershipEntries(entries);
+		const dedupedEntries = this.dedupeBookshelfMembershipEntries(normalizedEntries);
 
-		if (dedupedEntries.length !== entries.length) {
+		if (dedupedEntries.length !== normalizedEntries.length) {
 			await this.saveBookshelfMembership(dedupedEntries);
 		}
 
@@ -2690,26 +2673,62 @@ export class EpubStorageService {
 		const scanEntries = await this.loadScanIndex();
 		const scanEntryMap = new Map(scanEntries.map((entry) => [entry.path, entry] as const));
 		const synthesizedEntries: EpubScanIndexEntry[] = [];
+		const orphanedMembershipPaths = new Set<string>();
+
+		const membershipPathRemaps = new Map<string, string>();
 
 		const resolvedEntries = await Promise.all(
 			membership.map(async (membershipEntry) => {
-				let scanEntry = scanEntryMap.get(membershipEntry.path);
-				if (!scanEntry && (await this.hasExistingEpubFile(membershipEntry.path))) {
-					scanEntry = await this.createScanIndexEntryFromPath(membershipEntry.path);
-					scanEntryMap.set(scanEntry.path, scanEntry);
-					synthesizedEntries.push(scanEntry);
-				}
-				if (!scanEntry) {
+				const canonicalPath = this.resolveSupportedBookFilePath(membershipEntry.path);
+				if (!canonicalPath) {
+					orphanedMembershipPaths.add(membershipEntry.path);
 					return null;
 				}
 
-				return this.toBookshelfIndexEntry(
-					scanEntry,
-					membershipEntry.addedAt,
-					membershipEntry.customCoverPath
-				);
+				if (canonicalPath !== membershipEntry.path) {
+					membershipPathRemaps.set(membershipEntry.path, canonicalPath);
+				}
+
+				const activePath = canonicalPath;
+				let scanEntry = scanEntryMap.get(activePath) ?? scanEntryMap.get(membershipEntry.path);
+				if (!scanEntry) {
+					scanEntry = await this.createScanIndexEntryFromPath(activePath);
+					if (!scanEntry) {
+						orphanedMembershipPaths.add(membershipEntry.path);
+						return null;
+					}
+					scanEntryMap.set(scanEntry.path, scanEntry);
+					synthesizedEntries.push(scanEntry);
+				}
+
+				return {
+					...this.toBookshelfIndexEntry(
+						scanEntry,
+						membershipEntry.addedAt,
+						membershipEntry.customCoverPath
+					),
+					path: activePath,
+				};
 			})
 		);
+
+		for (const [oldPath, newPath] of membershipPathRemaps.entries()) {
+			await this.updateBookFileReferences(oldPath, newPath);
+		}
+
+		if (orphanedMembershipPaths.size > 0) {
+			const nextMembership = membership.filter(
+				(entry) => !orphanedMembershipPaths.has(entry.path)
+			);
+			await this.saveBookshelfMembership(nextMembership);
+
+			const nextScanEntries = scanEntries.filter(
+				(entry) => !orphanedMembershipPaths.has(entry.path)
+			);
+			if (nextScanEntries.length !== scanEntries.length) {
+				await this.saveScanIndex(nextScanEntries);
+			}
+		}
 
 		if (synthesizedEntries.length > 0) {
 			await this.saveScanIndex(scanEntries.concat(synthesizedEntries));
@@ -2736,21 +2755,22 @@ export class EpubStorageService {
 		const now = Date.now();
 
 		for (let index = 0; index < normalizedPaths.length; index += 1) {
-			const path = normalizedPaths[index];
-			if (membershipPaths.has(path) || !(await this.hasExistingEpubFile(path))) {
+			const requestedPath = normalizedPaths[index];
+			const canonicalPath = this.resolveSupportedBookFilePath(requestedPath);
+			if (!canonicalPath || this.isBookshelfMemberPath(canonicalPath, membership)) {
 				continue;
 			}
 
-			await this.ensureSourceIdentity(path);
+			await this.ensureSourceIdentity(canonicalPath);
 
 			const nextEntry = {
-				path,
+				path: canonicalPath,
 				addedAt: now + index,
 			};
 			nextMembership.push(nextEntry);
 			addedEntries.push(nextEntry);
-			membershipPaths.add(path);
-			scanEntriesToUpsert.push(await this.createScanIndexEntryFromPath(path));
+			membershipPaths.add(canonicalPath);
+			scanEntriesToUpsert.push(await this.createScanIndexEntryFromPath(canonicalPath));
 		}
 
 		if (addedEntries.length === 0) {
@@ -2760,10 +2780,25 @@ export class EpubStorageService {
 		await this.saveBookshelfMembership(nextMembership);
 		if (scanEntriesToUpsert.length > 0) {
 			const existingEntries = await this.loadScanIndex();
-			await this.saveScanIndex(existingEntries.concat(scanEntriesToUpsert));
+			const mergedByPath = new Map(
+				existingEntries.map((entry) => [entry.path, entry] as const)
+			);
+			for (const entry of scanEntriesToUpsert) {
+				mergedByPath.set(entry.path, entry);
+			}
+			await this.saveScanIndex(
+				Array.from(mergedByPath.values()).sort((a, b) =>
+					a.name.localeCompare(b.name, "zh-CN")
+				)
+			);
 		}
 
 		return addedEntries;
+	}
+
+	async checkBookshelfMembership(filePath: string): Promise<boolean> {
+		const membership = await this.loadBookshelfMembership();
+		return this.isBookshelfMemberPath(filePath, membership);
 	}
 
 	async ensureBookOnBookshelf(filePath: string): Promise<void> {
@@ -3061,28 +3096,58 @@ export class EpubStorageService {
 			}
 		}
 
-		if (removedPaths.length > 0) {
-			await this.detachMissingSourceRegistryPaths([...removedPaths]);
+		const orphanedMembershipPaths = await this.pruneOrphanedBookshelfMembership();
+		const orphanedScanPaths = await this.pruneOrphanedScanIndexEntries();
+		const allRemovedPaths = Array.from(
+			new Set([...removedPaths, ...orphanedMembershipPaths, ...orphanedScanPaths])
+		);
 
-			const membership = await this.loadBookshelfMembership();
-			const nextMembership = membership.filter((entry) => !removedPaths.includes(entry.path));
-			if (nextMembership.length !== membership.length) {
-				await this.saveBookshelfMembership(nextMembership);
-			}
-
-			const scanEntries = await this.loadScanIndex();
-			const nextScanEntries = scanEntries.filter((entry) => !removedPaths.includes(entry.path));
-			if (nextScanEntries.length !== scanEntries.length) {
-				await this.saveScanIndex(nextScanEntries);
-			}
+		if (allRemovedPaths.length > 0) {
+			await this.detachMissingSourceRegistryPaths(allRemovedPaths);
 		}
 
 		logger.info("[EpubStorageService] Pruned missing EPUB records:", {
 			removedBookIds,
 			removedPaths,
+			orphanedMembershipPaths,
+			orphanedScanPaths,
 		});
 
-		return { removedBookIds, removedPaths };
+		return { removedBookIds, removedPaths: allRemovedPaths };
+	}
+
+	private async pruneOrphanedBookshelfMembership(): Promise<string[]> {
+		const membership = await this.loadBookshelfMembership();
+		const removedPaths: string[] = [];
+		const nextMembership: EpubBookshelfMembershipEntry[] = [];
+
+		for (const entry of membership) {
+			if (await this.hasExistingEpubFile(entry.path)) {
+				nextMembership.push(entry);
+				continue;
+			}
+			removedPaths.push(entry.path);
+		}
+
+		if (nextMembership.length !== membership.length) {
+			await this.saveBookshelfMembership(nextMembership);
+		}
+
+		return removedPaths;
+	}
+
+	private async pruneOrphanedScanIndexEntries(): Promise<string[]> {
+		const scanEntries = await this.loadScanIndex();
+		const filteredEntries = await this.filterExistingBookshelfEntries(scanEntries);
+		const removedPaths = scanEntries
+			.filter((entry) => !filteredEntries.some((filtered) => filtered.path === entry.path))
+			.map((entry) => entry.path);
+
+		if (filteredEntries.length !== scanEntries.length) {
+			await this.saveScanIndex(filteredEntries);
+		}
+
+		return removedPaths;
 	}
 
 	private async detachMissingSourceRegistryPaths(paths: string[]): Promise<void> {
@@ -3193,6 +3258,25 @@ export class EpubStorageService {
 			removedBookId: existingBook.id,
 			removedMembership,
 		};
+	}
+
+	async removeMissingBookshelfEntry(filePath: string): Promise<void> {
+		const normalizedFilePath = normalizePath(filePath || "");
+		if (!normalizedFilePath) {
+			return;
+		}
+
+		if (!(await this.isBookshelfSourceMissing(normalizedFilePath))) {
+			const canonicalPath = this.resolveSupportedBookFilePath(normalizedFilePath);
+			if (canonicalPath && canonicalPath !== normalizedFilePath) {
+				await this.updateBookFileReferences(normalizedFilePath, canonicalPath);
+			}
+			return;
+		}
+
+		await this.removeFromBookshelfByFilePath(normalizedFilePath, { purgeCache: true });
+		await this.removeScanIndexEntry(normalizedFilePath);
+		await this.pruneMissingBooks();
 	}
 
 	async removeBookFromBookshelf(
@@ -3379,6 +3463,43 @@ export class EpubStorageService {
 		await this.hydrateBookState(bookId);
 		const book = await this.getBook(bookId);
 		return book?.currentPosition || null;
+	}
+
+	async markBookCompleted(bookId: string, completedAt = Date.now()): Promise<EpubBook | null> {
+		bookId = await this.resolveCanonicalBookId(bookId);
+		const book = await this.getBook(bookId);
+		if (!book) {
+			return null;
+		}
+		const timestamp = Number.isFinite(completedAt) && completedAt > 0 ? completedAt : Date.now();
+		book.readingStats = normalizeReadingPaceStats({
+			...book.readingStats,
+			completedTime: book.readingStats.completedTime ?? timestamp,
+		});
+		await this.writeBookState(book.id, {
+			currentPosition: book.currentPosition,
+			readingStats: book.readingStats,
+		});
+		return book;
+	}
+
+	async clearBookCompletion(bookId: string): Promise<EpubBook | null> {
+		bookId = await this.resolveCanonicalBookId(bookId);
+		const book = await this.getBook(bookId);
+		if (!book) {
+			return null;
+		}
+		const stats = normalizeReadingPaceStats(book.readingStats);
+		if (stats.completedTime === undefined) {
+			return book;
+		}
+		const { completedTime: _completedTime, ...rest } = stats;
+		book.readingStats = normalizeReadingPaceStats(rest);
+		await this.writeBookState(book.id, {
+			currentPosition: book.currentPosition,
+			readingStats: book.readingStats,
+		});
+		return book;
 	}
 
 	async loadConcealedTexts(bookId: string): Promise<ConcealedText[]> {
@@ -3896,27 +4017,11 @@ export class EpubStorageService {
 			return { ...DEFAULT_READER_SETTINGS };
 		}
 
-		if (deviceKind === "mobile") {
-			if (this.matchesLegacyForcedMobileReaderSettings(mergedSettings)) {
-				return { ...DEFAULT_MOBILE_READER_SETTINGS };
-			}
-		}
-
 		return normalizeEpubReaderSettingsForDevice(deviceKind, settings);
 	}
 
 	private normalizeLoadedReaderSettings(settings: Partial<EpubReaderSettings>): EpubReaderSettings {
 		return this.normalizeReaderSettingsForDevice(this.getCurrentDeviceKind(), settings);
-	}
-
-	private matchesLegacyForcedMobileReaderSettings(settings: EpubReaderSettings): boolean {
-		return (
-			settings.lineHeight === LEGACY_FORCED_MOBILE_READER_SETTINGS.lineHeight &&
-			settings.widthMode === LEGACY_FORCED_MOBILE_READER_SETTINGS.widthMode &&
-			settings.layoutMode === LEGACY_FORCED_MOBILE_READER_SETTINGS.layoutMode &&
-			settings.flowMode === LEGACY_FORCED_MOBILE_READER_SETTINGS.flowMode &&
-			settings.showScrolledSideNav === LEGACY_FORCED_MOBILE_READER_SETTINGS.showScrolledSideNav
-		);
 	}
 
 	private matchesLegacyDesktopReaderSettings(settings: EpubReaderSettings): boolean {
@@ -4408,20 +4513,6 @@ const LEGACY_DESKTOP_READER_SETTINGS: EpubReaderSettings = {
 	flowMode: "paginated",
 	showScrolledSideNav: true,
 	footnoteClickAction: "preview",
-	showTopSticker: true,
-	topStickerLayout: "auto",
-	topStickerWiggleEnabled: true,
-	paragraphModeEnabled: false,
-	paragraphModeFontSize: "medium",
-	paragraphModeFontScale: 100,
-	paragraphModeSurfaceStyle: "spotlight",
-	paragraphModeTransitionStyle: "settle",
-};
-
-const LEGACY_FORCED_MOBILE_READER_SETTINGS: EpubReaderSettings = {
-	...DEFAULT_READER_SETTINGS,
-	lineHeight: 1.66,
-	widthMode: "full",
 	showTopSticker: true,
 	topStickerLayout: "auto",
 	topStickerWiggleEnabled: true,

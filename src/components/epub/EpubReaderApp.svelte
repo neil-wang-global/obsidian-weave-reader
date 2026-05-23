@@ -2,6 +2,7 @@
         import type { App, WorkspaceLeaf, TAbstractFile, EventRef } from 'obsidian';
         import { setIcon, MarkdownView, Notice, Menu, TFile, Platform, normalizePath } from 'obsidian';
 	import { onMount, untrack } from 'svelte';
+	import { get } from 'svelte/store';
 	import EpubReaderView from './EpubReaderView.svelte';
 	import BookshelfView from './BookshelfView.svelte';
 	import BottomNav from './BottomNav.svelte';
@@ -16,7 +17,7 @@
 	import EpubPremiumFeaturePopover from './EpubPremiumFeaturePopover.svelte';
 	import EpubReadingReferenceSticker from './EpubReadingReferenceSticker.svelte';
 	import EpubRemainingReadingSticker from './EpubRemainingReadingSticker.svelte';
-	import { canUseEpubCanvasExcerpts, canUseEpubChapterExport, canUseEpubExcerptNotes, canUseEpubFootnotePreview, canUseEpubParagraphMode, canUseEpubReadingProgress, canUseEpubSourceLocation, canUseEpubStyledExcerpts, createEpubReaderEngine, DEFAULT_EPUB_EXCERPT_SETTINGS, ensureEpubPremiumFeature, EPUB_RUNTIME, EpubAnnotationService, EpubHighlightViewSnapshotService, EpubLinkService, EpubLocationMigrationService, getEpubStorageService, resolveEpubHost, resolveEpubWeaveOfficialAPI } from '../../services/epub';
+	import { canUseEpubCanvasExcerpts, canUseEpubChapterExport, canUseEpubExcerptNotes, canUseEpubFootnotePreview, canUseEpubParagraphMode, canUseEpubReadingProgress, canUseEpubReadingReference, canUseEpubSourceLocation, canUseEpubStyledExcerpts, createEpubReaderEngine, DEFAULT_EPUB_EXCERPT_SETTINGS, ensureEpubPremiumFeature, EPUB_RUNTIME, EpubAnnotationService, EpubHighlightViewSnapshotService, EpubLinkService, EpubLocationMigrationService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, resolveEpubHost, resolveEpubWeaveOfficialAPI } from '../../services/epub';
 	import { EpubBookmarkService } from '../../services/epub/EpubBookmarkService';
 	import { EpubBacklinkHighlightService } from '../../services/epub/EpubBacklinkHighlightService';
 	import { EpubReferenceStatsService } from '../../services/epub/EpubReferenceStatsService';
@@ -43,14 +44,25 @@
 	import { logger } from '../../utils/logger';
 	import { tr } from '../../utils/i18n';
 	import { isWeaveMainPluginEnabled } from '../../utils/weave-reader-access';
-	import { showObsidianChoice } from '../../utils/obsidian-confirm';
+	import { showObsidianChoice, showObsidianConfirm } from '../../utils/obsidian-confirm';
 	import { UnifiedThemeManager } from '../../utils/theme-detection';
-	import { openFileWithExistingLeaf } from '../../utils/workspace-navigation';
 	import { getSourceLocateOverlayService } from '../../services/ui/SourceLocateOverlayService';
-	import { SourceNavigationService } from '../../services/ui/SourceNavigationService';
+	import { getNavigationHub } from '../../services/navigation/navigation-hub-access';
+	import type { BookLocateIntent, NavigationIntent, PendingLocateState } from '../../services/navigation/navigation-intent';
+	import { getBookSessionManager } from '../../services/epub/session/book-session-manager-access';
+	import type { BookSession } from '../../services/epub/session/BookSessionManager';
+	import { mergeReaderHighlightsByCfi } from './useEpubHighlights';
+	import { createEpubNavigationController } from './useEpubNavigation';
 	import { resolveReadingViewportLockTarget } from '../../utils/mobile-reading-viewport-lock';
 	import { buildEpubMarkdownLocateCandidates } from '../../services/ui/source-locate-candidates';
 	import { attachExternalHighlightSyncReload } from './external-highlight-sync-reload';
+	import {
+		attachEpubCardHighlightSyncBridge,
+		buildEpubHighlightSyncSnapshot,
+		type EpubSavedCardSnapshot,
+	} from '../../services/epub/epub-card-highlight-sync';
+	import { isEphemeralEditorHighlightSourcePath } from '../../services/epub/epub-highlight-source-path';
+	import type { EpubHostCreateCardInput } from '../../services/epub';
 	import {
 		normalizeContinuousReadingPositionAutoSaveEnabled,
 		normalizeContinuousReadingPositionAutoSavePages,
@@ -60,6 +72,7 @@
 	interface Props {
 		app: App;
 		filePath: string;
+		pendingLocate?: PendingLocateState | null;
 		pendingCfi?: string;
 		pendingText?: string;
 		autoInsertEnabled?: boolean;
@@ -67,6 +80,8 @@
 		onTitleChange?: (title: string) => void;
 		onChapterTitleChange?: (title: string) => void;
 		onReadingReferencePointChange?: (point: EpubReadingReferencePoint | null) => void;
+		onReadingPositionAutoSaveChange?: () => void;
+		onPremiumUiStateChange?: () => void;
 		onReaderSettingsLoaded?: (settings: EpubReaderSettings) => void;
 		onBackFromBookshelf?: () => void | Promise<void>;
 		onActionsReady?: (actions: {
@@ -83,6 +98,7 @@
 			toggleTutorial: () => void;
 			addBookmark: () => Promise<void>;
 			canUseReadingProgress?: () => boolean;
+			canUseReadingReference?: () => boolean;
 			canUseParagraphMode?: () => boolean;
 			canUseExcerptNotes?: () => boolean;
 			canUseStyledExcerpts?: () => boolean;
@@ -91,6 +107,7 @@
 			isPremiumFeaturePreviewEnabled?: () => boolean;
 			showPremiumFeaturePreview?: (featureId: string) => void;
 			saveReadingReferencePoint?: () => Promise<void>;
+			openReadingPositionMenu?: (event: MouseEvent | KeyboardEvent) => void;
 			saveLastOpenBookmark?: () => Promise<void>;
 			getReadingPositionAutoSaveEnabled?: () => boolean;
 			setReadingPositionAutoSaveEnabled?: (enabled: boolean) => Promise<boolean>;
@@ -103,6 +120,8 @@
 			exportBookHighlightsToMarkdown?: (event?: MouseEvent) => Promise<void>;
 			getExcerptSettings: () => EpubExcerptSettings;
 			updateExcerptSettings: (patch: Partial<EpubExcerptSettings>) => Promise<void>;
+			prevPage: () => void | Promise<void>;
+			nextPage: () => void | Promise<void>;
 		}) => void;
 		onSwitchBook?: (filePath: string) => void;
 		onCanvasStateChange?: (active: boolean, canvasPath: string | null) => void;
@@ -111,6 +130,7 @@
 	let { 
 		app, 
 		filePath, 
+		pendingLocate = null,
 		pendingCfi = '', 
 		pendingText = '', 
 		autoInsertEnabled: initialAutoInsert = false, 
@@ -118,6 +138,8 @@
 		onTitleChange, 
 		onChapterTitleChange,
 		onReadingReferencePointChange,
+		onReadingPositionAutoSaveChange,
+		onPremiumUiStateChange,
 		onReaderSettingsLoaded, 
 		onBackFromBookshelf,
 		onActionsReady, 
@@ -168,7 +190,7 @@
 	function shouldRenderTopStickerRail(): boolean {
 		return shouldShowTopSticker() && Boolean(
 			getRemainingReadingStickerProps()
-			|| (hasReadingProgressCapability() && readingReferencePoint)
+			|| (hasReadingReferenceCapability() && readingReferencePoint)
 		);
 	}
 
@@ -213,7 +235,10 @@
 	let readingReferencePoint = $state<EpubReadingReferencePoint | null>(null);
 	let sessionReadingStartPercent = $state<number | null>(null);
 	let remainingReadingTime = $state<{ bookMs?: number; chapterMs?: number; wordsPerMinute?: number }>({});
+	let bookCompletionPromptOpen = false;
+	let bookCompletionPromptDismissedBookId = '';
 	let premiumFeaturePreviewEnabled = $state(false);
+	let isPremiumLicenseActive = $state(false);
 	let premiumFeaturePreviewFeatureId = $state<string | null>(null);
 	let paragraphModeSelection = $state<{
 		text: string;
@@ -226,6 +251,11 @@
 	let paragraphModeBusy = $state(false);
 	let paragraphModeImmersive = $state(false);
 	let paragraphModeAnchorParagraphId = '';
+	let paragraphModeSuppressReactiveRefresh = 0;
+	let paragraphModeLastNavigationAt = 0;
+	let paragraphModePersistTimer: ReturnType<typeof setTimeout> | null = null;
+	const PARAGRAPH_MODE_PERSIST_DEBOUNCE_MS = 1400;
+	const PARAGRAPH_MODE_REACTIVE_REFRESH_COOLDOWN_MS = 450;
 	let rootEl = $state<HTMLDivElement | null>(null);
 	let viewportEl = $state<HTMLDivElement | null>(null);
 	let readingViewportLockEl = $derived(resolveReadingViewportLockTarget(rootEl));
@@ -251,6 +281,7 @@
 		...DEFAULT_EPUB_EXCERPT_SETTINGS,
 	});
 	let trackedHighlightSourceFiles = new Set<string>();
+	let bookSession = untrack(() => getBookSessionManager(app).acquire(filePath));
 	let vaultEventRefs: EventRef[] = [];
 	let pendingLoadedHighlights: ReaderHighlight[] | null = null;
 	let highlightReloadToken = 0;
@@ -260,18 +291,18 @@
 	let migratingLocationBookId: string | null = null;
 	let referenceBadgeClickCleanup: (() => void) | null = null;
 	const sourceLocateOverlay = getSourceLocateOverlayService();
-	const sourceNavigationService = untrack(() => new SourceNavigationService(app));
-
-	type ReaderNavigationIntent = {
-		cfi?: string;
-		href?: string;
-		text?: string;
-		flashStyle?: FlashStyle;
-		showLocateOverlay?: boolean;
-	};
-
-	// IR/navigation buffer: store navigation intent until the reader is ready
-	let pendingIRNav = $state<ReaderNavigationIntent | null>(null);
+	let hasPendingBookLocate = $state(false);
+	const epubNavigation = untrack(() =>
+		createEpubNavigationController({
+			getReaderReady: () => readerReady,
+			getReaderService: () => readerService,
+			getSourceLocateOverlay: () => sourceLocateOverlay,
+			getLocateOverlayLabel: () => t('epub.reader.locateSourcePosition'),
+			onPendingChange: (hasPending) => {
+				hasPendingBookLocate = hasPending;
+			},
+		})
+	);
 	let transientStatusTimer: ReturnType<typeof setTimeout> | null = null;
 	let deferredHighlightReloadTimer: ReturnType<typeof setTimeout> | null = null;
 	let componentDisposed = false;
@@ -339,6 +370,10 @@
 		return canUseEpubReadingProgress(app);
 	}
 
+	function hasReadingReferenceCapability(): boolean {
+		return canUseEpubReadingReference(app);
+	}
+
 	function hasParagraphModeCapability(): boolean {
 		return canUseEpubParagraphMode(app);
 	}
@@ -383,6 +418,24 @@
 
 	function closePremiumFeaturePreview(): void {
 		premiumFeaturePreviewFeatureId = null;
+	}
+
+	function notifyPremiumUiStateChanged(): void {
+		if (isPremiumLicenseActive) {
+			closePremiumFeaturePreview();
+		}
+		void refreshReadingReferencePointState(book?.id);
+		syncAsActiveEpubDocument();
+		onReadingPositionAutoSaveChange?.();
+		onPremiumUiStateChange?.();
+	}
+
+	function handlePremiumFeaturePreviewRequest(event: Event): void {
+		const featureId = String((event as CustomEvent<{ featureId?: string }>).detail?.featureId || '').trim();
+		if (!featureId) {
+			return;
+		}
+		openPremiumFeaturePreview(featureId);
 	}
 
 	function openPremiumFeaturePreview(featureId: string): void {
@@ -597,6 +650,10 @@
 		void (async () => {
 			if (shouldPersist && activeLocation) {
 				try {
+					if (paragraphModePersistTimer) {
+						clearTimeout(paragraphModePersistTimer);
+						paragraphModePersistTimer = null;
+					}
 					await persistParagraphModeReadingProgress(activeLocation);
 					if (shouldNotifySaved) {
 						showTransientStatus(t('epub.reader.paragraphMode.positionSaved'), 2200);
@@ -682,9 +739,61 @@
 		}
 	}
 
+	function scheduleParagraphModePersist(): void {
+		if (paragraphModePersistTimer) {
+			clearTimeout(paragraphModePersistTimer);
+		}
+		paragraphModePersistTimer = setTimeout(() => {
+			paragraphModePersistTimer = null;
+			void persistParagraphModeReadingProgress();
+		}, PARAGRAPH_MODE_PERSIST_DEBOUNCE_MS);
+	}
+
+	function applyParagraphModeIndex(
+		location: { paragraphs: ReaderParagraph[]; currentIndex: number },
+		targetIndex: number
+	): void {
+		const boundedIndex = Math.max(0, Math.min(targetIndex, location.paragraphs.length - 1));
+		paragraphModeLocation = {
+			paragraphs: location.paragraphs,
+			currentIndex: boundedIndex,
+		};
+		updateParagraphModeAnchorParagraphId(paragraphModeLocation);
+	}
+
+	async function hydrateParagraphModeActiveParagraph(targetIndex: number): Promise<void> {
+		const location = paragraphModeLocation;
+		const paragraph = location?.paragraphs?.[targetIndex];
+		if (!paragraph?.id || typeof readerService.hydrateReaderParagraph !== 'function') {
+			return;
+		}
+		if (paragraph.html) {
+			return;
+		}
+		const hydrated = await readerService.hydrateReaderParagraph(paragraph.id);
+		if (!hydrated || paragraphModeLocation?.paragraphs?.[targetIndex]?.id !== paragraph.id) {
+			return;
+		}
+		const paragraphs = [...paragraphModeLocation.paragraphs];
+		paragraphs[targetIndex] = hydrated;
+		paragraphModeLocation = {
+			paragraphs,
+			currentIndex: paragraphModeLocation.currentIndex,
+		};
+	}
+
+	async function syncParagraphModeAnchor(cfi: string): Promise<void> {
+		if (typeof readerService.syncParagraphAnchor === 'function') {
+			await readerService.syncParagraphAnchor(cfi);
+			return;
+		}
+		await readerService.goToLocation(cfi);
+	}
+
 	async function refreshParagraphModeLocation(
 		preferredIndex?: number,
-		preferredParagraphId?: string
+		preferredParagraphId?: string,
+		options?: { persist?: boolean }
 	): Promise<void> {
 		if (!settings.paragraphModeEnabled || !readerReady || typeof readerService.getCurrentParagraphLocation !== 'function') {
 			paragraphModeLocation = null;
@@ -703,7 +812,9 @@
 			}
 			paragraphModeLocation = location;
 			updateParagraphModeAnchorParagraphId(location);
-			await persistParagraphModeReadingProgress();
+			if (options?.persist !== false) {
+				scheduleParagraphModePersist();
+			}
 		} finally {
 			paragraphModeBusy = false;
 		}
@@ -779,6 +890,7 @@
 			return;
 		}
 		paragraphModeBusy = true;
+		paragraphModeSuppressReactiveRefresh += 1;
 		try {
 			const targetIndex = currentLocation.currentIndex + direction;
 			if (targetIndex < 0 || targetIndex >= currentLocation.paragraphs.length) {
@@ -786,34 +898,46 @@
 				if (typeof readerService.getParagraphsForChapter !== 'function' || targetChapterIndex < 0) {
 					return;
 				}
-				const nextChapterParagraphs = await readerService.getParagraphsForChapter(targetChapterIndex);
+				const nextChapterParagraphs = await readerService.getParagraphsForChapter(targetChapterIndex, {
+					includeHtml: false,
+				});
 				if (nextChapterParagraphs.length === 0) {
 					return;
 				}
-				const paragraph =
-					direction > 0 ? nextChapterParagraphs[0] : nextChapterParagraphs[nextChapterParagraphs.length - 1];
+				const crossChapterIndex = direction > 0 ? 0 : nextChapterParagraphs.length - 1;
+				const paragraph = nextChapterParagraphs[crossChapterIndex];
 				clearParagraphModeSelection();
+				applyParagraphModeIndex(
+					{ paragraphs: nextChapterParagraphs, currentIndex: crossChapterIndex },
+					crossChapterIndex
+				);
+				void hydrateParagraphModeActiveParagraph(crossChapterIndex);
 				try {
-					await readerService.goToLocation(paragraph.cfiRange);
+					await syncParagraphModeAnchor(paragraph.cfiRange);
 				} catch (error) {
 					logger.warn('[EpubReaderApp] Failed to navigate paragraph across chapters:', error);
 				}
-				await refreshParagraphModeLocation(direction > 0 ? 0 : nextChapterParagraphs.length - 1);
+				await refreshParagraphModeLocation(crossChapterIndex, paragraph.id, { persist: false });
+				scheduleParagraphModePersist();
 				return;
 			}
 
 			const paragraph = currentLocation.paragraphs[targetIndex];
-			if (!paragraph) {
+			if (!paragraph?.cfiRange) {
 				return;
 			}
 			clearParagraphModeSelection();
+			applyParagraphModeIndex(currentLocation, targetIndex);
+			void hydrateParagraphModeActiveParagraph(targetIndex);
 			try {
-				await readerService.goToLocation(paragraph.cfiRange);
+				await syncParagraphModeAnchor(paragraph.cfiRange);
 			} catch (error) {
 				logger.warn('[EpubReaderApp] Failed to navigate paragraph within chapter:', error);
 			}
-			await refreshParagraphModeLocation(targetIndex);
+			scheduleParagraphModePersist();
 		} finally {
+			paragraphModeLastNavigationAt = Date.now();
+			paragraphModeSuppressReactiveRefresh = Math.max(0, paragraphModeSuppressReactiveRefresh - 1);
 			paragraphModeBusy = false;
 		}
 	}
@@ -1096,7 +1220,12 @@
 		return canvasPath || null;
 	}
 
-	function queueHighlightReload(delayMs = 350) {
+	type HighlightReloadOptions = {
+		invalidateCache?: boolean;
+		incremental?: boolean;
+	};
+
+	function queueHighlightReload(delayMs = 350, options: HighlightReloadOptions = {}) {
 		if (componentDisposed) {
 			return;
 		}
@@ -1106,9 +1235,30 @@
 		deferredHighlightReloadTimer = setTimeout(() => {
 			deferredHighlightReloadTimer = null;
 			if (!componentDisposed) {
-				void reloadHighlights({ invalidateCache: true });
+				const incremental = options.incremental === true;
+				void reloadHighlights({
+					invalidateCache: options.invalidateCache ?? !incremental,
+					incremental,
+				});
 			}
 		}, delayMs);
+	}
+
+	function publishSidebarHighlights(highlights: ReaderHighlight[]) {
+		if (!book || !hasExcerptNotesCapability()) {
+			return;
+		}
+		const nextRevision = annotationRevision + 1;
+		highlightViewSnapshotService.publishFromHighlights({
+			bookId: book.id,
+			filePath,
+			showStrikethroughHighlights: excerptSettings.showStrikethroughInSidebar,
+			revision: nextRevision,
+			highlights,
+			readerService,
+		});
+		annotationRevision = nextRevision;
+		epubActiveDocumentStore.setSharedState({ annotationRevision });
 	}
 
 	function getEpubActionHost() {
@@ -1218,6 +1368,71 @@
 		window.dispatchEvent(new CustomEvent(BOOKSHELF_REFRESH_REQUEST_EVENT));
 	}
 
+	function syncReadingProgressDisplay(rawPercent?: number): void {
+		const currentBook = book;
+		if (!currentBook) {
+			readingProgress = 0;
+			return;
+		}
+		readingProgress = resolveDisplayProgress(currentBook, rawPercent);
+	}
+
+	async function markCurrentBookCompleted(): Promise<void> {
+		const currentBook = book;
+		if (!currentBook?.id || !hasReadingProgressCapability()) {
+			return;
+		}
+		const updated = await storageService.markBookCompleted(currentBook.id);
+		if (!updated) {
+			return;
+		}
+		currentBook.readingStats = updated.readingStats;
+		syncReadingProgressDisplay();
+		epubActiveDocumentStore.setSharedState({
+			progress: readingProgress,
+		});
+		notifyBookshelfChanged();
+		const title = currentBook.metadata.title?.trim() || currentBook.filePath;
+		new Notice(t('epub.reader.bookCompletionMarked', { title }));
+	}
+
+	async function handleBookEndAdvanceAttempt(): Promise<boolean> {
+		if (!hasReadingProgressCapability()) {
+			return false;
+		}
+		const currentBook = book;
+		if (!currentBook?.id || !readerService.isAtBookEnd?.()) {
+			return false;
+		}
+		if (isBookCompleted(currentBook.readingStats)) {
+			return true;
+		}
+		if (bookCompletionPromptOpen) {
+			return true;
+		}
+		if (bookCompletionPromptDismissedBookId === currentBook.id) {
+			return true;
+		}
+
+		bookCompletionPromptOpen = true;
+		const title = currentBook.metadata.title?.trim() || currentBook.filePath;
+		const confirmed = await showObsidianConfirm(
+			app,
+			t('epub.reader.bookCompletionConfirmMessage', { title }),
+			{
+				title: t('epub.reader.bookCompletionConfirmTitle'),
+				confirmText: t('epub.reader.bookCompletionConfirmButton'),
+			}
+		);
+		bookCompletionPromptOpen = false;
+		if (confirmed) {
+			await markCurrentBookCompleted();
+		} else {
+			bookCompletionPromptDismissedBookId = currentBook.id;
+		}
+		return true;
+	}
+
 	async function openScanImportModal(scanEntries?: Awaited<ReturnType<typeof storageService.loadScanIndex>>) {
 		const entries = scanEntries ?? await storageService.loadScanIndex();
 		if (entries.length === 0) {
@@ -1234,7 +1449,11 @@
 			onConfirm: async (paths: string[]) => {
 				const addedEntries = await storageService.addBooksToBookshelf(paths);
 				if (addedEntries.length === 0) {
-					new Notice(t('epub.bookshelf.vaultScanAlreadyAdded'));
+					new Notice(
+						paths.length > 0
+							? t('epub.bookshelf.vaultScanAddFailed')
+							: t('epub.bookshelf.vaultScanAlreadyAdded')
+					);
 					return;
 				}
 				notifyBookshelfChanged();
@@ -1276,13 +1495,106 @@
 		}
 	}
 
-	function getCreateCardPlugin(): { openCreateCardModal?: (input: { initialContent: string }) => Promise<void> } | null {
+	function getCreateCardPlugin(): {
+		openCreateCardModal?: (input: EpubHostCreateCardInput) => Promise<void>;
+	} | null {
 		const host = getEpubActionHost();
 		if (!host?.openCreateCardModal) {
 			new Notice(t('epub.reader.createCardUnavailable'));
 			return null;
 		}
 		return host;
+	}
+
+	function getExcerptPipeline() {
+		return bookSession.excerptPipeline;
+	}
+
+	function syncBookSessionForPath(nextFilePath: string): BookSession {
+		const manager = getBookSessionManager(app);
+		if (!manager.pathsShareSession(filePath, nextFilePath)) {
+			manager.release(filePath);
+		}
+		bookSession = manager.acquire(nextFilePath);
+		return bookSession;
+	}
+
+	function applyIncomingReaderHighlights(incoming: ReaderHighlight[]): boolean {
+		if (incoming.length === 0) {
+			return false;
+		}
+		const previousKeys = new Set(
+			(pendingLoadedHighlights || []).map((highlight) =>
+				EpubLinkService.normalizeCfi(highlight.cfiRange)
+			)
+		);
+		pendingLoadedHighlights = mergeReaderHighlightsByCfi(
+			pendingLoadedHighlights || [],
+			incoming
+		);
+		if (readerReady) {
+			for (const highlight of incoming) {
+				const key = EpubLinkService.normalizeCfi(highlight.cfiRange);
+				if (!key || previousKeys.has(key)) {
+					continue;
+				}
+				readerService.addHighlight(highlight);
+			}
+		}
+		publishSidebarHighlights(pendingLoadedHighlights);
+		return true;
+	}
+
+	async function mergeHighlightsFromSourcePath(sourcePath?: string | null): Promise<boolean> {
+		const normalizedPath = normalizeTrackedVaultPath(sourcePath);
+		if (!normalizedPath || !book || componentDisposed) {
+			return false;
+		}
+		try {
+			const fromSource = await backlinkService.collectHighlightsFromSourcePath(
+				filePath,
+				normalizedPath,
+				getBoundCanvasPath()
+			);
+			if (fromSource.length === 0) {
+				return false;
+			}
+			const incoming: ReaderHighlight[] = fromSource.map((highlight) => ({
+				...highlight,
+				presentation: 'highlight' as const,
+			}));
+			return applyIncomingReaderHighlights(incoming);
+		} catch (error) {
+			logger.warn('[EpubReaderApp] Failed to merge highlights from source path:', {
+				path: normalizedPath,
+				error,
+			});
+			return false;
+		}
+	}
+
+	async function handleSavedCardHighlightSync(card: EpubSavedCardSnapshot) {
+		if (!book || componentDisposed || !hasExcerptNotesCapability()) {
+			return;
+		}
+		const normalizedCard = buildEpubHighlightSyncSnapshot(card);
+		await getExcerptPipeline().handleCardSaved({
+			card: normalizedCard,
+			extractFromCard: () =>
+				backlinkService.extractHighlightsFromSavedCard(
+					normalizedCard,
+					filePath,
+					book?.sourceId
+				),
+			mergeFromSourcePath: (sourcePath) => mergeHighlightsFromSourcePath(sourcePath),
+			applyReaderHighlights: (incoming) => applyIncomingReaderHighlights(incoming),
+			requestReload: (request) =>
+				queueHighlightReload(request.delayMs ?? 300, {
+					incremental: request.incremental,
+					invalidateCache: request.invalidateCache,
+				}),
+			rememberSourcePath: (sourcePath) => rememberHighlightSourcePath(sourcePath),
+		});
 	}
 
 	async function extractContentToCard(
@@ -1296,9 +1608,18 @@
 			const plugin = getCreateCardPlugin();
 			if (!plugin?.openCreateCardModal) return;
 
-			await plugin.openCreateCardModal({
-				initialContent: `${content}\n---div---\n\n`
-			});
+			const handleCardSaved = (card: EpubSavedCardSnapshot) => {
+				void handleSavedCardHighlightSync(card);
+			};
+			const modalInput: EpubHostCreateCardInput & {
+				onSuccess?: (card: EpubSavedCardSnapshot) => void | Promise<void>;
+			} = {
+				initialContent: `${content}\n---div---\n\n`,
+				onCardSaved: handleCardSaved,
+				onSuccess: handleCardSaved,
+			};
+
+			await plugin.openCreateCardModal(modalInput);
 			onSuccess?.();
 			new Notice(successMessage);
 		} catch (error) {
@@ -1416,6 +1737,7 @@
 	}
 
 	async function loadBook() {
+		syncBookSessionForPath(filePath);
 		const loadToken = ++activeBookLoadToken;
 		const targetFilePath = filePath;
 		const previousBook = book;
@@ -1436,13 +1758,25 @@
 		remainingReadingTime = {};
 		remainingReadingTimeRequestToken += 1;
 		try {
-			const vaultFile = app.vault.getAbstractFileByPath(targetFilePath);
+			const canonicalFilePath =
+				storageService.resolveSupportedBookFilePath(targetFilePath) || targetFilePath;
+			if (canonicalFilePath !== targetFilePath) {
+				await storageService.updateBookFileReferences(targetFilePath, canonicalFilePath);
+			}
+			const vaultFile = app.vault.getAbstractFileByPath(canonicalFilePath);
 			if (!isSupportedBookFile(vaultFile)) {
-				await storageService.pruneMissingBooks();
-				throw new Error(t('epub.bookshelf.notFoundRemoved'));
+				if (await storageService.isBookshelfSourceMissing(targetFilePath)) {
+					await storageService.removeMissingBookshelfEntry(targetFilePath);
+					throw new Error(t('epub.bookshelf.notFoundRemoved'));
+				}
+				throw new Error(t('views.epubView.notice.bookFileMissing'));
 			}
 
-			const existingBook = await storageService.findBookByFilePath(targetFilePath);
+			const existingBook =
+				(await storageService.findBookByFilePath(canonicalFilePath))
+				|| (canonicalFilePath !== targetFilePath
+					? await storageService.findBookByFilePath(targetFilePath)
+					: null);
 			if (isStaleBookLoad(loadToken)) {
 				return;
 			}
@@ -1454,11 +1788,11 @@
 			}
 			const reusableBook = canReuseExistingBook(existingBook, vaultFile) ? existingBook : null;
 			if (existingBook && !reusableBook) {
-				await storageService.removeBookByFilePath(targetFilePath);
+				await storageService.removeBookByFilePath(canonicalFilePath);
 				showTransientStatus(t('epub.reader.fileUpdatedRebuilt'), 3200);
 			}
 			const loadedBook = await Promise.race([
-				readerService.loadEpub(targetFilePath, reusableBook?.id),
+				readerService.loadEpub(canonicalFilePath, reusableBook?.id),
 				new Promise<never>((_, reject) => {
 					window.setTimeout(() => reject(new Error(t('epub.reader.loadTimeout'))), 15000);
 				})
@@ -1489,8 +1823,10 @@
 			}
 
 			book = loadedBook;
+			bookCompletionPromptDismissedBookId = '';
 			currentChapterIndex = loadedBook.currentPosition?.chapterIndex ?? 0;
-			updateSessionReadingStartPercent(loadedBook.currentPosition?.percent ?? 0);
+			syncReadingProgressDisplay(loadedBook.currentPosition?.percent ?? 0);
+			updateSessionReadingStartPercent(readingProgress);
 			showNextChapterAction = false;
 			bookmarkRevision = 0;
 			onTitleChange?.(loadedBook.metadata.title);
@@ -1514,7 +1850,7 @@
 	}
 
 	async function refreshReadingReferencePointState(bookId?: string | null) {
-		if (!hasReadingProgressCapability()) {
+		if (!hasReadingReferenceCapability()) {
 			updateReadingReferencePointState(null);
 			return;
 		}
@@ -1607,7 +1943,7 @@
 	}
 
 	async function saveLastOpenBookmark() {
-		if (!ensureEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_READING_PROGRESS, t('epub.reader.readingProgressFeatureNotice'))) {
+		if (!ensureEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_READING_PROGRESS, '')) {
 			return;
 		}
 		if (!book) {
@@ -1693,7 +2029,7 @@
 	}
 
 	async function saveReadingReferencePoint() {
-		if (!ensureEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_READING_PROGRESS, t('epub.reader.readingProgressFeatureNotice'))) {
+		if (!ensureEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_READING_REFERENCE, t('epub.reader.readingReferenceFeatureNotice'))) {
 			return;
 		}
 		if (!book) {
@@ -1719,7 +2055,7 @@
 	}
 
 	async function syncReadingReferencePointFromAutoSave(position: ReadingPosition): Promise<void> {
-		if (!hasReadingProgressCapability()) {
+		if (!hasReadingReferenceCapability()) {
 			return;
 		}
 		if (!book) {
@@ -1740,6 +2076,9 @@
 	}
 
 	async function goToReadingReferencePoint() {
+		if (!ensureEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_READING_REFERENCE, t('epub.reader.readingReferenceFeatureNotice'))) {
+			return;
+		}
 		if (!readingReferencePoint?.cfi) {
 			new Notice(t('epub.reader.referenceMissing'));
 			return;
@@ -1761,7 +2100,7 @@
 	}
 
 	async function clearReadingReferencePoint() {
-		if (!ensureEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_READING_PROGRESS, t('epub.reader.readingProgressFeatureNotice'))) {
+		if (!ensureEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_READING_REFERENCE, t('epub.reader.readingReferenceFeatureNotice'))) {
 			return;
 		}
 		if (!book) {
@@ -1780,38 +2119,99 @@
 	}
 
 	function openReadingReferencePointMenu(event: MouseEvent | KeyboardEvent) {
-		if (!readingReferencePoint) {
-			void saveReadingReferencePoint();
-			return;
-		}
+		const canUseReference = hasReadingReferenceCapability();
+		const canUseProgress = hasReadingProgressCapability();
+		const autoSaveEnabled = getContinuousReadingPositionAutoSaveConfig().enabled;
 		const menu = new Menu();
-		menu.addItem((item) => {
-			item.setTitle(getReadingReferenceTitleText());
-			item.setIcon('flag');
-			item.setDisabled(true);
-		});
-		menu.addSeparator();
-		menu.addItem((item) => {
-			item.setTitle(t('epub.reader.referenceJumpMenu'));
-			item.setIcon('locate-fixed');
-			item.onClick(() => {
-				void goToReadingReferencePoint();
+
+		if (canUseReference && readingReferencePoint) {
+			menu.addItem((item) => {
+				item.setTitle(getReadingReferenceTitleText());
+				item.setIcon('flag');
+				item.setDisabled(true);
 			});
-		});
-		menu.addItem((item) => {
-			item.setTitle(t('epub.reader.referenceUpdateMenu'));
-			item.setIcon('flag');
-			item.onClick(() => {
-				void saveReadingReferencePoint();
+			menu.addSeparator();
+			menu.addItem((item) => {
+				item.setTitle(t('epub.reader.referenceJumpMenu'));
+				item.setIcon('locate-fixed');
+				item.onClick(() => {
+					void goToReadingReferencePoint();
+				});
 			});
-		});
-		menu.addItem((item) => {
-			item.setTitle(t('epub.reader.referenceClearMenu'));
-			item.setIcon('trash-2');
-			item.onClick(() => {
-				void clearReadingReferencePoint();
+			menu.addItem((item) => {
+				item.setTitle(t('epub.reader.referenceUpdateMenu'));
+				item.setIcon('flag');
+				item.onClick(() => {
+					void saveReadingReferencePoint();
+				});
 			});
-		});
+			menu.addItem((item) => {
+				item.setTitle(t('epub.reader.referenceClearMenu'));
+				item.setIcon('trash-2');
+				item.onClick(() => {
+					void clearReadingReferencePoint();
+				});
+			});
+		} else if (canUseReference) {
+			menu.addItem((item) => {
+				item.setTitle(t('epub.reader.referenceRecordMenu'));
+				item.setIcon('flag');
+				item.onClick(() => {
+					void saveReadingReferencePoint();
+				});
+			});
+		} else if (isPremiumFeaturePreviewEnabled()) {
+			menu.addItem((item) => {
+				item.setTitle(
+					getPremiumFeatureEntryTitle(
+						t('epub.reader.referenceRecordMenu'),
+						PREMIUM_FEATURES.EPUB_READING_REFERENCE
+					)
+				);
+				item.setIcon('flag');
+				item.onClick(() => {
+					openPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_READING_REFERENCE);
+				});
+			});
+		}
+
+		if (canUseReference || isPremiumFeaturePreviewEnabled()) {
+			menu.addSeparator();
+		}
+
+		if (canUseProgress) {
+			menu.addItem((item) => {
+				item.setTitle(t('epub.reader.readingPositionAutoSaveMenu'));
+				item.setIcon(autoSaveEnabled ? 'locate-fixed' : 'map-pinned');
+				item.setChecked(autoSaveEnabled);
+				item.onClick(() => {
+					void (async () => {
+						const nextEnabled = !getContinuousReadingPositionAutoSaveConfig().enabled;
+						await setContinuousReadingPositionAutoSaveEnabled(nextEnabled);
+						onReadingPositionAutoSaveChange?.();
+						new Notice(
+							nextEnabled
+								? t('epub.reader.autoSaveEnabled')
+								: t('epub.reader.autoSaveDisabled')
+						);
+					})();
+				});
+			});
+		} else if (isPremiumFeaturePreviewEnabled()) {
+			menu.addItem((item) => {
+				item.setTitle(
+					getPremiumFeatureEntryTitle(
+						t('epub.reader.readingPositionAutoSaveMenu'),
+						PREMIUM_FEATURES.EPUB_READING_PROGRESS
+					)
+				);
+				item.setIcon('map-pinned');
+				item.onClick(() => {
+					openPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_READING_PROGRESS);
+				});
+			});
+		}
+
 		showMenuAtAnchor(menu, event);
 	}
 
@@ -1918,8 +2318,7 @@
 		applyAndPersistReaderSettings({
 			...settings,
 			layoutMode: mode,
-			widthMode: mode === 'double' ? 'fit' : settings.widthMode,
-			flowMode: 'paginated'
+			widthMode: mode === 'double' ? 'fit' : settings.widthMode
 		});
 	}
 
@@ -2164,16 +2563,6 @@
 		showNextChapterAction = false;
 	}
 
-	function handleKeydown(e: KeyboardEvent) {
-		if (e.key === 'ArrowLeft') {
-			e.preventDefault();
-			readerService.prevPage();
-		} else if (e.key === 'ArrowRight') {
-			e.preventDefault();
-			readerService.nextPage();
-		}
-	}
-
 	function buildNoteContent(
 		text: string,
 		cfiRange: string,
@@ -2386,6 +2775,19 @@
 		color?: string,
 		style?: EpubHighlightStyle
 	) {
+		if (readerReady && hasExcerptNotesCapability()) {
+			try {
+				readerService.addHighlight({
+					cfiRange,
+					color: color || 'yellow',
+					style,
+					text,
+					presentation: 'highlight',
+				});
+			} catch (error) {
+				logger.warn('[EpubReaderApp] Failed to apply immediate highlight before card extract:', error);
+			}
+		}
 		await extractContentToCard(
 			buildNoteContent(text, cfiRange, color, style),
 			t('epub.reader.createCardSuccess'),
@@ -2853,19 +3255,20 @@
 		}
 	}
 
-	function requestIRNavigation(nav: ReaderNavigationIntent) {
-		if (!nav.cfi && !nav.href) {
-			return;
-		}
-		if (!readerReady) {
-			pendingIRNav = nav;
-			return;
-		}
-		void applyIRNav(nav);
+	function requestBookLocate(nav: BookLocateIntent) {
+		epubNavigation.requestBookLocate(nav);
+	}
+
+	function requestIRNavigation(nav: BookLocateIntent) {
+		epubNavigation.requestIRNavigation(nav);
+	}
+
+	function flushPendingLocateFromProps() {
+		epubNavigation.flushPendingLocateFromProps(pendingLocate, pendingCfi, pendingText);
 	}
 
         async function navigateToCfi(cfi: string, text: string) {
-		requestIRNavigation({
+		requestBookLocate({
 			cfi,
 			text,
 			flashStyle: 'highlight',
@@ -3018,48 +3421,9 @@
 		const detail = (e as CustomEvent).detail;
 		if (!detail || detail.filePath !== filePath) return;
 
-		const nav: ReaderNavigationIntent = {};
-		if (detail.cfi) nav.cfi = detail.cfi;
-		else if (detail.href) nav.href = detail.href;
-		if (typeof detail.text === 'string' && detail.text.trim()) {
-			nav.text = detail.text;
-		}
-		if (detail.flashStyle === 'pulse' || detail.flashStyle === 'highlight' || detail.flashStyle === 'none') {
-			nav.flashStyle = detail.flashStyle;
-		}
-		if (typeof detail.showLocateOverlay === 'boolean') {
-			nav.showLocateOverlay = detail.showLocateOverlay;
-		}
-
-		requestIRNavigation(nav);
-	}
-
-	async function applyIRNav(nav: ReaderNavigationIntent) {
-		try {
-			if (nav.flashStyle && nav.flashStyle !== 'none') {
-				await readerService.navigateAndHighlight({
-					cfi: nav.cfi,
-					href: nav.href,
-					text: nav.text,
-					flashStyle: nav.flashStyle
-				});
-			} else {
-				await readerService.navigateTo({
-					cfi: nav.cfi,
-					href: nav.href,
-					text: nav.text,
-				});
-			}
-			if (nav.showLocateOverlay) {
-				window.setTimeout(() => {
-					const rect = readerService.getNavigationTargetRect({ cfi: nav.cfi, href: nav.href, text: nav.text });
-					if (rect) {
-						sourceLocateOverlay.showAtRect(rect, { label: t('epub.reader.locateSourcePosition'), icon: 'map-pinned', durationMs: 2200 });
-					}
-				}, 80);
-			}
-		} catch (e) {
-			logger.warn('[EpubReaderApp] IR navigation failed:', e);
+		const nav = epubNavigation.buildLocateFromEventDetail(detail);
+		if (nav) {
+			requestBookLocate(nav);
 		}
 	}
 
@@ -3608,40 +3972,36 @@
 		const sourceRef = source.sourceRef;
 
 		if (sourceRef?.startsWith('card:')) {
-			await openCardBacklink(sourceRef.slice(5));
+			await navigateExternalSource({ kind: 'card', resourcePath: sourceRef.slice(5) });
+			highlightToolbarInfo = null;
+			return;
+		}
+
+		if (sourceFile.endsWith('.wdeck')) {
+			await navigateExternalSource({ kind: 'json', resourcePath: sourceFile });
 			highlightToolbarInfo = null;
 			return;
 		}
 
 		const encodedCfi = EpubLinkService.encodeCfiForWikilink(info.cfiRange);
 
-		// Handle canvas files
 		if (sourceFile.endsWith('.canvas')) {
-			await sourceNavigationService.openCanvasAndLocate(
-				sourceFile,
-				[encodedCfi, info.cfiRange, sourceFile],
-				sourceRef,
-				{ label: t('epub.reader.locateSourcePosition'), icon: 'map-pinned', focus: true, openInNewTab: true, delayMs: 500 }
-			);
+			await navigateExternalSource({
+				kind: 'canvas',
+				resourcePath: sourceFile,
+				locate: { candidates: [encodedCfi, info.cfiRange, sourceFile] },
+				context: { nodeId: sourceRef, epubFilePath: filePath },
+			});
 			highlightToolbarInfo = null;
 			return;
 		}
 
 		if (sourceFile.endsWith('.json')) {
-			const openedLeaf = await openFileWithExistingLeaf(app, sourceFile, {
-				openInNewTab: true,
-				focus: true,
-			});
-			if (!openedLeaf) {
-				new Notice(t('epub.reader.relatedNoteMissing'));
-			} else {
-				new Notice(t('epub.reader.openedSourceFileSearchHighlight'));
-			}
+			await navigateExternalSource({ kind: 'json', resourcePath: sourceFile });
 			highlightToolbarInfo = null;
 			return;
 		}
 
-		// Handle markdown files
 		await navigateToMarkdownCallout(sourceFile, encodedCfi, info.cfiRange, info.text, info.createdTime);
 		highlightToolbarInfo = null;
 	}
@@ -3684,53 +4044,59 @@
 		void reloadHighlights();
 	}
 
-	async function navigateToReferenceSource(source: ReferenceSourceInfo) {
+	async function navigateExternalSource(intent: NavigationIntent): Promise<boolean> {
 		if (!ensureEpubPremiumFeature(app, PREMIUM_FEATURES.EPUB_SOURCE_LOCATION, t('epub.reader.sourceLocationFeatureNotice'))) {
-			return;
+			return false;
 		}
+		const result = await getNavigationHub(app).navigate({
+			...intent,
+			policy: { reuseLeaf: true, focus: true, ...intent.policy },
+		});
+		if (!result.success) {
+			if (intent.kind === 'card') {
+				new Notice(t('epub.reader.cardLocateUnavailable'));
+			} else if (intent.kind === 'json') {
+				new Notice(t('epub.reader.relatedNoteMissing'));
+			} else {
+				new Notice(t('epub.reader.relatedNoteMissing'));
+			}
+			return false;
+		}
+		if (intent.kind === 'card') {
+			new Notice(t('epub.reader.cardLocated'));
+		} else if (intent.kind === 'json') {
+			new Notice(t('epub.reader.openedSourceFileSearchHighlight'));
+		}
+		return true;
+	}
+
+	async function navigateToReferenceSource(source: ReferenceSourceInfo) {
 		if (source.sourceRef?.startsWith('card:')) {
-			await openCardBacklink(source.sourceRef.slice(5));
+			await navigateExternalSource({ kind: 'card', resourcePath: source.sourceRef.slice(5) });
 			return;
 		}
 
 		if (source.type === 'canvas') {
-			await sourceNavigationService.openCanvasAndLocate(
-				source.file,
-				source.locateCandidates,
-				source.nodeId,
-				{ label: t('epub.reader.locateSourcePosition'), icon: 'map-pinned', focus: true, openInNewTab: true, delayMs: 320 }
-			);
+			await navigateExternalSource({
+				kind: 'canvas',
+				resourcePath: source.file,
+				locate: { candidates: source.locateCandidates },
+				context: { nodeId: source.nodeId, epubFilePath: filePath },
+			});
 			return;
 		}
 
 		if (source.file.endsWith('.json')) {
-			const openedLeaf = await openFileWithExistingLeaf(app, source.file, {
-				openInNewTab: true,
-				focus: true,
-			});
-			if (!openedLeaf) {
-				new Notice(t('epub.reader.relatedNoteMissing'));
-				return;
-			}
-			new Notice(t('epub.reader.openedSourceFileSearchHighlight'));
+			await navigateExternalSource({ kind: 'json', resourcePath: source.file });
 			return;
 		}
 
-		const openedLeaf = await sourceNavigationService.openMarkdownLinkAndLocate(
-			source.file,
-			filePath,
-			source.locateCandidates,
-			{
-				label: t('epub.reader.locateSourcePosition'),
-				icon: 'map-pinned',
-				openInNewTab: true,
-				focus: true,
-				delayMs: 220
-			}
-		);
-		if (!openedLeaf) {
-			new Notice(t('epub.reader.relatedNoteMissing'));
-		}
+		await navigateExternalSource({
+			kind: 'markdown',
+			resourcePath: source.file,
+			locate: { candidates: source.locateCandidates },
+			context: { epubFilePath: filePath },
+		});
 	}
 
 	async function navigateToMarkdownCallout(sourceFile: string, encodedCfi: string, rawCfi: string, excerptText?: string, createdTime?: number) {
@@ -3741,33 +4107,17 @@
 			excerptText,
 			createdTime,
 		});
-		const openedLeaf = await sourceNavigationService.openMarkdownLinkAndLocate(
-			sourceFile,
-			filePath,
-			locateCandidates,
-			{
-				label: t('epub.reader.locateSourcePosition'),
-				icon: 'map-pinned',
-				openInNewTab: true,
-				focus: true,
-				delayMs: 220
-			}
-		);
-		if (!openedLeaf) {
-			new Notice(t('epub.reader.relatedNoteMissing'));
-		}
+		await navigateExternalSource({
+			kind: 'markdown',
+			resourcePath: sourceFile,
+			locate: { candidates: locateCandidates },
+			context: { epubFilePath: filePath },
+		});
 	}
 
 	async function openCardBacklink(cardUuid: string) {
 		try {
-			const host = getEpubActionHost();
-			if (!host?.openCardBacklinkFromEpub) {
-				new Notice(t('epub.reader.cardLocateUnavailable'));
-				return;
-			}
-
-			await host.openCardBacklinkFromEpub(cardUuid);
-			new Notice(t('epub.reader.cardLocated'));
+			await navigateExternalSource({ kind: 'card', resourcePath: cardUuid });
 		} catch (error) {
 			logger.error('[EpubReaderApp] Failed to open card backlink:', error);
 			new Notice(t('epub.reader.cardLocateFailed'));
@@ -3780,7 +4130,7 @@
 		highlightToolbarInfo = null;
 	}
 
-	async function reloadHighlights(options?: { invalidateCache?: boolean }) {
+	async function reloadHighlights(options?: HighlightReloadOptions) {
 		if (!book || componentDisposed) return;
 		if (!hasExcerptNotesCapability()) {
 			trackedHighlightSourceFiles = new Set<string>();
@@ -3794,55 +4144,120 @@
 			epubActiveDocumentStore.setSharedState({ annotationRevision });
 			return;
 		}
-		const invalidateCache = options?.invalidateCache ?? false;
+		const incremental = options?.incremental === true;
+		const invalidateCache = options?.invalidateCache ?? !incremental;
 		const reloadToken = ++highlightReloadToken;
+		const previousHighlights = pendingLoadedHighlights || [];
 		try {
 			if (invalidateCache) {
 				annotationService.invalidateCollectedHighlightsCache(book.id, filePath);
-				highlightViewSnapshotService.invalidate(book.id, filePath);
-				referenceStatsService.clearCache(filePath);
+				if (!incremental) {
+					highlightViewSnapshotService.invalidate(book.id, filePath);
+					referenceStatsService.clearCache(filePath);
+				}
 				await backlinkService.invalidateHighlightsCacheForEpub(filePath, getBoundCanvasPath());
+			} else if (incremental) {
+				annotationService.invalidateCollectedHighlightsCache(book.id, filePath);
 			}
-			const allHighlights = await annotationService.collectAllHighlights(book.id, filePath, backlinkService);
+			const additionalSourcePaths = Array.from(trackedHighlightSourceFiles);
+			const collectedHighlights = await annotationService.collectAllHighlights(
+				book.id,
+				filePath,
+				backlinkService,
+				additionalSourcePaths.length > 0 ? { additionalSourcePaths } : undefined
+			);
 			if (componentDisposed || reloadToken !== highlightReloadToken) {
 				return;
 			}
 
-			const nextRevision = annotationRevision + 1;
-			highlightViewSnapshotService.publishFromHighlights({
-				bookId: book.id,
-				filePath,
-				showStrikethroughHighlights: excerptSettings.showStrikethroughInSidebar,
-				revision: nextRevision,
-				highlights: allHighlights,
-				readerService,
-			});
+			if (
+				incremental &&
+				collectedHighlights.length === 0 &&
+				previousHighlights.length > 0
+			) {
+				return;
+			}
+
+			const allHighlights = incremental
+				? mergeReaderHighlightsByCfi(collectedHighlights, previousHighlights)
+				: collectedHighlights;
 
 			const referenceStats = referenceStatsService.computeReferenceStatsFromHighlights(
 				allHighlights,
 				filePath,
 				getBoundCanvasPath()
 			);
-			
-			// 将统计数据附加到高亮上
-			const highlightsWithStats = allHighlights.map(highlight => {
+
+			const highlightsWithStats = allHighlights.map((highlight) => {
 				const normalizedCfi = EpubLinkService.normalizeCfi(highlight.cfiRange);
 				const stats = referenceStats.get(normalizedCfi);
-				
+
 				return {
 					...highlight,
 					referenceCount: stats?.referenceCount || 1,
 					referenceHeat: stats?.referenceHeat || 0,
 				};
 			});
-			
+
 			trackedHighlightSourceFiles = collectTrackedHighlightSourceFiles(highlightsWithStats);
 			pendingLoadedHighlights = highlightsWithStats;
+			getExcerptPipeline().syncCollectedHighlights(highlightsWithStats);
+
 			if (readerReady) {
-				await readerService.applyHighlights(highlightsWithStats);
+				const shouldReplaceAllHighlights =
+					!incremental ||
+					highlightsWithStats.length < previousHighlights.length ||
+					!highlightsWithStats.every((highlight) => {
+						const key = EpubLinkService.normalizeCfi(highlight.cfiRange);
+						return (
+							!key ||
+							previousHighlights.some(
+								(previous) => EpubLinkService.normalizeCfi(previous.cfiRange) === key
+							)
+						);
+					});
+
+				if (shouldReplaceAllHighlights) {
+					await readerService.applyHighlights(highlightsWithStats);
+				} else {
+					const previousKeys = new Set(
+						previousHighlights.map((highlight) =>
+							EpubLinkService.normalizeCfi(highlight.cfiRange)
+						)
+					);
+					for (const highlight of highlightsWithStats) {
+						const key = EpubLinkService.normalizeCfi(highlight.cfiRange);
+						if (!key || previousKeys.has(key)) {
+							continue;
+						}
+						readerService.addHighlight(highlight);
+					}
+				}
 			}
-			annotationRevision += 1;
-			epubActiveDocumentStore.setSharedState({ annotationRevision });
+
+			const previousKeys = new Set(
+				previousHighlights.map((highlight) => EpubLinkService.normalizeCfi(highlight.cfiRange))
+			);
+			const hasNewSidebarEntries = highlightsWithStats.some((highlight) => {
+				const key = EpubLinkService.normalizeCfi(highlight.cfiRange);
+				return Boolean(key && !previousKeys.has(key));
+			});
+
+			if (!incremental) {
+				const nextRevision = annotationRevision + 1;
+				highlightViewSnapshotService.publishFromHighlights({
+					bookId: book.id,
+					filePath,
+					showStrikethroughHighlights: excerptSettings.showStrikethroughInSidebar,
+					revision: nextRevision,
+					highlights: highlightsWithStats,
+					readerService,
+				});
+				annotationRevision = nextRevision;
+				epubActiveDocumentStore.setSharedState({ annotationRevision });
+			} else if (hasNewSidebarEntries) {
+				publishSidebarHighlights(highlightsWithStats);
+			}
 		} catch (_e) {
 			logger.warn('[EpubReaderApp] Failed to reload highlights:', _e);
 		}
@@ -3900,6 +4315,9 @@
 		const requestReload = (path: string, delayMs = 180) => {
 			const normalizedPath = normalizeTrackedVaultPath(path);
 			if (!normalizedPath || !book || componentDisposed) return;
+			if (isEphemeralEditorHighlightSourcePath(app, normalizedPath)) {
+				return;
+			}
 			if (shouldReloadForPath(normalizedPath)) {
 				queueHighlightReload(delayMs);
 				return;
@@ -3953,12 +4371,36 @@
 				queueHighlightReload(delayMs);
 			},
 		});
-		const unsubscribePremiumPreview = PremiumFeatureGuard.getInstance().premiumFeaturesPreviewEnabled.subscribe((value) => {
+		const cleanupCardHighlightSync = attachEpubCardHighlightSyncBridge({
+			app,
+			getEpubFilePath: () => filePath,
+			getBookSourceId: () => book?.sourceId,
+			isActive: () => !componentDisposed && !!book && hasExcerptNotesCapability(),
+			backlinkService,
+			onCardSaved: handleSavedCardHighlightSync,
+		});
+		const premiumGuard = PremiumFeatureGuard.getInstance();
+		isPremiumLicenseActive = get(premiumGuard.isPremiumActive);
+		premiumFeaturePreviewEnabled = get(premiumGuard.premiumFeaturesPreviewEnabled);
+		const unsubscribePremiumActive = premiumGuard.isPremiumActive.subscribe((value) => {
+			isPremiumLicenseActive = value;
+			notifyPremiumUiStateChanged();
+		});
+		const unsubscribePremiumPreview = premiumGuard.premiumFeaturesPreviewEnabled.subscribe((value) => {
 			premiumFeaturePreviewEnabled = value;
 			if (!value) {
 				closePremiumFeaturePreview();
 			}
+			notifyPremiumUiStateChanged();
 		});
+		const handlePremiumUiStateChanged = () => {
+			notifyPremiumUiStateChanged();
+		};
+		window.addEventListener(EPUB_RUNTIME.events.premiumUiStateChanged, handlePremiumUiStateChanged);
+		window.addEventListener(
+			EPUB_RUNTIME.events.premiumFeaturePreviewRequest,
+			handlePremiumFeaturePreviewRequest
+		);
 		componentDisposed = false;
 		setupScrolledNavMetricsObserver();
 		window.addEventListener('resize', scheduleScrolledNavLayoutSync);
@@ -4015,33 +4457,24 @@
 				? (window as any)[LEGACY_EPUB_PENDING_NAVIGATION_KEY]
 				: null);
 		if (pending && pending.filePath === filePath) {
-			const nav: ReaderNavigationIntent = {};
-			if (pending.cfi) nav.cfi = pending.cfi;
-			else if (pending.href) nav.href = pending.href;
-			if (typeof pending.text === 'string' && pending.text.trim()) {
-				nav.text = pending.text;
+			const nav = epubNavigation.buildLocateFromEventDetail(pending);
+			if (nav) {
+				requestBookLocate(nav);
 			}
-			if (pending.flashStyle === 'pulse' || pending.flashStyle === 'highlight' || pending.flashStyle === 'none') {
-				nav.flashStyle = pending.flashStyle;
-			}
-			if (typeof pending.showLocateOverlay === 'boolean') {
-				nav.showLocateOverlay = pending.showLocateOverlay;
-			}
-
-			requestIRNavigation(nav);
 		}
+
+		flushPendingLocateFromProps();
 
 		setupHighlightClickHandler();
 		setupReferenceBadgeClickHandler();
 		setupFootnotePreviewHandler();
 		trackHighlightSourceChanges();
+		readerService.setBookEndAdvanceHandler?.(handleBookEndAdvanceAttempt);
 		syncAsActiveEpubDocument();
 
 		if (rootEl) {
-			rootEl.addEventListener('keydown', handleKeydown);
 			rootEl.addEventListener('pointerdown', syncAsActiveEpubDocument);
 			rootEl.addEventListener('focusin', syncAsActiveEpubDocument);
-			rootEl.setAttribute('tabindex', '0');
 		}
 
 		window.addEventListener(EXCERPT_SETTINGS_CHANGED_EVENT, handleGlobalExcerptSettingsChanged);
@@ -4064,6 +4497,7 @@
 			toggleTutorial,
 			addBookmark,
 			canUseReadingProgress: hasReadingProgressCapability,
+			canUseReadingReference: hasReadingReferenceCapability,
 			canUseParagraphMode: hasParagraphModeCapability,
 			canUseExcerptNotes: hasExcerptNotesCapability,
 			canUseStyledExcerpts: hasStyledExcerptCapability,
@@ -4071,7 +4505,8 @@
 			canUseFootnotePreview: hasFootnotePreviewCapability,
 			isPremiumFeaturePreviewEnabled,
 			showPremiumFeaturePreview: openPremiumFeaturePreview,
-			saveReadingReferencePoint: hasReadingProgressCapability() ? saveReadingReferencePoint : undefined,
+			saveReadingReferencePoint: hasReadingReferenceCapability() ? saveReadingReferencePoint : undefined,
+			openReadingPositionMenu: openReadingReferencePointMenu,
 			saveLastOpenBookmark: hasReadingProgressCapability() ? saveLastOpenBookmark : undefined,
 			getReadingPositionAutoSaveEnabled: hasReadingProgressCapability()
 				? () => getContinuousReadingPositionAutoSaveConfig().enabled
@@ -4087,14 +4522,24 @@
 			exportCurrentChapterToMarkdown: hasChapterExportCapability() ? exportCurrentChapterToMarkdown : undefined,
 			exportBookHighlightsToMarkdown: hasExcerptNotesCapability() ? exportBookHighlightsToMarkdown : undefined,
 			getExcerptSettings: () => excerptSettings,
-			updateExcerptSettings: applyAndPersistExcerptSettings
+			updateExcerptSettings: applyAndPersistExcerptSettings,
+			prevPage: handlePrevPage,
+			nextPage: handleNextPage,
 		});
 		return () => {
 			document.removeEventListener('fullscreenchange', handleFullscreenChange);
 			cleanupExternalHighlightSyncReload();
+			cleanupCardHighlightSync();
 			setParagraphModeImmersiveClass(false);
+			unsubscribePremiumActive();
 			unsubscribePremiumPreview();
+			window.removeEventListener(EPUB_RUNTIME.events.premiumUiStateChanged, handlePremiumUiStateChanged);
+			window.removeEventListener(
+				EPUB_RUNTIME.events.premiumFeaturePreviewRequest,
+				handlePremiumFeaturePreviewRequest
+			);
 			componentDisposed = true;
+			getBookSessionManager(app).releaseIfNoOpenLeaves(app, filePath);
 			clearParagraphModeSelection();
 			window.removeEventListener('resize', scheduleScrolledNavLayoutSync);
 			if (scrolledNavSyncFrame) {
@@ -4112,7 +4557,6 @@
 				deferredHighlightReloadTimer = null;
 			}
 			if (rootEl) {
-				rootEl.removeEventListener('keydown', handleKeydown);
 				rootEl.removeEventListener('pointerdown', syncAsActiveEpubDocument);
 				rootEl.removeEventListener('focusin', syncAsActiveEpubDocument);
 			}
@@ -4128,6 +4572,7 @@
 				window.removeEventListener(LEGACY_EPUB_NAVIGATE_EVENT, handleEpubNavigateEvent);
 			}
 			sourceLocateOverlay.clear();
+			readerService.setBookEndAdvanceHandler?.(null);
 			void persistCurrentReadingProgress(book);
 			readerService.destroy();
 			epubActiveDocumentStore.clearActiveDocument(filePath);
@@ -4196,6 +4641,13 @@
 			return;
 		}
 
+		if (untrack(() => paragraphModeSuppressReactiveRefresh) > 0) {
+			return;
+		}
+		if (Date.now() - untrack(() => paragraphModeLastNavigationAt) < PARAGRAPH_MODE_REACTIVE_REFRESH_COOLDOWN_MS) {
+			return;
+		}
+
 		const preferredAnchorParagraphId = untrack(() => paragraphModeAnchorParagraphId || undefined);
 		untrack(() => {
 			void refreshParagraphModeLocation(undefined, preferredAnchorParagraphId);
@@ -4256,12 +4708,20 @@
 					canUseExcerptNotes={hasExcerptNotesCapability()}
 					getReadingPositionAutoSaveConfig={getContinuousReadingPositionAutoSaveConfig}
 					isParagraphModeActive={() => settings.paragraphModeEnabled}
+					shouldSkipReadingProgressPersistOnRelocate={() =>
+						settings.paragraphModeEnabled
+						&& (
+							paragraphModeBusy
+							|| paragraphModeSuppressReactiveRefresh > 0
+							|| readerService.isParagraphAnchorSyncInFlight?.() === true
+						)
+					}
 					onAutoReadingPositionSaved={syncReadingReferencePointFromAutoSave}
-					hasPendingNavigation={Boolean(pendingIRNav)}
+					hasPendingNavigation={hasPendingBookLocate}
 					onProgressChange={(p) => {
-						readingProgress = p;
+						syncReadingProgressDisplay(p);
 						epubActiveDocumentStore.setSharedState({
-							progress: hasReadingProgressCapability() ? p : 0,
+							progress: hasReadingProgressCapability() ? readingProgress : 0,
 							chapterTitle: readerService.getCurrentChapterTitle(),
 							chapterHref: readerService.getCurrentChapterHref?.() || '',
 						});
@@ -4296,11 +4756,7 @@
 						} else if (book) {
 							void reloadHighlights();
 						}
-						if (pendingIRNav) {
-							const nav = pendingIRNav;
-							pendingIRNav = null;
-							applyIRNav(nav);
-						}
+						epubNavigation.flushPendingBookLocate();
 						void migrateLegacyStoredLocations();
 						syncNextChapterActionVisibility();
 						scheduleScrolledNavLayoutSync();
@@ -4350,7 +4806,7 @@
 						/>
 					{/if}
 
-					{#if hasReadingProgressCapability() && readingReferencePoint}
+					{#if hasReadingReferenceCapability() && readingReferencePoint}
 						<EpubReadingReferenceSticker
 							referencePoint={readingReferencePoint}
 							deltaPercent={getReadingReferenceDeltaPercent()}

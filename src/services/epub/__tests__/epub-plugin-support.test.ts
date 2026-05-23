@@ -2,13 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   notices,
-  openEpubInPreferredLeafMock,
+  navigationHubNavigateMock,
   ensureEpubFileAccessMock,
   ensureBookOnBookshelfMock,
   storageCtorMock,
 } = vi.hoisted(() => ({
   notices: [] as string[],
-  openEpubInPreferredLeafMock: vi.fn(),
+  navigationHubNavigateMock: vi.fn(async () => ({ success: true, leaf: { id: 'leaf-1' } })),
   ensureEpubFileAccessMock: vi.fn(() => true),
   ensureBookOnBookshelfMock: vi.fn(),
   storageCtorMock: vi.fn(),
@@ -48,8 +48,10 @@ vi.mock('obsidian', async () => {
   };
 });
 
-vi.mock('../../../utils/epub-leaf-utils', () => ({
-  openEpubInPreferredLeaf: openEpubInPreferredLeafMock,
+vi.mock('../../navigation/navigation-hub-access', () => ({
+  getNavigationHub: () => ({
+    navigate: navigationHubNavigateMock,
+  }),
 }));
 
 vi.mock('../epub-premium', () => ({
@@ -104,8 +106,8 @@ function createApp(filePath = 'Books/demo.epub') {
 describe('epub-plugin-support openEpubReader', () => {
   beforeEach(() => {
     notices.length = 0;
-    openEpubInPreferredLeafMock.mockReset();
-    openEpubInPreferredLeafMock.mockResolvedValue({ id: 'leaf-1' });
+    navigationHubNavigateMock.mockReset();
+    navigationHubNavigateMock.mockResolvedValue({ success: true, leaf: { id: 'leaf-1' } });
     ensureEpubFileAccessMock.mockReset();
     ensureEpubFileAccessMock.mockReturnValue(true);
     ensureBookOnBookshelfMock.mockReset();
@@ -125,7 +127,13 @@ describe('epub-plugin-support openEpubReader', () => {
     );
 
     expect(ensureEpubFileAccessMock).toHaveBeenCalledWith(app, 'Books/demo.epub');
-    expect(openEpubInPreferredLeafMock).toHaveBeenCalledWith(app, 'Books/demo.epub');
+    expect(navigationHubNavigateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'book',
+        resourcePath: 'Books/demo.epub',
+        policy: { preferredLeaf: true, focus: true },
+      })
+    );
     expect(EpubStorageService).not.toHaveBeenCalled();
     expect(storageCtorMock).not.toHaveBeenCalled();
     expect(ensureBookOnBookshelfMock).not.toHaveBeenCalled();

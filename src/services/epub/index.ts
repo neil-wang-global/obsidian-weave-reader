@@ -109,10 +109,12 @@ export {
 	getEpubPremiumFeaturePreviewContent,
 	canUseEpubPremiumFeature,
 	canUseEpubReadingProgress,
+	canUseEpubReadingReference,
 	canUseEpubSourceLocation,
 	canUseEpubStyledExcerpts,
 	ensureEpubFileAccess,
 	ensureEpubPremiumFeature,
+	requestEpubPremiumFeaturePreview,
 } from "./epub-premium";
 export {
 	exportBookNotesToMarkdown,
@@ -125,3 +127,9 @@ export type {
 } from "./book-markdown-export";
 export * from "./types";
 export * from "./canvas-types";
+export {
+	isBookCompleted,
+	resolveDisplayProgress,
+	resolveBookshelfReadingStatus,
+	type BookshelfReadingStatus,
+} from "./book-progress";

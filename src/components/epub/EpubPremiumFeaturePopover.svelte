@@ -35,12 +35,26 @@
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
-		if (!open) {
+		if (!open || !popoverEl) {
+			return;
+		}
+		const target = event.target;
+		if (!(target instanceof Node) || !popoverEl.contains(target)) {
 			return;
 		}
 		if (event.key === 'Escape') {
-			event.preventDefault();
 			onClose();
+		}
+	}
+
+	function focusPopover(): void {
+		if (!open || !popoverEl) {
+			return;
+		}
+		try {
+			popoverEl.focus({ preventScroll: true });
+		} catch {
+			popoverEl.focus();
 		}
 	}
 
@@ -49,19 +63,30 @@
 		onClose();
 	}
 
+	$effect(() => {
+		if (!open) {
+			return;
+		}
+		queueMicrotask(() => focusPopover());
+	});
+
 	onMount(() => {
 		document.addEventListener('mousedown', handlePointerDownOutside);
-		window.addEventListener('keydown', handleKeydown);
 		return () => {
 			document.removeEventListener('mousedown', handlePointerDownOutside);
-			window.removeEventListener('keydown', handleKeydown);
 		};
 	});
 </script>
 
 {#if open && featureId}
 	<div class="epub-premium-feature-popover-overlay">
-		<div class="epub-premium-feature-popover epub-glass-panel" bind:this={popoverEl}>
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+		<div
+			class="epub-premium-feature-popover epub-glass-panel"
+			bind:this={popoverEl}
+			tabindex="-1"
+			onkeydown={handleKeydown}
+		>
 			<div class="epub-premium-feature-popover__header">
 				<div class="epub-premium-feature-popover__title">{previewContent.title}</div>
 				<p class="epub-premium-feature-popover__description">{previewContent.description}</p>

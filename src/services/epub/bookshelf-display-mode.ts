@@ -13,7 +13,7 @@ export interface BookshelfDisplayModeOption {
 	icon: string;
 }
 
-export const DEFAULT_BOOKSHELF_DISPLAY_MODE: BookshelfDisplayMode = "adaptive";
+export const DEFAULT_BOOKSHELF_DISPLAY_MODE: BookshelfDisplayMode = "list";
 
 const BOOKSHELF_DISPLAY_MODE_META: Array<Pick<BookshelfDisplayModeOption, "mode" | "icon">> = [
 	{ mode: "adaptive", icon: "sparkles" },

@@ -11,7 +11,7 @@ Supported book formats include EPUB, MOBI, AZW3, FB2, CBZ, and plain text. Minim
 
 ### Manual installation
 
-1. Download these files from a [GitHub release](https://github.com/zhuzhige123/obsidian-weave-reader/releases) whose tag matches `manifest.json` (for example `0.6.5`):
+1. Download these files from a [GitHub release](https://github.com/zhuzhige123/obsidian-weave-reader/releases) whose tag matches `manifest.json` (for example `0.6.8`):
    - `main.js`
    - `manifest.json`
    - `styles.css`

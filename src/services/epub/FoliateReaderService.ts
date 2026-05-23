@@ -53,7 +53,11 @@ import { i18n } from "../../utils/i18n";
 import { logger } from "../../utils/logger";
 import { UnifiedThemeManager } from "../../utils/theme-detection";
 import { installFoliateCustomElementGuard } from "../../utils/foliate-custom-element-guard";
-import { FoliateVaultPublicationParser } from "./FoliateVaultPublicationParser";
+import { usesFoliateGenericBookLoader } from "./book-format";
+import {
+	FoliateVaultPublicationParser,
+	type FoliateResolvedTarget,
+} from "./FoliateVaultPublicationParser";
 import {
 	installDesktopFoliateIframeSandboxPatch,
 	installMobileBlobIframePatch,
@@ -276,6 +280,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private currentChapterTitle = "";
 	private currentChapterHref = "";
 	private paragraphFootnotePreviewSession = 0;
+	private paragraphAnchorSyncDepth = 0;
 	private relocatedCallbacks = new Set<(position: ReadingPosition) => void>();
 	private footnotePreviewCallbacks = new Set<(info: ReaderFootnotePreviewInfo | null) => void>();
 	private selectionChangeCallbacks = new Set<(event: ReaderSelectionChange) => void>();
@@ -304,6 +309,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private wheelTurnInFlight = false;
 	private wheelDeltaAccumulator = 0;
 	private lastWheelEventAt = 0;
+	private bookEndAdvanceHandler: (() => boolean | Promise<boolean>) | null = null;
 	private navigationTask: Promise<void> = Promise.resolve();
 	private paragraphCache = new Map<number, ReaderParagraphRecord[]>();
 	private paragraphRecordById = new Map<string, ReaderParagraphRecord>();
@@ -565,6 +571,19 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}, "goToLocation");
 	}
 
+	async syncParagraphAnchor(cfi: string): Promise<void> {
+		this.paragraphAnchorSyncDepth += 1;
+		try {
+			await this.goToLocation(cfi);
+		} finally {
+			this.paragraphAnchorSyncDepth = Math.max(0, this.paragraphAnchorSyncDepth - 1);
+		}
+	}
+
+	isParagraphAnchorSyncInFlight(): boolean {
+		return this.paragraphAnchorSyncDepth > 0;
+	}
+
 	canonicalizeLocation(cfi: string, textHint?: string): Promise<string | null> {
 		return this.parser.canonicalizeLocation(cfi, textHint);
 	}
@@ -749,7 +768,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		await this.enqueueNavigation(async (positionOperationToken) => {
 			const { canonical } = await this.resolveNavigationRequest(options, positionOperationToken);
 			if (canonical && options.flashStyle !== "none") {
-				this.addTemporaryHighlight(
+				await this.addResolvedHighlight(
 					{
 						cfiRange: canonical,
 						color: options.flashColor || "yellow",
@@ -757,6 +776,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 						sourceFile: options.sourceFile,
 						sourceRef: options.sourceRef,
 						createdTime: options.createdTime,
+						temporary: true,
 					},
 					2200
 				);
@@ -841,12 +861,24 @@ export class FoliateReaderService implements EpubReaderEngine {
 		return this.currentChapterHref;
 	}
 
-	async getParagraphsForChapter(chapterIndex: number): Promise<ReaderParagraph[]> {
+	async getParagraphsForChapter(
+		chapterIndex: number,
+		options?: { includeHtml?: boolean }
+	): Promise<ReaderParagraph[]> {
+		const includeHtml = options?.includeHtml !== false;
 		return Promise.all(
 			(await this.getParagraphRecordsForChapter(chapterIndex)).map((paragraph) =>
-				this.toReaderParagraph(paragraph, { includeHtml: true })
+				this.toReaderParagraph(paragraph, { includeHtml })
 			)
 		);
+	}
+
+	async hydrateReaderParagraph(paragraphId: string): Promise<ReaderParagraph | null> {
+		const paragraph = this.paragraphRecordById.get(String(paragraphId || "").trim());
+		if (!paragraph) {
+			return null;
+		}
+		return this.toReaderParagraph(paragraph, { includeHtml: true });
 	}
 
 	async getCurrentParagraphLocation(options?: {
@@ -861,7 +893,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (paragraphs.length === 0) {
 			return null;
 		}
-		const currentIndex = await this.resolveCurrentParagraphIndex(chapterIndex, paragraphs);
 		const preferredParagraphId = String(options?.preferredParagraphId || "").trim();
 		const preferredIndex = Number.isInteger(options?.preferredIndex)
 			? Math.max(0, Math.min(Number(options?.preferredIndex), paragraphs.length - 1))
@@ -869,6 +900,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 		const preferredParagraphMatchIndex = preferredParagraphId
 			? paragraphs.findIndex((paragraph) => paragraph.id === preferredParagraphId)
 			: -1;
+		const hasPreferredAnchor = preferredParagraphMatchIndex >= 0 || preferredIndex !== null;
+		const currentIndex = hasPreferredAnchor
+			? 0
+			: await this.resolveCurrentParagraphIndex(chapterIndex, paragraphs);
 		const activeIndex =
 			preferredParagraphMatchIndex >= 0
 				? preferredParagraphMatchIndex
@@ -1103,6 +1138,43 @@ export class FoliateReaderService implements EpubReaderEngine {
 		return currentPage >= chapterEndPage;
 	}
 
+	isAtBookEnd(): boolean {
+		const totalPages = this.parser.getTotalPositions();
+		if (totalPages <= 0) {
+			return false;
+		}
+
+		const chapterCount = Math.max(this.parser.getMetadata().chapterCount, 1);
+		const sectionIndex = this.currentPosition.chapterIndex ?? 0;
+		const isLastChapter = sectionIndex >= chapterCount - 1;
+		if (!isLastChapter) {
+			return false;
+		}
+
+		const currentPage = this.normalizeCurrentPage(totalPages);
+		if (this.currentFlowMode === "scrolled") {
+			return this.isAtCurrentChapterEnd();
+		}
+
+		return currentPage >= totalPages;
+	}
+
+	setBookEndAdvanceHandler(handler: (() => boolean | Promise<boolean>) | null): void {
+		this.bookEndAdvanceHandler = handler;
+	}
+
+	private async shouldBlockBookEndAdvance(): Promise<boolean> {
+		if (!this.isAtBookEnd() || !this.bookEndAdvanceHandler) {
+			return false;
+		}
+		try {
+			return (await this.bookEndAdvanceHandler()) === true;
+		} catch (error) {
+			logger.warn("[FoliateReaderService] book end advance handler failed:", error);
+			return false;
+		}
+	}
+
 	async prevPage(): Promise<void> {
 		await this.enqueueNavigation(async () => {
 			this.clearSelections();
@@ -1118,6 +1190,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 	}
 
 	async nextPage(): Promise<void> {
+		if (await this.shouldBlockBookEndAdvance()) {
+			return;
+		}
 		await this.enqueueNavigation(async () => {
 			this.clearSelections();
 			if (!this.foliateView) {
@@ -1466,24 +1541,123 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 
 		const resolved = await this.parser.resolveNavigationTarget(rawTarget, options.text);
-		const canonical = resolved?.cfi || null;
+		let canonical = resolved?.cfi || null;
 		if (!resolved && !rawHref) {
 			return { canonical: null };
 		}
 
-		const viewTarget = rawHref && !rawCfi ? rawHref : canonical || rawTarget;
-		const fallbackTarget =
-			rawHref ||
-			resolved?.href ||
-			this.getSectionHrefFallbackTarget(canonical || rawCfi || rawTarget);
+		const { viewTarget, fallbackTarget } = this.resolveSourceNavigationViewTargets(
+			resolved,
+			rawCfi,
+			rawHref,
+			canonical,
+			rawTarget,
+			options.text
+		);
 		this.clearSelections();
 		await this.navigateViewWithFallback(viewTarget, fallbackTarget, positionOperationToken);
+		if (resolved) {
+			await this.waitForVisibleSectionIndex(resolved.index, positionOperationToken);
+			if (
+				this.sessionGuard.canApplyPositionOperation(this.foliateView, positionOperationToken)
+			) {
+				await this.scrollResolvedTargetIntoView(resolved, positionOperationToken);
+				const rebuiltCanonical = await this.rebuildCanonicalFromResolvedTarget(
+					resolved,
+					options.text
+				);
+				if (rebuiltCanonical) {
+					canonical = rebuiltCanonical;
+				}
+			}
+		}
 		await this.syncCurrentPositionFromTarget(
 			canonical || rawTarget,
 			options.text,
 			positionOperationToken
 		);
 		return { canonical };
+	}
+
+	private usesGenericBookLoader(): boolean {
+		return usesFoliateGenericBookLoader(this.parser.getLoadedFilePath());
+	}
+
+	private resolveSourceNavigationViewTargets(
+		resolved: FoliateResolvedTarget | null,
+		rawCfi: string,
+		rawHref: string,
+		canonical: string | null,
+		rawTarget: string,
+		text?: string
+	): { viewTarget: string; fallbackTarget: string } {
+		const defaultViewTarget = rawHref && !rawCfi ? rawHref : canonical || rawTarget;
+		const defaultFallbackTarget =
+			rawHref ||
+			resolved?.href ||
+			this.getSectionHrefFallbackTarget(canonical || rawCfi || rawTarget);
+
+		if (!resolved || !this.usesGenericBookLoader() || !String(text || "").trim()) {
+			return {
+				viewTarget: defaultViewTarget,
+				fallbackTarget: defaultFallbackTarget,
+			};
+		}
+
+		const sectionEntryCfi = this.parser.getSectionEntryCfi(resolved.index);
+		const sectionHref =
+			resolved.href || this.parser.getSectionHrefByIndex(resolved.index) || "";
+		const sectionTarget = sectionHref || sectionEntryCfi || defaultViewTarget;
+		return {
+			viewTarget: sectionTarget,
+			fallbackTarget: sectionHref || sectionEntryCfi || defaultFallbackTarget,
+		};
+	}
+
+	private async waitForVisibleSectionIndex(
+		sectionIndex: number,
+		positionOperationToken?: number,
+		timeoutMs = 5000
+	): Promise<boolean> {
+		const startedAt = Date.now();
+		while (Date.now() - startedAt < timeoutMs) {
+			if (
+				!this.sessionGuard.canApplyPositionOperation(this.foliateView, positionOperationToken)
+			) {
+				return false;
+			}
+			const visible = this.getVisibleFramesWithIndex().some((frame) => frame.index === sectionIndex);
+			if (visible) {
+				return true;
+			}
+			await this.waitForAnimationFrame();
+		}
+		return false;
+	}
+
+	private async rebuildCanonicalFromResolvedTarget(
+		resolved: FoliateResolvedTarget,
+		textHint?: string
+	): Promise<string | null> {
+		const frame = this.getVisibleFramesWithIndex().find((item) => item.index === resolved.index);
+		if (!frame) {
+			return null;
+		}
+		const liveRange = this.parser.resolveRangeInLoadedSection(
+			resolved.cfi || "",
+			frame.document,
+			frame.index,
+			textHint || resolved.textHint
+		);
+		if (!liveRange) {
+			return null;
+		}
+		try {
+			return this.parser.createCfiFromRange(frame.index, liveRange);
+		} catch (error) {
+			logger.debug("[FoliateReaderService] Failed to rebuild canonical CFI from live range:", error);
+			return null;
+		}
 	}
 
 	private enqueueNavigation<T>(
@@ -2121,6 +2295,86 @@ export class FoliateReaderService implements EpubReaderEngine {
 			this.foliateView,
 			positionOperationToken
 		);
+	}
+
+	private async scrollResolvedTargetIntoView(
+		resolved: FoliateResolvedTarget,
+		positionOperationToken?: number
+	): Promise<void> {
+		if (
+			!resolved.range ||
+			!this.sessionGuard.canApplyPositionOperation(this.foliateView, positionOperationToken)
+		) {
+			return;
+		}
+
+		await this.waitForAnimationFrame();
+		if (
+			!this.sessionGuard.canApplyPositionOperation(this.foliateView, positionOperationToken)
+		) {
+			return;
+		}
+
+		const frames = this.getVisibleFramesWithIndex();
+		const frame =
+			frames.find((item) => item.index === resolved.index) ||
+			frames.find((item) => item.document === resolved.doc) ||
+			null;
+		if (!frame) {
+			return;
+		}
+
+		const targetCfi = String(resolved.cfi || "").trim();
+		const liveRange =
+			(targetCfi
+				? this.parser.resolveRangeInLoadedSection(
+						targetCfi,
+						frame.document,
+						frame.index,
+						resolved.textHint
+					)
+				: null) || resolved.range;
+		if (!liveRange) {
+			return;
+		}
+
+		const rect = this.createViewportRect(frame, liveRange);
+		if (!rect) {
+			this.scrollRangeIntoDocument(liveRange);
+			return;
+		}
+
+		const container = this.renderContainer;
+		if (!container) {
+			this.scrollRangeIntoDocument(liveRange);
+			return;
+		}
+
+		const containerRect = container.getBoundingClientRect();
+		const targetTop = rect.top - containerRect.top + container.scrollTop;
+		const targetLeft = rect.left - containerRect.left + container.scrollLeft;
+		const nextTop = Math.max(
+			0,
+			targetTop - Math.max(0, (container.clientHeight - rect.height) / 2)
+		);
+		container.scrollTo({
+			top: nextTop,
+			left: targetLeft,
+			behavior: "smooth",
+		});
+	}
+
+	private scrollRangeIntoDocument(range: Range): void {
+		try {
+			const node = range.startContainer;
+			const element =
+				node.nodeType === Node.ELEMENT_NODE
+					? (node as Element)
+					: node.parentElement;
+			element?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+		} catch (error) {
+			logger.debug("[FoliateReaderService] Failed to scroll resolved range into view:", error);
+		}
 	}
 
 	private getSectionHrefFallbackTarget(...candidates: Array<string | null | undefined>): string {
@@ -4421,7 +4675,17 @@ export class FoliateReaderService implements EpubReaderEngine {
 	}
 
 	private handleWheelPageTurn(event: WheelEvent, sourceDoc?: Document): void {
-		if (this.currentFlowMode !== "paginated" || this.layoutChangeInFlight || !this.foliateView) {
+		if (this.layoutChangeInFlight || !this.foliateView) {
+			this.resetWheelPageTurnState();
+			return;
+		}
+
+		if (this.currentFlowMode === "scrolled") {
+			this.handleScrolledBookEndWheel(event, sourceDoc);
+			return;
+		}
+
+		if (this.currentFlowMode !== "paginated") {
 			this.resetWheelPageTurnState();
 			return;
 		}
@@ -4490,6 +4754,52 @@ export class FoliateReaderService implements EpubReaderEngine {
 		return delta;
 	}
 
+	private handleScrolledBookEndWheel(event: WheelEvent, sourceDoc?: Document): void {
+		if (!this.isAtBookEnd() || !this.bookEndAdvanceHandler) {
+			return;
+		}
+		if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) {
+			return;
+		}
+		if (this.isWheelEventOnInteractiveElement(event.target)) {
+			return;
+		}
+
+		const deltaY = this.normalizeWheelDelta(event.deltaY, event.deltaMode, sourceDoc);
+		if (!Number.isFinite(deltaY) || deltaY <= 4) {
+			return;
+		}
+
+		const scrollContainer = this.resolveWheelScrollContainer(event.target);
+		if (!scrollContainer || !this.isScrollContainerAtBottom(scrollContainer)) {
+			return;
+		}
+
+		event.preventDefault();
+		event.stopPropagation();
+		void this.shouldBlockBookEndAdvance();
+	}
+
+	private resolveWheelScrollContainer(target: EventTarget | null): HTMLElement | null {
+		const originElement = this.getElementFromEventTarget(target);
+		if (!originElement || typeof originElement.closest !== "function") {
+			return this.renderContainer;
+		}
+
+		let node: HTMLElement | null = originElement;
+		while (node) {
+			if (node.scrollHeight > node.clientHeight + 1) {
+				return node;
+			}
+			node = node.parentElement;
+		}
+		return this.renderContainer;
+	}
+
+	private isScrollContainerAtBottom(container: HTMLElement): boolean {
+		return container.scrollTop + container.clientHeight >= container.scrollHeight - 6;
+	}
+
 	private async performWheelPageTurn(direction: "next" | "prev"): Promise<void> {
 		if (this.wheelTurnInFlight) {
 			return;
@@ -4497,6 +4807,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.wheelTurnInFlight = true;
 		try {
 			if (direction === "next") {
+				if (await this.shouldBlockBookEndAdvance()) {
+					return;
+				}
 				await this.nextPage();
 				return;
 			}
@@ -5319,6 +5632,10 @@ body .weave-foliate-concealment {
 		const highlight = temporaryHighlight || persistentHighlight;
 		if (!highlight) {
 			throw new Error("Cannot compose annotation without a highlight");
+		}
+
+		if (temporaryHighlight) {
+			return this.createAnnotation(temporaryHighlight, temporaryHighlight.color);
 		}
 
 		return this.createAnnotation(highlight);

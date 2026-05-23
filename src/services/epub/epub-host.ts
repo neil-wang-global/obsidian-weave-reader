@@ -3,8 +3,17 @@ import type { LicenseInfo } from "../../types/license";
 import { getLegacyWeavePlugin } from "../../utils/plugin-access";
 import { getEpubRuntime } from "./epub-runtime";
 
+export interface EpubHostSavedCardSnapshot {
+	uuid?: string;
+	content?: string;
+	sourceFile?: string;
+	sourceKind?: string;
+	sourceSubunitKey?: string;
+}
+
 export interface EpubHostCreateCardInput {
 	initialContent: string;
+	onCardSaved?: (card: EpubHostSavedCardSnapshot) => void | Promise<void>;
 }
 
 export interface EpubHostReadingPointInput {

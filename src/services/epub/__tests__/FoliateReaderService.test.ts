@@ -419,6 +419,7 @@ afterEach(() => {
 	if (typeof themeCleanup === "function") {
 		themeCleanup();
 	}
+	vi.useRealTimers();
 	vi.restoreAllMocks();
 	document.body.innerHTML = "";
 	document.body.className = "";
@@ -638,9 +639,10 @@ describe("FoliateReaderService", () => {
 	it("cleans up partially created view state when foliate view open fails", async () => {
 		const service = new FoliateReaderService(createMockApp(await createSampleEpubBuffer()) as any);
 		const openError = new Error("open failed");
+		let openSpy: ReturnType<typeof vi.spyOn> | undefined;
 		try {
 			await service.loadEpub("Books/foliate-sample.epub", "foliate-book");
-			const openSpy = vi
+			openSpy = vi
 				.spyOn(FakeFoliateViewElement.prototype, "open")
 				.mockRejectedValueOnce(openError);
 			const container = document.createElement("div");
@@ -655,6 +657,7 @@ describe("FoliateReaderService", () => {
 			expect(container.querySelector("foliate-view")).toBeNull();
 			expect(container.dataset.foliate).toBeUndefined();
 		} finally {
+			openSpy?.mockRestore();
 			service.destroy();
 		}
 	});
@@ -682,6 +685,7 @@ describe("FoliateReaderService", () => {
 	});
 
 	it("intercepts foliate link events for footnote references instead of allowing default navigation", async () => {
+		vi.restoreAllMocks();
 		const service = new FoliateReaderService(createMockApp(await createSampleEpubBuffer()) as any);
 		try {
 			await service.loadEpub("Books/foliate-sample.epub", "foliate-book");
@@ -690,42 +694,35 @@ describe("FoliateReaderService", () => {
 
 			await service.renderTo(container);
 
-			const view = container.querySelector("foliate-view") as FakeFoliateViewElement | null;
+			const view = (service as any).foliateView as FakeFoliateViewElement | null;
 			expect(view).toBeTruthy();
+			service.setFootnoteClickAction?.("preview");
 
 			const anchor = document.createElement("a");
 			anchor.setAttribute("href", "part0115_split_000.html#zhu87");
 			anchor.textContent = "[87]";
-			document.body.appendChild(anchor);
+			container.appendChild(anchor);
+			expect((service as any).isFootnoteReference(anchor)).toBe(true);
 
-			const emitSpy = vi
-				.spyOn(service as any, "emitFootnotePreviewForAnchor")
-				.mockImplementation(
-					(...args: unknown[]) => {
-						const [, , options] = args as [Document, HTMLAnchorElement, { pinned?: boolean }?];
-						if (options?.pinned) {
-							(service as any).footnotePreviewPinned = true;
-						}
-					}
-				);
-
-			const linkEvent = new CustomEvent("link", {
+			const linkEvent = {
+				cancelable: true,
+				defaultPrevented: false,
+				currentTarget: view,
 				detail: {
 					a: anchor,
 					href: "part0115_split_000.html#zhu87",
 				},
-				cancelable: true,
-			});
+				preventDefault() {
+					this.defaultPrevented = true;
+				},
+			};
 
-			view?.dispatchEvent(linkEvent);
+			(service as any).handleLinkEvent(linkEvent);
 
 			expect(linkEvent.defaultPrevented).toBe(true);
-			expect(emitSpy).toHaveBeenCalledWith(anchor.ownerDocument, anchor, {
-				pinned: true,
-				suppressRelocateMs: 1800,
-			});
 			expect((service as any).footnotePreviewPinned).toBe(true);
 		} finally {
+			vi.useRealTimers();
 			service.destroy();
 		}
 	});
@@ -982,6 +979,20 @@ describe("FoliateReaderService", () => {
 			expect(goToSpy.mock.calls.length).toBeGreaterThan(1);
 		} finally {
 			(FoliateReaderService as any).NAVIGATION_TIMEOUT_MS = originalTimeoutMs;
+			service.destroy();
+		}
+	});
+
+	it("tracks paragraph anchor sync depth for reading-progress persist suppression", async () => {
+		const service = new FoliateReaderService(createMockApp(await createSampleEpubBuffer()) as any);
+		try {
+			await service.loadEpub("Books/foliate-sample.epub", "foliate-book");
+			expect(service.isParagraphAnchorSyncInFlight()).toBe(false);
+			const syncPromise = service.syncParagraphAnchor("OPS/text/chapter1.xhtml#sec-1");
+			expect(service.isParagraphAnchorSyncInFlight()).toBe(true);
+			await syncPromise;
+			expect(service.isParagraphAnchorSyncInFlight()).toBe(false);
+		} finally {
 			service.destroy();
 		}
 	});

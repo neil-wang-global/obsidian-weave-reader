@@ -5,6 +5,7 @@ import { logger } from '../../utils/logger';
  */
 
 import { vi } from 'vitest';
+import { parseYAMLFromContent } from '../../utils/yaml-utils';
 
 type MockDomOptions =
   | string
@@ -132,6 +133,7 @@ export class TFolder {
 // Mock Vault class
 export class Vault {
   getAbstractFileByPath = vi.fn();
+  getFiles = vi.fn();
   getMarkdownFiles = vi.fn();
   read = vi.fn();
   modify = vi.fn();
@@ -150,6 +152,7 @@ export class Vault {
       return null;
     });
 
+    this.getFiles.mockReturnValue([]);
     this.getMarkdownFiles.mockReturnValue([
       new TFile('test1.md'),
       new TFile('test2.md')
@@ -596,6 +599,14 @@ export class WorkspaceLeaf {
 
 // Mock utility functions
 export const normalizePath = vi.fn((path: string) => path.replace(/\\/g, '/'));
+
+/** Minimal Obsidian-compatible YAML parser for bookmark frontmatter in tests. */
+export const parseYaml = (source: string): Record<string, unknown> => {
+  const normalized = String(source || '').trim();
+  const content = normalized.startsWith('---') ? normalized : `---\n${normalized}\n---\n`;
+  const { metadata } = parseYAMLFromContent(content);
+  return metadata as Record<string, unknown>;
+};
 export const moment = vi.fn(() => ({
   format: vi.fn().mockReturnValue('2025-01-02'),
   valueOf: vi.fn().mockReturnValue(Date.now()),
@@ -654,6 +665,7 @@ export default {
   MenuItem,
   WorkspaceLeaf,
   normalizePath,
+  parseYaml,
   moment,
   debounce,
   sanitizeHTMLToDom,

@@ -216,6 +216,9 @@ export interface EpubReaderEngine {
 	setRestoredPosition?(position: ReadingPosition): Promise<void> | void;
 	setFootnoteClickAction?(action: EpubFootnoteClickAction): void;
 	goToLocation(cfi: string): Promise<void>;
+	/** Paragraph-mode anchor sync; suppresses duplicate reading-progress persistence while in flight. */
+	syncParagraphAnchor?(cfi: string): Promise<void>;
+	isParagraphAnchorSyncInFlight?(): boolean;
 	canonicalizeLocation?(cfi: string, textHint?: string): Promise<string | null>;
 	getReadingProgress(): number;
 	getPaginationInfo(): Promise<PaginationInfo>;
@@ -240,11 +243,15 @@ export interface EpubReaderEngine {
 	getCurrentChapterTitle(): string;
 	getCurrentChapterIndex(): number;
 	getCurrentChapterHref?(): string;
-	getParagraphsForChapter?(chapterIndex: number): Promise<ReaderParagraph[]>;
+	getParagraphsForChapter?(
+		chapterIndex: number,
+		options?: { includeHtml?: boolean }
+	): Promise<ReaderParagraph[]>;
 	getCurrentParagraphLocation?(options?: {
 		preferredParagraphId?: string;
 		preferredIndex?: number;
 	}): Promise<ReaderParagraphLocation | null>;
+	hydrateReaderParagraph?(paragraphId: string): Promise<ReaderParagraph | null>;
 	resolveParagraphSelection?(
 		paragraphId: string,
 		startOffset: number,
@@ -272,6 +279,10 @@ export interface EpubReaderEngine {
 	nextPage(): Promise<void>;
 	nextChapter?(): Promise<boolean>;
 	isAtCurrentChapterEnd?(): boolean;
+	isAtBookEnd?(): boolean;
+	setBookEndAdvanceHandler?(
+		handler: (() => boolean | Promise<boolean>) | null
+	): void;
 	goToPage(pageNumber: number): Promise<void>;
 	getPageNumberFromCfi(cfi: string): Promise<number | undefined>;
 	getVisibleFrames(): ReaderFrame[];

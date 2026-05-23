@@ -8,9 +8,14 @@
   import type { EffectiveLicenseState } from '../../../types/license';
   import type { LicenseInfo } from '../types/settings-types';
   import { tr } from '../../../utils/i18n';
+  import {
+    formatLicenseDeviceStats,
+    resolveLicenseDeviceStats,
+  } from '../../../utils/license-device-stats';
   
   interface Props {
     license: LicenseInfo | null;
+    app?: import('obsidian').App;
     effectiveState?: EffectiveLicenseState;
     showActions?: boolean;
     onSaveCode?: () => Promise<void>;
@@ -21,6 +26,7 @@
   
   let {
     license,
+    app,
     effectiveState,
     showActions = true,
     onSaveCode,
@@ -98,6 +104,8 @@
   });
   
   // 到期状态
+  let deviceStats = $derived(resolveLicenseDeviceStats(displayLicense, app));
+
   let expiryInfo = $derived.by(() => {
     if (!displayLicense?.expiresAt) return null;
     
@@ -155,6 +163,13 @@
           <div class="detail-item">
             <div class="detail-label">{t('epub.settings.license.statusCard.labels.inheritedCount')}</div>
             <div class="detail-value">{inheritedLicenseCount}</div>
+          </div>
+        {/if}
+
+        {#if deviceStats}
+          <div class="detail-item">
+            <div class="detail-label">{t('epub.settings.license.statusCard.labels.deviceUsage')}</div>
+            <div class="detail-value">{formatLicenseDeviceStats(deviceStats)}</div>
           </div>
         {/if}
         

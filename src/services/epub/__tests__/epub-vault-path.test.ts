@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { TFile } from "obsidian";
-import { epubVaultPathsReferToSameBook, resolveEpubVaultPath } from "../epub-vault-path";
+import {
+	epubVaultPathsReferToSameBook,
+	isVisibleVaultBookPath,
+	joinListedVaultPath,
+	resolveEpubVaultPath,
+	resolveSupportedBookFile,
+} from "../epub-vault-path";
 
 function createEpubFile(path: string) {
 	return Object.assign(new TFile(), {
@@ -20,6 +26,7 @@ describe("epub-vault-path", () => {
 					}
 					return null;
 				}),
+				getFiles: vi.fn(() => []),
 			},
 			metadataCache: {
 				getFirstLinkpathDest: vi.fn((linkpath: string, sourcePath: string) => {
@@ -39,5 +46,50 @@ describe("epub-vault-path", () => {
 		expect(epubVaultPathsReferToSameBook("Books/demo.epub", "Books/demo.epub")).toBe(true);
 		expect(epubVaultPathsReferToSameBook("demo.epub", "Books/demo.epub")).toBe(true);
 		expect(epubVaultPathsReferToSameBook("Books/demo.epub", "Archive/demo.epub")).toBe(false);
+	});
+
+	it("treats trash and dot-folders as non-visible vault book paths", () => {
+		expect(isVisibleVaultBookPath("Books/demo.epub")).toBe(true);
+		expect(isVisibleVaultBookPath(".trash/demo.epub")).toBe(false);
+		expect(isVisibleVaultBookPath(".obsidian/plugins/demo.epub")).toBe(false);
+		expect(isVisibleVaultBookPath("Books/.hidden/demo.epub")).toBe(false);
+	});
+
+	it("joins adapter.list entries under the current folder", () => {
+		expect(joinListedVaultPath("Books", "demo.epub")).toBe("Books/demo.epub");
+		expect(joinListedVaultPath("", "Books/demo.epub")).toBe("Books/demo.epub");
+		expect(joinListedVaultPath("Books", "Nested/demo.epub")).toBe("Nested/demo.epub");
+	});
+
+	it("returns null when basename-only path matches multiple books", () => {
+		const app = {
+			vault: {
+				getAbstractFileByPath: vi.fn(() => null),
+				getFiles: vi.fn(() => [
+					createEpubFile("Books/demo.epub"),
+					createEpubFile("Archive/demo.epub"),
+				]),
+			},
+			metadataCache: {
+				getFirstLinkpathDest: vi.fn(() => null),
+			},
+		} as any;
+
+		expect(resolveSupportedBookFile(app, "demo.epub")).toBeNull();
+		expect(resolveSupportedBookFile(app, "Books/demo.epub")?.path).toBe("Books/demo.epub");
+	});
+
+	it("resolves basename-only stored paths via vault.getFiles()", () => {
+		const app = {
+			vault: {
+				getAbstractFileByPath: vi.fn(() => null),
+				getFiles: vi.fn(() => [createEpubFile("Books/demo.epub")]),
+			},
+			metadataCache: {
+				getFirstLinkpathDest: vi.fn(() => null),
+			},
+		} as any;
+
+		expect(resolveSupportedBookFile(app, "demo.epub")?.path).toBe("Books/demo.epub");
 	});
 });

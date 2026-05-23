@@ -4,8 +4,8 @@ import type { App } from "obsidian";
 import {
 	generateUniqueVaultFilePath,
 	resolveIRReadableMarkdownTargetFolder,
-} from "../incremental-reading/IRReadableMarkdownPathResolver";
-import { sanitizeFileName } from "../../utils/card-export-utils";
+} from "./epub-markdown-path-resolver";
+import { sanitizeExportFileName } from "../../utils/sanitize-export-filename";
 import { openFileWithExistingLeaf } from "../../utils/workspace-navigation";
 import { createContentWithMetadata } from "../../utils/yaml-utils";
 import { isSupportedBookFile } from "./book-format";
@@ -167,7 +167,7 @@ async function generateUniqueAssetPath(
 	const dotIndex = rawFileName.lastIndexOf(".");
 	const baseName = dotIndex > 0 ? rawFileName.slice(0, dotIndex) : rawFileName;
 	const extension = dotIndex > 0 ? rawFileName.slice(dotIndex).toLowerCase() : "";
-	const safeBaseName = sanitizeBookMarkdownTitle(sanitizeFileName(baseName || "image"), "image");
+	const safeBaseName = sanitizeBookMarkdownTitle(sanitizeExportFileName(baseName || "image"), "image");
 	let attempt = 0;
 	while (attempt < 2000) {
 		const fileName =

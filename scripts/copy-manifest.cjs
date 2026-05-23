@@ -3,6 +3,7 @@ const path = require("path");
 const {
 	DEFAULT_PRUNABLE_RUNTIME_FILES,
 	copyFileAtomicWithRetry,
+	resolveHotReloadPluginId,
 	resolvePluginDir,
 	syncRuntimeFiles,
 } = require("./hot-reload-utils.cjs");
@@ -11,7 +12,7 @@ const PROJECT_ROOT = path.resolve(__dirname, "..");
 const DIST_DIR = path.join(PROJECT_ROOT, "dist");
 const MANIFEST_SOURCE = path.join(PROJECT_ROOT, "manifest.json");
 const VERSIONS_SOURCE = path.join(PROJECT_ROOT, "versions.json");
-const PLUGIN_ID = "weave-epub-reader";
+const PLUGIN_ID = resolveHotReloadPluginId(process.env);
 
 function resolveTargetDirs() {
 	const targets = new Set();

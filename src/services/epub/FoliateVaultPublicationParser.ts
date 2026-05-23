@@ -516,6 +516,14 @@ export class FoliateVaultPublicationParser {
 		return typeof resolved?.index === "number" ? resolved.index : null;
 	}
 
+	getLoadedFilePath(): string {
+		return this.filePath;
+	}
+
+	getSectionEntryCfi(index: number): string {
+		return this.wrapCfi(this.getBaseSectionCfi(index));
+	}
+
 	createCfiFromRange(index: number, range: Range): string {
 		const baseCfi = this.getBaseSectionCfi(index);
 		return EpubCfi.joinIndir(baseCfi, EpubCfi.fromRange(range));
@@ -682,7 +690,7 @@ export class FoliateVaultPublicationParser {
 		}
 
 		if (this.isCfiLike(normalizedTarget)) {
-			return this.resolveCfiNavigationTarget(normalizedTarget);
+			return this.resolveCfiNavigationTarget(normalizedTarget, textHint);
 		}
 
 		const resolvedHrefTarget = await this.resolveHrefTarget(normalizedTarget, textHint);
@@ -700,7 +708,7 @@ export class FoliateVaultPublicationParser {
 		}
 
 		if (this.isCfiLike(normalized)) {
-			return (await this.resolveCfiNavigationTarget(this.wrapCfi(normalized)))?.cfi || null;
+			return (await this.resolveCfiNavigationTarget(this.wrapCfi(normalized), textHint))?.cfi || null;
 		}
 
 		const resolved = await this.resolveNavigationTarget(normalized, textHint);
@@ -1169,16 +1177,23 @@ export class FoliateVaultPublicationParser {
 		}
 	}
 
-	private async resolveCfiNavigationTarget(cfi: string): Promise<FoliateResolvedTarget | null> {
+	private async resolveCfiNavigationTarget(
+		cfi: string,
+		textHint?: string
+	): Promise<FoliateResolvedTarget | null> {
 		const resolved = this.resolveCfiTarget(cfi);
 		if (!resolved) {
 			return null;
 		}
 		const doc = await this.getRawDocumentByIndex(resolved.index);
 		const root = doc?.body || doc?.documentElement || null;
+		const normalizedTextHint = textHint?.trim();
 		let range = doc
 			? this.resolveAnchorAsRange(doc, this.executeResolvedAnchor(resolved.anchor, doc, cfi), root)
 			: null;
+		if (!range && doc && root && normalizedTextHint) {
+			range = this.findRangeByTextQuote(root, { highlight: normalizedTextHint });
+		}
 		if (!range && doc) {
 			range = this.createDocumentStartRange(doc);
 		}
@@ -1192,6 +1207,7 @@ export class FoliateVaultPublicationParser {
 			href: this.getSectionHrefByIndex(resolved.index),
 			doc,
 			range,
+			textHint: normalizedTextHint || undefined,
 		};
 	}
 
@@ -1305,7 +1321,7 @@ export class FoliateVaultPublicationParser {
 	private resolveAnchorAsRange(
 		doc: Document,
 		anchor: unknown,
-		scopeRoot: Element | null
+		_scopeRoot: Element | null
 	): Range | null {
 		if (anchor instanceof Range) {
 			return anchor;
@@ -1313,10 +1329,7 @@ export class FoliateVaultPublicationParser {
 		if (anchor instanceof Node) {
 			return this.createRangeForNode(anchor);
 		}
-		if (typeof anchor === "number") {
-			return scopeRoot ? this.createDocumentStartRange(doc) : null;
-		}
-		return scopeRoot ? this.createDocumentStartRange(doc) : null;
+		return null;
 	}
 
 	private executeResolvedAnchor(
@@ -1369,7 +1382,7 @@ export class FoliateVaultPublicationParser {
 	}
 
 	private supportsEpubCfiNavigation(): boolean {
-		return Boolean(this.archive || typeof this.getBook().resolveCFI === "function");
+		return this.getBook().sections.length > 0;
 	}
 
 	private async findTocHrefForSection(targetIndex: number): Promise<string> {
@@ -1831,36 +1844,133 @@ export class FoliateVaultPublicationParser {
 			return null;
 		}
 		const combined = segments.map((segment) => segment.text).join("");
-		let searchFrom = 0;
+		const needles = this.buildTextQuoteNeedles(highlight);
 		let bestIndex = -1;
+		let bestLength = 0;
 		let bestScore = -Infinity;
-		while (searchFrom <= combined.length) {
-			const foundAt = combined.indexOf(highlight, searchFrom);
-			if (foundAt < 0) {
-				break;
+		for (const needle of needles) {
+			let searchFrom = 0;
+			while (searchFrom <= combined.length) {
+				const foundAt = combined.indexOf(needle, searchFrom);
+				if (foundAt < 0) {
+					break;
+				}
+				const score = this.scoreTextQuoteCandidate(
+					combined,
+					foundAt,
+					needle.length,
+					text.before,
+					text.after
+				);
+				if (score > bestScore) {
+					bestScore = score;
+					bestIndex = foundAt;
+					bestLength = needle.length;
+				}
+				searchFrom = foundAt + Math.max(needle.length, 1);
 			}
-			const score = this.scoreTextQuoteCandidate(
-				combined,
-				foundAt,
-				highlight.length,
-				text.before,
-				text.after
-			);
-			if (score > bestScore) {
-				bestScore = score;
-				bestIndex = foundAt;
-			}
-			searchFrom = foundAt + Math.max(highlight.length, 1);
 		}
+
 		if (bestIndex < 0) {
+			const normalizedMatch = this.findRangeByNormalizedTextQuote(
+				root.ownerDocument,
+				segments,
+				combined,
+				highlight
+			);
+			if (normalizedMatch) {
+				return normalizedMatch;
+			}
 			return null;
 		}
 		return this.createRangeFromTextOffsets(
 			root.ownerDocument,
 			segments,
 			bestIndex,
-			bestIndex + highlight.length
+			bestIndex + bestLength
 		);
+	}
+
+	private buildTextQuoteNeedles(highlight: string): string[] {
+		const trimmed = String(highlight || "").trim();
+		if (!trimmed) {
+			return [];
+		}
+		const needles = new Set<string>();
+		const push = (value: string) => {
+			const normalized = String(value || "").trim();
+			if (normalized.length >= 4) {
+				needles.add(normalized);
+			}
+		};
+
+		push(trimmed);
+		push(trimmed.replace(/[\u201c\u201d\u2018\u2019「」『』]/g, '"'));
+		push(trimmed.replace(/[•·・]/g, ""));
+		push(trimmed.replace(/\s+/g, " "));
+		if (trimmed.length > 24) {
+			push(trimmed.slice(0, 24));
+		}
+		if (trimmed.length > 12) {
+			push(trimmed.slice(0, 12));
+		}
+		return Array.from(needles);
+	}
+
+	private normalizeTextForQuoteSearch(value: string): string {
+		return String(value || "")
+			.replace(/[\u201c\u201d\u2018\u2019「」『』""'']/g, "")
+			.replace(/[•·・]/g, "")
+			.replace(/\s+/g, "")
+			.trim()
+			.toLowerCase();
+	}
+
+	private findRangeByNormalizedTextQuote(
+		doc: Document | null,
+		segments: TextNodeSegment[],
+		combined: string,
+		highlight: string
+	): Range | null {
+		if (!doc) {
+			return null;
+		}
+		const normalizedHighlight = this.normalizeTextForQuoteSearch(highlight);
+		if (normalizedHighlight.length < 4) {
+			return null;
+		}
+
+		const normalizedCombined: string[] = [];
+		const indexMap: number[] = [];
+		for (let i = 0; i < combined.length; i++) {
+			const mapped = this.normalizeTextForQuoteSearch(combined[i] || "");
+			if (!mapped) {
+				continue;
+			}
+			normalizedCombined.push(mapped);
+			indexMap.push(i);
+		}
+		const normalizedText = normalizedCombined.join("");
+		const needles = [
+			normalizedHighlight,
+			normalizedHighlight.length > 24 ? normalizedHighlight.slice(0, 24) : "",
+			normalizedHighlight.length > 12 ? normalizedHighlight.slice(0, 12) : "",
+		].filter((needle) => needle.length >= 4);
+
+		for (const needle of needles) {
+			const foundAt = normalizedText.indexOf(needle);
+			if (foundAt < 0) {
+				continue;
+			}
+			const start = indexMap[foundAt];
+			const end = indexMap[foundAt + needle.length - 1];
+			if (typeof start !== "number" || typeof end !== "number") {
+				continue;
+			}
+			return this.createRangeFromTextOffsets(doc, segments, start, end + 1);
+		}
+
+		return null;
 	}
 
 	private scoreTextQuoteCandidate(

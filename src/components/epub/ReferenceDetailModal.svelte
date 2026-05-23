@@ -127,12 +127,26 @@
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
-		if (!open) {
+		if (!open || !popoverEl) {
+			return;
+		}
+		const target = event.target;
+		if (!(target instanceof Node) || !popoverEl.contains(target)) {
 			return;
 		}
 		if (event.key === 'Escape') {
-			event.preventDefault();
 			onClose();
+		}
+	}
+
+	function focusPopover(): void {
+		if (!open || !popoverEl) {
+			return;
+		}
+		try {
+			popoverEl.focus({ preventScroll: true });
+		} catch {
+			popoverEl.focus();
 		}
 	}
 
@@ -177,25 +191,33 @@
 		};
 	});
 
+	$effect(() => {
+		if (!open) {
+			return;
+		}
+		queueMicrotask(() => focusPopover());
+	});
+
 	onMount(() => {
 		window.addEventListener('resize', positionPopover);
 		window.addEventListener('scroll', positionPopover, true);
-		window.addEventListener('keydown', handleKeydown);
 		return () => {
 			stopOutsidePointerTracking();
 			window.removeEventListener('resize', positionPopover);
 			window.removeEventListener('scroll', positionPopover, true);
-			window.removeEventListener('keydown', handleKeydown);
 		};
 	});
 </script>
 
 {#if open && info && stats}
+	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div
 		class="epub-reference-popover"
 		class:epub-reference-popover--top={currentPlacement.startsWith('top')}
 		style={`top: ${posTop}px; left: ${posLeft}px;`}
 		bind:this={popoverEl}
+		tabindex="-1"
+		onkeydown={handleKeydown}
 		role="dialog"
 		aria-modal="false"
 		aria-labelledby="epub-reference-popover-heading"
