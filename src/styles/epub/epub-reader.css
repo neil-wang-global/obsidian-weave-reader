@@ -3625,9 +3625,9 @@ body.is-mobile .epub-highlight-toolbar:not(.mobile-docked) {
 	border-radius: 4px;
 }
 
-.workspace-leaf-content[data-type="weave-epub-reader"] .view-action.epub-view-action-hidden,
-.workspace-leaf-content[data-type="weave-epub-reader-standalone"] .view-action.epub-view-action-hidden {
-	display: none !important;
+.workspace-leaf-content[data-type="weave-epub-reader"] .view-header .view-action.epub-view-action-hidden,
+.workspace-leaf-content[data-type="weave-epub-reader-standalone"] .view-header .view-action.epub-view-action-hidden {
+	display: none;
 }
 
 /* ========================================
