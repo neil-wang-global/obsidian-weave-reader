@@ -388,7 +388,7 @@ More detail: [introduction and workflows (zh-CN)](./docs/user/zh-CN/00-introduct
 | **Underline / strikethrough / wavy underline** styling | 🔒 | ✅ |
 | **Two-way tracing** (anchor jumps, reader ↔ notes / Canvas / decks) | 🔒 | ✅ |
 | **Paragraph reading mode**, reference reading points | 🔒 | ✅ |
-| **Reading progress**, bookshelf progress, last location, remaining-time estimates | 🔒 | ✅ |
+| **Reading progress**, bookshelf progress, last location, remaining-time estimates |  ✅ | ✅ |
 | **Canvas** binding and automatic node creation | 🔒 | ✅ |
 | Current-page bookmarks | ✅ | ✅ |
 | Footnote hover preview; export current chapter to Markdown | 🔒 | ✅ |
