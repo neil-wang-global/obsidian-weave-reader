@@ -1,6 +1,6 @@
 # Weave EPUB Reader
 
-[中文](#中文文档) | [English](#english-documentation)
+[中文](#中文文档) | [English](#english-documentation) | [日本語](./README.ja.md) | [한국어](./README.ko.md)
 
 <div align="center">
 
@@ -147,14 +147,15 @@ flowchart LR
 |------|:--------:|:--------:|
 | **全平台**阅读（桌面端与移动端） | ✅ | ✅ |
 | 阅读 **EPUB**，目录跳转、翻页/滚动、版式与主题 | ✅ | ✅ |
-| 阅读 **MOBI / AZW3 / FB2 / FBZ / CBZ / TXT** | 🔒 | ✅ |
+| 阅读 **TXT** 纯文本书籍 | ✅ | ✅ |
+| 阅读 **MOBI / AZW3 / FB2 / FBZ / CBZ** | 🔒 | ✅ |
 | **五种高亮色**、批注、摘录与**正文回显** | ✅ | ✅ |
 | **下划线 / 删除线 / 波浪线**等样式标注 | 🔒 | ✅ |
 | **双向溯源**（锚点跳转、笔记 ↔ 原书定位显示） | 🔒 | ✅ |
 | **段落阅读模式**、参考阅读点 | 🔒 | ✅ |
 | **阅读进度**持久化、书架进度、最后阅读点、剩余阅读时间 | ✅ | ✅ |
+| **当前页书签**、书签目录与书签列表跳转 | ✅ | ✅ |
 | **Canvas** 绑定与自动写入节点 | 🔒 | ✅ |
-| 当前页书签 | ✅ | ✅ |
 | 脚注浮窗预览、导出当前章节为 Markdown | 🔒 | ✅ |
 
 > 图例：✅ 已包含 · 🔒 需启用高级支持
@@ -228,7 +229,7 @@ flowchart LR
 
 ### 非 EPUB 格式打不开？
 
-各格式能力划分见上文 [基础体验与高级支持](#基础体验与高级支持)。
+**EPUB 与 TXT** 在基础体验中即可阅读；**MOBI、AZW3、FB2、FBZ、CBZ** 等需启用高级支持。详见上文 [基础体验与高级支持](#基础体验与高级支持)。
 
 ### 插件文件夹名称？
 
@@ -383,14 +384,15 @@ More detail: [introduction and workflows (zh-CN)](./docs/user/zh-CN/00-introduct
 |------------|:--------------------:|:---------------:|
 | **All platforms** (desktop and mobile) | ✅ | ✅ |
 | Read **EPUB**, TOC, paginated/scroll modes, typography and themes | ✅ | ✅ |
-| Read **MOBI / AZW3 / FB2 / FBZ / CBZ / TXT** | 🔒 | ✅ |
+| Read **TXT** plain-text books | ✅ | ✅ |
+| Read **MOBI / AZW3 / FB2 / FBZ / CBZ** | 🔒 | ✅ |
 | **Five highlight colors**, annotations, excerpts, and **in-body rendering** | ✅ | ✅ |
 | **Underline / strikethrough / wavy underline** styling | 🔒 | ✅ |
 | **Two-way tracing** (anchor jumps, reader ↔ notes / Canvas / decks) | 🔒 | ✅ |
 | **Paragraph reading mode**, reference reading points | 🔒 | ✅ |
-| **Reading progress**, bookshelf progress, last location, remaining-time estimates |  ✅ | ✅ |
+| **Reading progress**, bookshelf progress, last location, remaining-time estimates | ✅ | ✅ |
+| **Current-page bookmarks**, bookmark folder, and bookmark list navigation | ✅ | ✅ |
 | **Canvas** binding and automatic node creation | 🔒 | ✅ |
-| Current-page bookmarks | ✅ | ✅ |
 | Footnote hover preview; export current chapter to Markdown | 🔒 | ✅ |
 
 > Legend: ✅ included · 🔒 requires Premium support
@@ -464,7 +466,7 @@ Premium support is **buy-once** (activate once, use long-term; see [Premium supp
 
 ### Cannot open MOBI / AZW3 / FB2?
 
-See [Essential experience and Premium support](#essential-experience-and-premium-support) above.
+**EPUB and TXT** are included in the essential experience. **MOBI, AZW3, FB2, FBZ, and CBZ** require Premium support. See [Essential experience and Premium support](#essential-experience-and-premium-support) above.
 
 ### Plugin folder name?
 
