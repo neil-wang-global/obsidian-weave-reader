@@ -1,4 +1,5 @@
 import { EPUB_RUNTIME } from "../epub";
+import { SUPPORTED_BOOK_EXTENSIONS } from "../epub/book-format";
 
 export const EPUB_LOCATE_LINK_PREFIX = "__weave_epub_link__=";
 export const EPUB_LOCATE_CFI_PREFIX = "__weave_epub_cfi__=";
@@ -244,11 +245,16 @@ export function isDescriptiveSourceLocateTextCandidate(
 	if (normalized.startsWith("^") || normalized.startsWith("#^")) {
 		return false;
 	}
+	if (normalized.endsWith(".md") || normalized.includes(".md#")) {
+		return false;
+	}
+	const lower = normalized.toLowerCase();
 	if (
-		normalized.endsWith(".md") ||
-		normalized.endsWith(".epub") ||
-		normalized.includes(".md#") ||
-		normalized.includes(".epub#")
+		SUPPORTED_BOOK_EXTENSIONS.some(
+			(extension) => lower.endsWith(`.${extension}`) || lower.includes(`.${extension}#`)
+		) ||
+		lower.endsWith(".fb2.zip") ||
+		lower.includes(".fb2.zip#")
 	) {
 		return false;
 	}

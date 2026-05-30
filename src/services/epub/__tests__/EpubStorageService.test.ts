@@ -852,6 +852,43 @@ describe('EpubStorageService', () => {
     ]);
   });
 
+  it('recovers from a transient parse failure when reading unified local state on startup', async () => {
+    const { app } = createMemoryApp({
+      [LOCAL_EPUB_DATA_PATH]: JSON.stringify({
+        version: 1,
+        updatedAt: 1710000000000,
+        bookshelfMembership: [
+          {
+            path: 'Books/demo.epub',
+            addedAt: 100,
+          },
+        ],
+      }),
+    }, ['Books/demo.epub']);
+
+    const adapterRead = app.vault.adapter.read as ReturnType<typeof vi.fn>;
+    const baseReadImpl = adapterRead.getMockImplementation();
+    let shouldFailFirstRead = true;
+    adapterRead.mockImplementation(async (path: string) => {
+      if (path === LOCAL_EPUB_DATA_PATH && shouldFailFirstRead) {
+        shouldFailFirstRead = false;
+        return '{"version":1,"updatedAt":1710000000000,';
+      }
+      if (baseReadImpl) {
+        return baseReadImpl(path);
+      }
+      throw new Error(`Missing file: ${path}`);
+    });
+
+    const service = new EpubStorageService(app);
+    await expect(service.loadBookshelfMembership()).resolves.toEqual([
+      {
+        path: 'Books/demo.epub',
+        addedAt: 100,
+      },
+    ]);
+  });
+
   it('moves legacy local scanIndex into the root cache file and clears it from local state', async () => {
     const { app, files } = createMemoryApp({
       [LEGACY_LOCAL_EPUB_DATA_PATH]: JSON.stringify({
@@ -1074,6 +1111,31 @@ describe('EpubStorageService', () => {
     expect(entries.map((entry) => entry.path)).toEqual(['Books/visible.epub']);
   });
 
+  it('falls back to direct local data write when adapter rename cannot overwrite existing file', async () => {
+    const { app, files } = createMemoryApp({
+      [LOCAL_EPUB_DATA_PATH]: JSON.stringify({
+        version: 1,
+        updatedAt: 1,
+        bookshelfMembership: [],
+      }),
+    }, ['Books/visible.epub']);
+
+    (app.vault.adapter as { rename?: (oldPath: string, newPath: string) => Promise<void> }).rename = vi.fn(
+      async () => {
+        throw new Error('Destination file already exists!');
+      }
+    );
+
+    const service = new EpubStorageService(app);
+    const entries = await service.scanVaultBooks();
+
+    expect(entries.map((entry) => entry.path)).toEqual(['Books/visible.epub']);
+    expect(readLocalScanIndex(files).map((entry: { path: string }) => entry.path)).toEqual([
+      'Books/visible.epub',
+    ]);
+    expect(readLocalEpubData(files).version).toBe(1);
+  });
+
   it('drops trashed paths from cached scan index on load', async () => {
     const indexPath = LOCAL_EPUB_SCAN_INDEX_PATH;
     const { app, files } = createMemoryApp({
@@ -1185,6 +1247,33 @@ describe('EpubStorageService', () => {
 
     expect(readLocalEpubData(files).bookshelfMembership).toEqual([]);
     expect(readLocalScanIndex(files)).toEqual([]);
+  });
+
+  it('updateBookDisplayTitle persists renamed metadata for later loads', async () => {
+    const { app } = createMemoryApp({}, ['Books/demo.epub']);
+    const service = new EpubStorageService(app);
+    const book = createBook({
+      id: 'book-rename',
+      filePath: 'Books/demo.epub',
+      metadata: {
+        title: '旧书名',
+        author: '作者',
+        chapterCount: 3,
+      },
+    });
+
+    await service.saveBook(book);
+    const renamed = await service.updateBookDisplayTitle({
+      ...book,
+      metadata: {
+        ...book.metadata,
+        title: '新书名',
+      },
+    });
+
+    expect(renamed.metadata.title).toBe('新书名');
+    const reloaded = await service.findBookByFilePath('Books/demo.epub');
+    expect(reloaded?.metadata.title).toBe('新书名');
   });
 
   it('does not restore bookshelf membership when saving book state after removing it from the bookshelf', async () => {

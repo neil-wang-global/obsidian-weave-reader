@@ -10,6 +10,7 @@ export type {
 } from "./navigation-intent";
 export {
 	bookLocateFromPending,
+	hasBookLocateTarget,
 	pendingLocateFromLegacyState,
 } from "./navigation-intent";
 export { NavigationHub, type NavigationHubOptions } from "./NavigationHub";

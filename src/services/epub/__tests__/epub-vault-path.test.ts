@@ -4,7 +4,9 @@ import {
 	epubVaultPathsReferToSameBook,
 	isVisibleVaultBookPath,
 	joinListedVaultPath,
+	resolveComparableBookVaultPath,
 	resolveEpubVaultPath,
+	resolveRelativeVaultPath,
 	resolveSupportedBookFile,
 } from "../epub-vault-path";
 
@@ -13,6 +15,14 @@ function createEpubFile(path: string) {
 		path,
 		name: path.split("/").pop() || path,
 		extension: "epub",
+	});
+}
+
+function createFb2File(path: string) {
+	return Object.assign(new TFile(), {
+		path,
+		name: path.split("/").pop() || path,
+		extension: "fb2",
 	});
 }
 
@@ -77,6 +87,38 @@ describe("epub-vault-path", () => {
 
 		expect(resolveSupportedBookFile(app, "demo.epub")).toBeNull();
 		expect(resolveSupportedBookFile(app, "Books/demo.epub")?.path).toBe("Books/demo.epub");
+	});
+
+	it("resolves relative wikilink paths from markdown source context", () => {
+		const bookPath =
+			"附件/史蒂夫 · 乔布斯传 (修订版) = Steve Jobs A Biography ([美] 沃尔特 · 艾萨克森 (Walter Isaacson) 著 管延圻 etc.) (z-library.sk, 1lib.sk, z-lib.sk).fb2";
+		const notePath = "笔记/乔布斯摘录.md";
+		const relativeLink = `../../${bookPath}`;
+		expect(resolveRelativeVaultPath(notePath, relativeLink)).toBe(bookPath);
+
+		const app = {
+			vault: {
+				getAbstractFileByPath: vi.fn((path: string) => {
+					if (path === bookPath) {
+						return createFb2File(bookPath);
+					}
+					return null;
+				}),
+				getFiles: vi.fn(() => [createFb2File(bookPath)]),
+			},
+			metadataCache: {
+				getFirstLinkpathDest: vi.fn(() => null),
+			},
+		} as any;
+
+		expect(resolveEpubVaultPath(app, relativeLink, notePath)).toBe(bookPath);
+		expect(resolveComparableBookVaultPath(app, relativeLink, notePath)).toBe(bookPath);
+		expect(
+			epubVaultPathsReferToSameBook(
+				resolveComparableBookVaultPath(app, relativeLink, notePath),
+				bookPath
+			)
+		).toBe(true);
 	});
 
 	it("resolves basename-only stored paths via vault.getFiles()", () => {

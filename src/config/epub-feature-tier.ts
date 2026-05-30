@@ -1,7 +1,7 @@
 /**
  * EPUB 阅读器功能分层（单一真相源）。
  * - core：未激活也可用，且关闭「高级预览」时仍显示相关设置
- * - premium：需许可证；未开预览时不展示入口
+ * - premium：需许可证；未开预览时不展示入口（EPUB、TXT 阅读本身免费，见 book-format.isFreeBookFormat）
  *
  * 使用字符串常量，避免与 PremiumFeatureGuard 循环依赖。
  */
@@ -18,11 +18,13 @@ export const EPUB_FEATURE_IDS = {
 	CHAPTER_EXPORT: "epub-chapter-export",
 } as const;
 
-export const EPUB_CORE_FEATURE_IDS = [EPUB_FEATURE_IDS.EXCERPT_NOTES] as const;
+export const EPUB_CORE_FEATURE_IDS = [
+	EPUB_FEATURE_IDS.EXCERPT_NOTES,
+	EPUB_FEATURE_IDS.READING_PROGRESS,
+] as const;
 
 export const EPUB_PREMIUM_FEATURE_IDS = [
 	EPUB_FEATURE_IDS.NON_EPUB_FORMATS,
-	EPUB_FEATURE_IDS.READING_PROGRESS,
 	EPUB_FEATURE_IDS.READING_REFERENCE,
 	EPUB_FEATURE_IDS.PARAGRAPH_MODE,
 	EPUB_FEATURE_IDS.STYLED_EXCERPTS,

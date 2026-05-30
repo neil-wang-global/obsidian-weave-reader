@@ -1,6 +1,7 @@
 import { Modal, type App, setIcon } from "obsidian";
 import { getBookFormatDisplayLabel } from "../../services/epub/book-format";
 import type { BookMetadata } from "../../services/epub";
+import { i18n } from "../../utils/i18n";
 
 type EpubBookDeleteHighlightStats = {
 	totalHighlights: number;
@@ -64,7 +65,7 @@ export class EpubBookDeleteConfirmModal extends Modal {
 
 	onOpen(): void {
 		this.modalEl.addClass("weave-epub-book-delete-modal");
-		this.titleEl.setText("删除书籍文件");
+		this.titleEl.setText(i18n.t("epub.bookshelf.bookDeleteModal.title"));
 		this.contentEl.empty();
 		this.buildLayout();
 	}
@@ -105,12 +106,17 @@ export class EpubBookDeleteConfirmModal extends Modal {
 		const content = hero.createDiv({ cls: "weave-epub-book-info-hero-content" });
 		content.createDiv({
 			cls: "weave-epub-book-info-title",
-			text: this.options.metadata.title || this.options.fileName || "未命名书籍",
+			text:
+				this.options.metadata.title ||
+				this.options.fileName ||
+				i18n.t("epub.bookshelf.bookDeleteModal.untitledBook"),
 		});
 		const bylineParts = [
 			normalizeText(this.options.metadata.author),
 			normalizeText(this.options.metadata.translator)
-				? `译者：${normalizeText(this.options.metadata.translator)}`
+				? i18n.t("epub.bookshelf.bookDeleteModal.translatorByline", {
+						name: normalizeText(this.options.metadata.translator),
+					})
 				: "",
 		].filter(Boolean);
 		if (bylineParts.length > 0) {
@@ -124,43 +130,63 @@ export class EpubBookDeleteConfirmModal extends Modal {
 		const chipValues = [
 			getBookFormatDisplayLabel(this.options.filePath),
 			normalizeText(this.options.metadata.publisher),
-			`${normalizeProgress(this.options.progress)}% 已读`,
+			i18n.t("epub.bookshelf.bookDeleteModal.progressRead", {
+				progress: normalizeProgress(this.options.progress),
+			}),
 		].filter(Boolean);
 		for (const value of chipValues) {
 			chips.createDiv({ cls: "weave-epub-book-info-chip", text: value });
 		}
 		content.createDiv({
 			cls: "weave-epub-book-delete-caption",
-			text: `确认后将删除仓库中的书籍文件，并清理书架索引与本地阅读缓存。`,
+			text: i18n.t("epub.bookshelf.bookDeleteModal.confirmBody"),
 		});
 	}
 
 	private buildStatsSection(container: HTMLElement): void {
 		const section = container.createDiv({ cls: "weave-epub-book-info-section" });
-		section.createDiv({ cls: "weave-epub-book-info-section-title", text: "关联摘录笔记统计" });
+		section.createDiv({
+			cls: "weave-epub-book-info-section-title",
+			text: i18n.t("epub.bookshelf.bookDeleteModal.sectionNoteStats"),
+		});
 
 		if (!this.options.highlightStats.available) {
 			section.createDiv({
 				cls: "weave-epub-book-delete-note",
-				text: "当前无法完成关联摘录统计，你仍可继续删除书籍文件。",
+				text: i18n.t("epub.bookshelf.bookDeleteModal.noteStatsUnavailable"),
 			});
 			return;
 		}
 
 		const stats = section.createDiv({ cls: "weave-epub-book-delete-stats" });
-		this.createStatCard(stats, "关联摘录", `${this.options.highlightStats.totalHighlights}`);
-		this.createStatCard(stats, "含批注摘录", `${this.options.highlightStats.commentCount}`);
-		this.createStatCard(stats, "来源文件", `${this.options.highlightStats.sourceFileCount}`);
+		this.createStatCard(
+			stats,
+			i18n.t("epub.bookshelf.bookDeleteModal.statLinkedExcerpts"),
+			`${this.options.highlightStats.totalHighlights}`
+		);
+		this.createStatCard(
+			stats,
+			i18n.t("epub.bookshelf.bookDeleteModal.statExcerptsWithComments"),
+			`${this.options.highlightStats.commentCount}`
+		);
+		this.createStatCard(
+			stats,
+			i18n.t("epub.bookshelf.bookDeleteModal.statSourceFiles"),
+			`${this.options.highlightStats.sourceFileCount}`
+		);
 	}
 
 	private buildImpactSection(container: HTMLElement): void {
 		const section = container.createDiv({ cls: "weave-epub-book-info-section" });
-		section.createDiv({ cls: "weave-epub-book-info-section-title", text: "删除影响" });
+		section.createDiv({
+			cls: "weave-epub-book-info-section-title",
+			text: i18n.t("epub.bookshelf.bookDeleteModal.sectionImpact"),
+		});
 		const list = section.createDiv({ cls: "weave-epub-book-delete-impact-list" });
 		[
-			"删除当前书籍文件。",
-			"清理该书的书架记录、本地阅读状态与阅读器缓存。",
-			"Markdown、Canvas、卡片数据中的摘录笔记不会被删除。",
+			i18n.t("epub.bookshelf.bookDeleteModal.impactDeleteFile"),
+			i18n.t("epub.bookshelf.bookDeleteModal.impactClearShelf"),
+			i18n.t("epub.bookshelf.bookDeleteModal.impactKeepNotes"),
 		].forEach((text) => {
 			list.createDiv({ cls: "weave-epub-book-delete-impact-item", text });
 		});
@@ -168,13 +194,31 @@ export class EpubBookDeleteConfirmModal extends Modal {
 
 	private buildFileSection(container: HTMLElement): void {
 		const section = container.createDiv({ cls: "weave-epub-book-info-section" });
-		section.createDiv({ cls: "weave-epub-book-info-section-title", text: "文件信息" });
+		section.createDiv({
+			cls: "weave-epub-book-info-section-title",
+			text: i18n.t("epub.bookshelf.bookDeleteModal.sectionFile"),
+		});
 		const grid = section.createDiv({ cls: "weave-epub-book-info-grid" });
 		[
-			{ label: "文件名", value: this.options.fileName, wide: true },
-			{ label: "格式", value: getBookFormatDisplayLabel(this.options.filePath) },
-			{ label: "文件大小", value: formatFileSize(this.options.fileSize) },
-			{ label: "路径", value: this.options.filePath, wide: true, mono: true },
+			{
+				label: i18n.t("epub.bookshelf.bookDeleteModal.fileName"),
+				value: this.options.fileName,
+				wide: true,
+			},
+			{
+				label: i18n.t("epub.bookshelf.bookDeleteModal.format"),
+				value: getBookFormatDisplayLabel(this.options.filePath),
+			},
+			{
+				label: i18n.t("epub.bookshelf.bookDeleteModal.fileSize"),
+				value: formatFileSize(this.options.fileSize),
+			},
+			{
+				label: i18n.t("epub.bookshelf.bookDeleteModal.path"),
+				value: this.options.filePath,
+				wide: true,
+				mono: true,
+			},
 		].forEach((field) => {
 			if (!field.value) {
 				return;
@@ -193,10 +237,12 @@ export class EpubBookDeleteConfirmModal extends Modal {
 
 	private buildActions(container: HTMLElement): void {
 		const actions = container.createDiv({ cls: "weave-epub-book-delete-actions" });
-		const cancelButton = actions.createEl("button", { text: "取消" });
+		const cancelButton = actions.createEl("button", {
+			text: i18n.t("epub.bookshelf.bookDeleteModal.cancel"),
+		});
 		cancelButton.onclick = () => this.close();
 		const confirmButton = actions.createEl("button", {
-			text: "删除书籍文件",
+			text: i18n.t("epub.bookshelf.bookDeleteModal.confirm"),
 			cls: "mod-warning",
 		});
 		confirmButton.onclick = () => {

@@ -1,7 +1,8 @@
 import { normalizePath } from "obsidian";
 import { logger } from "../../utils/logger";
 import { EpubLinkService } from "./EpubLinkService";
-import { isSupportedBookPath, SUPPORTED_BOOK_EXTENSIONS } from "./book-format";
+import { createSupportedBookWikilinkRegex } from "./book-link-patterns";
+import { isSupportedBookPath } from "./book-format";
 import { EPUB_RUNTIME } from "./epub-runtime";
 
 function escapeRegExp(value: string): string {
@@ -12,13 +13,7 @@ const EPUB_PROTOCOL_LINK_PATTERN = new RegExp(
 	`obsidian://(?:${EPUB_RUNTIME.protocol.allNames.map(escapeRegExp).join("|")})\\?[^\\s"'<>]*`,
 	"gi"
 );
-const SUPPORTED_BOOK_WIKILINK_PATH_PATTERN = `(?:[^\\]\\n]+?(?:\\.fb2\\.zip|\\.(?:${SUPPORTED_BOOK_EXTENSIONS.map(
-	escapeRegExp
-).join("|")})))`;
-const SUPPORTED_BOOK_WIKILINK_PATTERN = new RegExp(
-	`\\[\\[(${SUPPORTED_BOOK_WIKILINK_PATH_PATTERN})(#[^\\]\\n|]*)?(\\|[^\\]\\n]*)?\\]\\]`,
-	"gi"
-);
+const SUPPORTED_BOOK_WIKILINK_PATTERN = createSupportedBookWikilinkRegex("gi");
 
 export function rewriteEpubReferences(
 	content: string,

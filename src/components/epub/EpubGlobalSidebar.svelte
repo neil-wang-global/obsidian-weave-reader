@@ -5,7 +5,7 @@
 	import type { App } from 'obsidian';
  	import { logger } from '../../utils/logger';
 	import { findOpenEpubLeaf } from '../../utils/epub-leaf-utils';
-	import { EPUB_RUNTIME, type EpubBook, type TocItem } from '../../services/epub';
+	import { EPUB_RUNTIME, getEpubAnnotationIndexService, type EpubBook, type TocItem } from '../../services/epub';
 	import { EpubBookmarkService, type EpubBookmarkRecord } from '../../services/epub/EpubBookmarkService';
   	import { epubActiveDocumentStore } from '../../stores/epub-active-document-store';
   	import type { EpubNavigationRequest, EpubSharedState } from '../../stores/epub-active-document-store';
@@ -15,6 +15,7 @@
 	import EpubBookmarksPanel from './EpubBookmarksPanel.svelte';
   	import NotesPanel from './NotesPanel.svelte';
   	import BookshelfView from './BookshelfView.svelte';
+	import EpubLoadingState from './EpubLoadingState.svelte';
 
 	interface Props {
 		app: App;
@@ -68,6 +69,8 @@
 	let bookmarkCountLoadToken = 0;
 	let lastBookmarkCountContextKey = '';
   	let tocLoadToken = 0;
+	let tocLoading = $state(false);
+	let tocLoadFailed = $state(false);
   	let sidebarDisposed = false;
  	let lastExternalSearchNonce = 0;
  	const SIDEBAR_PROGRESS_SEGMENT_COUNT = 16;
@@ -387,13 +390,25 @@
 		backlinkService?: EpubSharedState['backlinkService']
 	) {
 		const loadToken = ++highlightCountLoadToken;
-		const cachedSnapshot = highlightViewSnapshotService?.getCachedSnapshot({
+		const snapshotContext = {
 			bookId: book.id,
 			filePath: filePath ?? '',
 			showStrikethroughHighlights: Boolean(sharedState?.excerptSettings?.showStrikethroughInSidebar),
-		}) || null;
+		};
+		const cachedSnapshot =
+			highlightViewSnapshotService?.getCachedSnapshot(snapshotContext)
+			|| (await highlightViewSnapshotService?.hydrateFromDisk(snapshotContext))
+			|| null;
 		if (cachedSnapshot) {
 			highlightCount = cachedSnapshot.highlights.length;
+			void getEpubAnnotationIndexService(app).prefetchBook({
+				...snapshotContext,
+				annotationService,
+				backlinkService: backlinkService ?? undefined,
+				readerService: sharedState?.readerService ?? undefined,
+				highlightRevision: sharedState?.annotationRevision ?? 0,
+				priority: 'background',
+			});
 			return;
 		}
 		try {
@@ -438,19 +453,29 @@
 		const filePath = sharedState?.filePath ?? '';
 		if (!readerService || !bookId) {
 			tocItems = [];
+			tocLoading = false;
+			tocLoadFailed = false;
 			return;
 		}
 		const loadToken = ++tocLoadToken;
+		tocLoading = true;
+		tocLoadFailed = false;
 		try {
 			const items = await readerService.getTableOfContents();
 			if (sidebarDisposed || loadToken !== tocLoadToken || sharedState?.book?.id !== bookId || (sharedState?.filePath ?? '') !== filePath) {
 				return;
 			}
 			tocItems = items;
+			tocLoadFailed = false;
 		} catch (error) {
 			logger.error('[EpubGlobalSidebar] Failed to load TOC:', error);
 			if (!sidebarDisposed && loadToken === tocLoadToken) {
 				tocItems = [];
+				tocLoadFailed = true;
+			}
+		} finally {
+			if (!sidebarDisposed && loadToken === tocLoadToken) {
+				tocLoading = false;
 			}
 		}
 	}
@@ -570,6 +595,8 @@
 			void loadToc();
 		} else {
 			tocItems = [];
+			tocLoading = false;
+			tocLoadFailed = false;
 		}
 	});
 
@@ -842,7 +869,9 @@
 				{#if isSearchActive && activeTab === 'toc'}
 					<div class="epub-search-results">
 						{#if searching}
-							<div class="search-empty-state">{t('epub.globalSidebar.searching')}</div>
+							<div class="search-empty-state">
+								<EpubLoadingState message={t('epub.globalSidebar.searching')} surface />
+							</div>
 						{:else if searched && !hasAnyResults}
 							<div class="search-empty-state">{t('epub.globalSidebar.noResults')}</div>
 						{:else if hasAnyResults}
@@ -895,6 +924,8 @@
 				{:else if activeTab === 'toc'}
 					<TableOfContents
 						items={tocItems}
+						loading={tocLoading && tocItems.length === 0}
+						loadFailed={tocLoadFailed && !tocLoading}
 						activeHref={sharedState?.chapterHref ?? null}
 						lastReadHref={lastReadTocHref}
 						onNavigate={handleTocNavigate}
@@ -911,6 +942,7 @@
 				{:else if activeTab === 'highlights'}
 					{#if sharedState.annotationService}
 						<NotesPanel
+							{app}
 							book={sharedState.book}
 							readerService={sharedState.readerService ?? undefined}
 							annotationService={sharedState.annotationService}

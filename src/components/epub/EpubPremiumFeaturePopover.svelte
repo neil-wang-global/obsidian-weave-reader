@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getEpubPremiumFeaturePreviewContent } from '../../services/epub';
-	import { tr } from '../../utils/i18n';
+	import { currentLanguage, tr } from '../../utils/i18n';
 
 	interface Props {
 		open: boolean;
@@ -20,9 +20,10 @@
 
 	let popoverEl: HTMLDivElement | undefined = $state(undefined);
 
-	let previewContent = $derived.by(() =>
-		getEpubPremiumFeaturePreviewContent(String(featureId || '').trim())
-	);
+	let previewContent = $derived.by(() => {
+		void $currentLanguage;
+		return getEpubPremiumFeaturePreviewContent(String(featureId || '').trim());
+	});
 
 	function handlePointerDownOutside(event: MouseEvent) {
 		if (!open || !popoverEl) {

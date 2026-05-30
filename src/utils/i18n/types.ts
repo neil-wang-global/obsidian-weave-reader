@@ -1,4 +1,4 @@
-export type SupportedLanguage = "zh-CN" | "en-US";
+export type SupportedLanguage = "zh-CN" | "en-US" | "ja-JP" | "ko-KR";
 
 export interface TranslationKey {
 	[key: string]: string | TranslationKey;

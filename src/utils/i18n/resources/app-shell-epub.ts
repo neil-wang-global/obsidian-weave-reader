@@ -3,7 +3,12 @@ import type { SupportedLanguage, TranslationKey } from '../types';
 const zhEpubViews: TranslationKey = {
 	epubView: {
 		menu: {
-			groupReadingDisplay: '阅读视图',
+			groupReadingDisplay: '阅读与显示',
+			flowModeScrolled: '连续滚动',
+			flowModePaginated: '翻页',
+			autoInsertMode: '自动化',
+			screenshotTool: '截图工具',
+			screenshotSaveAsImage: '截图保存为图片',
 			groupExcerptNotes: '摘录与笔记',
 			groupExport: '导出',
 			groupReadingTools: '阅读工具',
@@ -103,6 +108,9 @@ const zhEpubViews: TranslationKey = {
 			screenshotToolOff: '截图工具（关）',
 			autoModeOn: '自动模式（开：插入）',
 			autoModeOff: '自动模式（关：复制，开：插入）',
+			autoModeToolbar: '自动化',
+			screenshotToolToolbar: '截图工具',
+			screenshotSaveAsImageToolbar: '截图保存为图片',
 			canvasOn: 'Canvas 脑图（开）',
 			canvasOff: 'Canvas 脑图（关）',
 			canvasDirection: 'Canvas 方向：{direction}',
@@ -152,7 +160,12 @@ const zhEpubViews: TranslationKey = {
 const enEpubViews: TranslationKey = {
 	epubView: {
 		menu: {
-			groupReadingDisplay: 'Reading display',
+			groupReadingDisplay: 'Reading & display',
+			flowModeScrolled: 'Scrolled',
+			flowModePaginated: 'Paginated',
+			autoInsertMode: 'Auto insert',
+			screenshotTool: 'Screenshot tool',
+			screenshotSaveAsImage: 'Save screenshot as image',
 			groupExcerptNotes: 'Excerpts & notes',
 			groupExport: 'Export',
 			groupReadingTools: 'Reading tools',
@@ -252,6 +265,9 @@ const enEpubViews: TranslationKey = {
 			screenshotToolOff: 'Screenshot tool (Off)',
 			autoModeOn: 'Auto mode (On: insert)',
 			autoModeOff: 'Auto mode (Off: copy, On: insert)',
+			autoModeToolbar: 'Auto insert',
+			screenshotToolToolbar: 'Screenshot tool',
+			screenshotSaveAsImageToolbar: 'Save screenshot as image',
 			canvasOn: 'Canvas mind map (On)',
 			canvasOff: 'Canvas mind map (Off)',
 			canvasDirection: 'Canvas direction: {direction}',
@@ -323,7 +339,9 @@ const enBase: TranslationKey = {
 	},
 };
 
-export const appShellEpubTranslations: Record<SupportedLanguage, TranslationKey> = {
+type AppShellEpubTranslationLocale = 'zh-CN' | 'en-US';
+
+export const appShellEpubTranslations: Record<AppShellEpubTranslationLocale, TranslationKey> = {
 	'zh-CN': zhBase,
 	'en-US': enBase,
 };

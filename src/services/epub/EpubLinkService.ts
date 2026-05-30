@@ -4,6 +4,14 @@ import { inflateRaw } from "pako";
 import { logger } from "../../utils/logger";
 import { EPUB_RUNTIME } from "./epub-runtime";
 import { i18n } from "../../utils/i18n";
+import { createSupportedBookWikilinkRegex } from "./book-link-patterns";
+import {
+	getBookFormatDisplayLabel,
+	hasSupportedBookLocatorSubpath,
+	isSupportedBookPath,
+	stripSupportedBookExtension,
+} from "./book-format";
+import { ensureBookSourceLocationAccess } from "./epub-premium";
 
 export interface EpubLinkParams {
 	filePath: string;
@@ -24,7 +32,7 @@ export class EpubLinkService {
 	private static readonly COMPACT_READIUM_PREFIX = "readium:loc~";
 	private static readonly COMPACT_PAYLOAD_PREFIX = "weave-loc=";
 	private static readonly MAX_CHAPTER_LABEL_LENGTH = 24;
-	private static readonly EPUB_WIKILINK_REGEX = /\[\[(?:(?!\]\]).)+\.epub(?:(?!\]\]).)*\]\]/gi;
+	private static readonly SUPPORTED_BOOK_WIKILINK_REGEX = createSupportedBookWikilinkRegex("gi");
 	private static readonly HIGHLIGHT_STYLE_TOKENS = new Set<EpubHighlightStyle>([
 		"underline",
 		"strikethrough",
@@ -215,13 +223,20 @@ export class EpubLinkService {
 
 	private static buildLegacySubpath(
 		cfi: string,
-		_text: string,
-		_chapterIndex?: number,
+		text: string,
+		chapterIndex?: number,
 		sourceId?: string,
 		excerptId?: string
 	): string {
 		const safeCfi = EpubLinkService.encodeCfiForWikilink(cfi);
 		let subpath = `weave-cfi=${safeCfi}`;
+		const normalizedText = String(text || "").trim();
+		if (normalizedText) {
+			subpath += `&text=${EpubLinkService.encodeTextForWikilink(normalizedText)}`;
+		}
+		if (chapterIndex !== undefined && Number.isFinite(chapterIndex)) {
+			subpath += `&chapter=${chapterIndex}`;
+		}
 		if (sourceId) {
 			subpath += `&sid=${encodeURIComponent(sourceId)}`;
 		}
@@ -232,22 +247,20 @@ export class EpubLinkService {
 	}
 
 	static hasSupportedEpubSubpath(subpath: string): boolean {
-		return (
-			subpath.includes(EpubLinkService.COMPACT_PAYLOAD_PREFIX) ||
-			subpath.includes("weave-cfi=") ||
-			subpath.includes("tuanki-cfi=") ||
-			subpath.includes("tuanki-cfi-")
-		);
+		return hasSupportedBookLocatorSubpath(subpath);
 	}
 
 	static extractFirstEpubLinkMarkup(content: string): string | undefined {
 		if (!content) return undefined;
 		const normalized = content.replace(/\r\n/g, "\n");
-		const wikilinkMatch = normalized.match(
-			/(\[\[(?:(?!\]\]).)+\.epub(?:(?!\]\]).)*(?:#weave-loc=|#weave-cfi=|#tuanki-cfi=|#tuanki-cfi-)(?:(?!\]\]).)*\]\])/i
-		);
-		if (wikilinkMatch?.[1]) {
-			return wikilinkMatch[1];
+		for (const { markup } of EpubLinkService.collectEpubLinkMarkupRanges(normalized)) {
+			if (!markup.startsWith("[[") || !markup.includes("#")) {
+				continue;
+			}
+			if (!hasSupportedBookLocatorSubpath(markup)) {
+				continue;
+			}
+			return markup;
 		}
 		return EpubLinkService.extractLegacyProtocolLinkMarkup(normalized);
 	}
@@ -287,7 +300,10 @@ export class EpubLinkService {
 	private static collectEpubLinkMarkupRanges(content: string): EpubLinkMarkupRange[] {
 		const ranges: EpubLinkMarkupRange[] = [];
 
-		const wikilinkRegex = new RegExp(EpubLinkService.EPUB_WIKILINK_REGEX.source, "gi");
+		const wikilinkRegex = new RegExp(
+			EpubLinkService.SUPPORTED_BOOK_WIKILINK_REGEX.source,
+			EpubLinkService.SUPPORTED_BOOK_WIKILINK_REGEX.flags
+		);
 		let wikilinkMatch: RegExpExecArray | null;
 		while ((wikilinkMatch = wikilinkRegex.exec(content)) !== null) {
 			const markup = wikilinkMatch[0];
@@ -371,7 +387,7 @@ export class EpubLinkService {
 		}
 
 		const parsed = EpubLinkService.parseLinkMarkup(markup);
-		if (!parsed?.filePath || !/\.epub$/i.test(parsed.filePath)) {
+		if (!parsed?.filePath || !isSupportedBookPath(parsed.filePath)) {
 			return null;
 		}
 
@@ -582,11 +598,12 @@ export class EpubLinkService {
 	}
 
 	static extractShortBookName(filePath: string): string {
-		const fullName =
-			filePath
-				.split("/")
-				.pop()
-				?.replace(/\.epub$/i, "") || "EPUB";
+		const basename = filePath.split("/").pop() || filePath;
+		const stripped = stripSupportedBookExtension(basename);
+		const fallbackLabel = isSupportedBookPath(filePath)
+			? getBookFormatDisplayLabel(filePath)
+			: "BOOK";
+		const fullName = stripped || fallbackLabel;
 		const mainTitle = fullName.split(/[([{]/)[0].trim();
 		if (mainTitle.length > 25) {
 			return `${mainTitle.slice(0, 25)}...`;
@@ -663,7 +680,10 @@ export class EpubLinkService {
 
 	private static buildDisplayAlias(filePath: string): string {
 		const bookName = EpubLinkService.extractShortBookName(filePath);
-		return EpubLinkService.sanitizeWikilinkAlias(bookName) || "EPUB";
+		const fallbackLabel = isSupportedBookPath(filePath)
+			? getBookFormatDisplayLabel(filePath)
+			: "BOOK";
+		return EpubLinkService.sanitizeWikilinkAlias(bookName) || fallbackLabel;
 	}
 
 	static formatQuotedExcerptText(text: string, style?: EpubHighlightStyle): string {
@@ -688,8 +708,8 @@ export class EpubLinkService {
 	buildEpubLink(
 		filePath: string,
 		cfi: string,
-		_text: string,
-		_chapterIndex?: number,
+		text: string,
+		chapterIndex?: number,
 		_chapterTitle?: string,
 		sourcePath?: string,
 		sourceId?: string,
@@ -697,7 +717,13 @@ export class EpubLinkService {
 	): string {
 		const displayText = EpubLinkService.buildDisplayAlias(filePath);
 		const linkPath = this.extractLinkPath(filePath, sourcePath);
-		const subpath = EpubLinkService.buildLegacySubpath(cfi, "", undefined, sourceId, excerptId);
+		const subpath = EpubLinkService.buildLegacySubpath(
+			cfi,
+			text,
+			chapterIndex,
+			sourceId,
+			excerptId
+		);
 		return `[[${linkPath}#${subpath}|${displayText}]]`;
 	}
 
@@ -853,6 +879,14 @@ export class EpubLinkService {
 		sourceId?: string,
 		sourceMarkdownPath?: string
 	): Promise<void> {
+		if (
+			!ensureBookSourceLocationAccess(
+				this.app,
+				i18n.t("epub.reader.sourceLocationFeatureNotice")
+			)
+		) {
+			return;
+		}
 		try {
 			const { getNavigationHub } = await import("../navigation/navigation-hub-access");
 			const result = await getNavigationHub(this.app).navigate({

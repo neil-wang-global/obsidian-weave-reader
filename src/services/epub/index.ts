@@ -76,6 +76,23 @@ export {
 } from "./epub-runtime";
 export { EpubAnnotationService } from "./EpubAnnotationService";
 export { EpubBacklinkHighlightService } from "./EpubBacklinkHighlightService";
+export { getEpubBacklinkHighlightService } from "./epub-backlink-highlight-access";
+export {
+	scheduleEpubExcerptCacheWarmup,
+	warmEpubExcerptCachesForPaths,
+} from "./epub-excerpt-cache-warmup";
+export {
+	EpubAnnotationIndexService,
+	bootstrapEpubAnnotationIndex,
+	getEpubAnnotationIndexService,
+	scheduleEpubAnnotationIndexWarmup,
+	warmEpubAnnotationIndexForPaths,
+} from "./epub-annotation-index";
+export type {
+	EpubAnnotationIndexReadiness,
+	EpubAnnotationPrefetchInput,
+} from "./epub-annotation-index";
+export { getEpubHighlightViewSnapshotService } from "./epub-highlight-view-snapshot-access";
 export { EpubHighlightViewSnapshotService } from "./EpubHighlightViewSnapshotService";
 export type {
 	EpubDisplayHighlight,
@@ -112,6 +129,7 @@ export {
 	canUseEpubReadingReference,
 	canUseEpubSourceLocation,
 	canUseEpubStyledExcerpts,
+	ensureBookSourceLocationAccess,
 	ensureEpubFileAccess,
 	ensureEpubPremiumFeature,
 	requestEpubPremiumFeaturePreview,

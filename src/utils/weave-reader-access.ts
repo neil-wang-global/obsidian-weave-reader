@@ -18,7 +18,7 @@ export type WeaveSelectedTextAISplitHost = {
 };
 
 export function getWeaveMainPlugin(app: App): WeaveSelectedTextAISplitHost | null {
-	const plugin = app.plugins?.getPlugin?.(WEAVE_MAIN_PLUGIN_ID);
+	const plugin = (app as any)?.plugins?.getPlugin?.(WEAVE_MAIN_PLUGIN_ID);
 	if (!plugin || typeof plugin !== "object") {
 		return null;
 	}

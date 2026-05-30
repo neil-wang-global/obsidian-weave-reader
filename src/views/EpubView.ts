@@ -1,5 +1,6 @@
 import {
 	ItemView,
+	type KeymapEventHandler,
 	MarkdownView,
 	Menu,
 	Notice,
@@ -103,6 +104,7 @@ export class EpubView extends ItemView {
 	private bookmarkBtn: HTMLElement | null = null;
 	private readingPositionAutoSaveEnabled = false;
 	private toolbarHandlersReady = false;
+	private readerKeymapHandlers: KeymapEventHandler[] = [];
 	private actionHandlers: {
 		setAutoInsert?: (enabled: boolean) => void;
 		setScreenshotMode?: (active: boolean) => void;
@@ -178,37 +180,44 @@ export class EpubView extends ItemView {
 	}
 
 	private disposeReaderKeymapScope(): void {
-		if (!this.scope) {
+		const scope = this.scope;
+		if (!scope) {
+			this.readerKeymapHandlers = [];
 			return;
 		}
-		this.scope.destroy();
+		for (const handler of this.readerKeymapHandlers) {
+			scope.unregister(handler);
+		}
+		this.readerKeymapHandlers = [];
 		this.scope = null;
 	}
 
 	private registerReaderKeyboardShortcuts(): void {
 		this.disposeReaderKeymapScope();
-		this.scope = new Scope(this.app.scope);
-		this.scope.register([], "ArrowLeft", (evt) => {
-			if (!this.canHandleKeyboardPageNavigation()) {
-				return;
-			}
-			if (shouldIgnoreEpubReaderShortcut(evt)) {
-				return;
-			}
-			void this.actionHandlers.prevPage?.();
-			return false;
-		});
-
-		this.scope.register([], "ArrowRight", (evt) => {
-			if (!this.canHandleKeyboardPageNavigation()) {
-				return;
-			}
-			if (shouldIgnoreEpubReaderShortcut(evt)) {
-				return;
-			}
-			void this.actionHandlers.nextPage?.();
-			return false;
-		});
+		const scope = new Scope(this.app.scope);
+		this.scope = scope;
+		this.readerKeymapHandlers = [
+			scope.register([], "ArrowLeft", (evt) => {
+				if (!this.canHandleKeyboardPageNavigation()) {
+					return;
+				}
+				if (shouldIgnoreEpubReaderShortcut(evt)) {
+					return;
+				}
+				void this.actionHandlers.prevPage?.();
+				return false;
+			}),
+			scope.register([], "ArrowRight", (evt) => {
+				if (!this.canHandleKeyboardPageNavigation()) {
+					return;
+				}
+				if (shouldIgnoreEpubReaderShortcut(evt)) {
+					return;
+				}
+				void this.actionHandlers.nextPage?.();
+				return false;
+			}),
+		];
 	}
 
 	private canUseParagraphMode(): boolean {
@@ -330,7 +339,7 @@ export class EpubView extends ItemView {
 	}
 
 	private areHeaderActionsMounted(): boolean {
-		return Boolean(this.bookmarkBtn?.isConnected);
+		return Boolean(this.autoInsertBtn?.isConnected);
 	}
 
 	private clearHeaderActionRefs(): void {
@@ -362,51 +371,58 @@ export class EpubView extends ItemView {
 			});
 		}
 
-		this.saveAsImageBtn = this.addAction(
-			"image",
-			this.t("views.epubView.label.saveAsImageOn"),
-			() => {
+		const registerExcerptHeaderActions = () => {
+			this.autoInsertBtn = this.addAction("zap", this.t("views.epubView.label.autoModeToolbar"), () => {
 				if (!this.canUseExcerptNotes()) {
 					this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
 					return;
 				}
-				this.screenshotSaveAsImage = !this.screenshotSaveAsImage;
-				this.updateSaveAsImageBtn();
-				this.actionHandlers.setScreenshotSaveMode?.(this.screenshotSaveAsImage);
-			}
-		);
-		this.screenshotBtn = this.addAction(
-			"camera",
-			this.t("views.epubView.label.screenshotToolOff"),
-			() => {
-				if (!this.canUseExcerptNotes()) {
-					this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-					return;
+				this.autoInsertEnabled = !this.autoInsertEnabled;
+				this.updateAutoInsertBtn();
+				this.actionHandlers.setAutoInsert?.(this.autoInsertEnabled);
+			});
+			this.screenshotBtn = this.addAction(
+				"camera",
+				this.t("views.epubView.label.screenshotToolToolbar"),
+				() => {
+					if (!this.canUseExcerptNotes()) {
+						this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
+						return;
+					}
+					this.screenshotModeActive = !this.screenshotModeActive;
+					this.updateScreenshotBtn();
+					this.actionHandlers.setScreenshotMode?.(this.screenshotModeActive);
 				}
-				this.screenshotModeActive = !this.screenshotModeActive;
-				this.updateScreenshotBtn();
-				this.actionHandlers.setScreenshotMode?.(this.screenshotModeActive);
-			}
-		);
-		this.autoInsertBtn = this.addAction("zap", this.t("views.epubView.label.autoModeOff"), () => {
-			if (!this.canUseExcerptNotes()) {
-				this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-				return;
-			}
-			this.autoInsertEnabled = !this.autoInsertEnabled;
-			this.updateAutoInsertBtn();
-			this.actionHandlers.setAutoInsert?.(this.autoInsertEnabled);
-		});
-		this.bookmarkBtn = this.addAction("bookmark", this.t("views.epubView.menu.addBookmark"), () => {
-			void this.actionHandlers.addBookmark?.();
-		});
-		this.readingReferenceBtn = this.addAction(
-			"flag",
-			this.t("views.epubView.label.readingPosition"),
-			(evt) => {
-				this.openReadingPositionMenu(evt);
-			}
-		);
+			);
+			this.saveAsImageBtn = this.addAction(
+				"image",
+				this.t("views.epubView.label.screenshotSaveAsImageToolbar"),
+				() => {
+					if (!this.canUseExcerptNotes()) {
+						this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
+						return;
+					}
+					this.screenshotSaveAsImage = !this.screenshotSaveAsImage;
+					this.updateSaveAsImageBtn();
+					this.actionHandlers.setScreenshotSaveMode?.(this.screenshotSaveAsImage);
+				}
+			);
+		};
+
+		registerExcerptHeaderActions();
+
+		if (!Platform.isMobile) {
+			this.bookmarkBtn = this.addAction("bookmark", this.t("views.epubView.menu.addBookmark"), () => {
+				void this.actionHandlers.addBookmark?.();
+			});
+			this.readingReferenceBtn = this.addAction(
+				"flag",
+				this.t("views.epubView.label.readingPosition"),
+				(evt) => {
+					this.openReadingPositionMenu(evt);
+				}
+			);
+		}
 
 		if (!Platform.isMobile) {
 			this.flowBtn = this.addAction(
@@ -496,31 +512,22 @@ export class EpubView extends ItemView {
 		const readerSettings = this.actionHandlers.getReaderSettings?.();
 
 		if (readerSettings && this.actionHandlers.updateReaderSettings) {
-			this.appendReadingDisplayPaneMenu(menu, readerSettings);
+			this.appendReadingAndDisplayPaneMenu(menu, readerSettings);
 		}
+
+		this.appendBookmarksProgressPaneMenu(menu);
 
 		if (excerptSettings && this.actionHandlers.updateExcerptSettings) {
-			this.appendExcerptNotesPaneMenu(menu, excerptSettings);
+			this.appendExcerptToolsPaneMenu(menu, excerptSettings);
 		}
 
+		this.appendCanvasPaneMenu(menu);
+
 		if (this.filePath) {
-			menu.addSeparator();
 			this.appendExportPaneMenu(menu);
 		}
 
-		if (!Platform.isMobile) return;
-
-		menu.addSeparator();
-		menu.addItem((_item) => {
-			_item.setTitle(this.t("views.epubView.menu.toggleSidebar"));
-			_item.setIcon("list");
-			_item.onClick(() => {
-				void this.toggleGlobalSidebar();
-			});
-		});
-
-		menu.addSeparator();
-		this.addMobileToolsToMenu(menu);
+		this.appendHelpPaneMenu(menu);
 	}
 
 	private addPaneMenuGroup(
@@ -532,13 +539,62 @@ export class EpubView extends ItemView {
 		menu.addItem((item) => {
 			item.setTitle(this.t(titleKey));
 			item.setIcon(icon);
-			const subMenu = (item as { setSubmenu: () => Menu }).setSubmenu();
+			const subMenu = this.resolveMenuSubmenu(item, menu);
 			populate(subMenu);
 		});
 	}
 
-	private appendReadingDisplayPaneMenu(menu: Menu, readerSettings: EpubReaderSettings): void {
+	private resolveMenuSubmenu(item: unknown, fallbackMenu: Menu): Menu {
+		const candidate = item as { setSubmenu?: () => Menu };
+		if (typeof candidate.setSubmenu === "function") {
+			return candidate.setSubmenu();
+		}
+		return fallbackMenu;
+	}
+
+	private dismissPaneMenu(menu: Menu): void {
+		menu.hide();
+		if (typeof menu.close === "function") {
+			menu.close();
+		}
+	}
+
+	private appendReadingFlowModeItems(subMenu: Menu): void {
+		subMenu.addItem((item) => {
+			item.setTitle(this.t("views.epubView.menu.flowModeScrolled"));
+			item.setIcon("scroll-text");
+			item.setChecked(this.flowMode === "scrolled");
+			item.onClick(() => {
+				if (this.flowMode === "scrolled") {
+					return;
+				}
+				this.flowMode = "scrolled";
+				this.layoutMode = "paginated";
+				this.updateFlowBtn();
+				this.updateLayoutBtn();
+				this.actionHandlers.setFlowMode?.("scrolled");
+			});
+		});
+		subMenu.addItem((item) => {
+			item.setTitle(this.t("views.epubView.menu.flowModePaginated"));
+			item.setIcon("arrow-up-down");
+			item.setChecked(this.flowMode === "paginated");
+			item.onClick(() => {
+				if (this.flowMode === "paginated") {
+					return;
+				}
+				this.flowMode = "paginated";
+				this.updateFlowBtn();
+				this.updateLayoutBtn();
+				this.actionHandlers.setFlowMode?.("paginated");
+			});
+		});
+	}
+
+	private appendReadingAndDisplayPaneMenu(menu: Menu, readerSettings: EpubReaderSettings): void {
 		this.addPaneMenuGroup(menu, "views.epubView.menu.groupReadingDisplay", "book-open-text", (subMenu) => {
+			this.appendReadingFlowModeItems(subMenu);
+
 			subMenu.addItem((item) => {
 				item.setTitle(this.t("views.epubView.menu.scrolledSideNav"));
 				item.setIcon("panel-right");
@@ -586,7 +642,7 @@ export class EpubView extends ItemView {
 				subMenu.addItem((item) => {
 					item.setTitle(this.t("views.epubView.menu.footnoteClickAction"));
 					item.setIcon("mouse-pointer");
-					const footnoteMenu = (item as { setSubmenu: () => Menu }).setSubmenu();
+					const footnoteMenu = this.resolveMenuSubmenu(item, subMenu);
 
 					footnoteMenu.addItem((subItem) => {
 						subItem.setTitle(this.t("views.epubView.menu.footnotePreview"));
@@ -627,7 +683,7 @@ export class EpubView extends ItemView {
 				subMenu.addItem((item) => {
 					item.setTitle(this.t("views.epubView.menu.paragraphModeSurfaceStyle"));
 					item.setIcon("panel-top-open");
-					const surfaceMenu = (item as { setSubmenu: () => Menu }).setSubmenu();
+					const surfaceMenu = this.resolveMenuSubmenu(item, subMenu);
 
 					surfaceMenu.addItem((subItem) => {
 						subItem.setTitle(this.t("views.epubView.menu.paragraphModeSurfaceStyleSpotlight"));
@@ -663,7 +719,7 @@ export class EpubView extends ItemView {
 				subMenu.addItem((item) => {
 					item.setTitle(this.t("views.epubView.menu.paragraphModeTransitionStyle"));
 					item.setIcon("refresh-cw");
-					const transitionMenu = (item as { setSubmenu: () => Menu }).setSubmenu();
+					const transitionMenu = this.resolveMenuSubmenu(item, subMenu);
 					const transitionOptions = [
 						["steady", "views.epubView.menu.paragraphModeTransitionStyleSteady"],
 						["fade", "views.epubView.menu.paragraphModeTransitionStyleFade"],
@@ -689,7 +745,7 @@ export class EpubView extends ItemView {
 				subMenu.addItem((item) => {
 					item.setTitle(this.t("views.epubView.menu.topSticker"));
 					item.setIcon("bookmark");
-					const stickerMenu = (item as { setSubmenu: () => Menu }).setSubmenu();
+					const stickerMenu = this.resolveMenuSubmenu(item, subMenu);
 					const topStickerVisible = readerSettings.showTopSticker !== false;
 
 					stickerMenu.addItem((subItem) => {
@@ -778,43 +834,147 @@ export class EpubView extends ItemView {
 		});
 	}
 
-	private appendExcerptNotesPaneMenu(menu: Menu, excerptSettings: EpubExcerptSettings): void {
-		this.addPaneMenuGroup(menu, "views.epubView.menu.groupExcerptNotes", "highlighter", (subMenu) => {
-			if (this.canUseExcerptNotes()) {
-				subMenu.addItem((item) => {
-					item.setTitle(this.t("views.epubView.menu.excerptTimestamp"));
-					item.setIcon("clock");
-					item.setChecked(excerptSettings.addCreationTime);
-					item.onClick(() => {
-						void this.actionHandlers.updateExcerptSettings?.({
-							addCreationTime: !excerptSettings.addCreationTime,
-						});
+	private appendBookmarksProgressPaneMenu(menu: Menu): void {
+		this.addPaneMenuGroup(menu, "views.epubView.menu.groupBookmarksProgress", "bookmark", (bookmarksMenu) => {
+			bookmarksMenu.addItem((subItem) => {
+				subItem.setTitle(this.t("views.epubView.menu.addBookmark"));
+				subItem.setIcon("bookmark");
+				subItem.onClick(() => {
+					void this.actionHandlers.addBookmark?.();
+				});
+			});
+
+			if (this.actionHandlers.saveLastOpenBookmark) {
+				bookmarksMenu.addItem((subItem) => {
+					subItem.setTitle(this.t("views.epubView.menu.saveLastReadingPoint"));
+					subItem.setIcon("bookmark-check");
+					subItem.onClick(() => {
+						void this.actionHandlers.saveLastOpenBookmark?.();
 					});
 				});
-			} else if (this.isPremiumFeaturePreviewEnabled()) {
-				subMenu.addItem((item) => {
-					item.setTitle(
-						this.getFeatureActionLabel(
-							this.t("views.epubView.menu.excerptTimestamp"),
+			}
+
+			bookmarksMenu.addItem((subItem) => {
+				subItem.setTitle(this.t("views.epubView.label.readingPosition"));
+				subItem.setIcon("flag");
+				subItem.setChecked(this.hasReadingReferencePoint);
+				subItem.onClick((evt) => {
+					this.openReadingPositionMenu(evt);
+				});
+			});
+
+			if (this.hasWeaveIncrementalReadingHost()) {
+				bookmarksMenu.addItem((subItem) => {
+					subItem.setTitle(this.t("views.epubView.menu.markResumePoint"));
+					subItem.setIcon("bookmark-plus");
+					subItem.onClick((evt) => {
+						void this.actionHandlers.markIRResumePoint?.(evt as MouseEvent);
+					});
+				});
+			}
+		});
+	}
+
+	private populateExcerptToolToggleItems(excerptToolsMenu: Menu): void {
+		excerptToolsMenu.addItem((subItem) => {
+			subItem.setTitle(
+				this.canUseExcerptNotes()
+					? this.t("views.epubView.menu.autoInsertMode")
+					: this.getFeatureActionLabel(
+							this.t("views.epubView.menu.autoInsertMode"),
 							PREMIUM_FEATURES.EPUB_EXCERPT_NOTES
-						)
-					);
-					item.setIcon("clock");
-					item.onClick(() => {
-						this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
+					  )
+			);
+			subItem.setIcon("zap");
+			subItem.setChecked(this.canUseExcerptNotes() ? this.autoInsertEnabled : false);
+			subItem.onClick(() => {
+				if (!this.canUseExcerptNotes()) {
+					this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
+					return;
+				}
+				this.autoInsertEnabled = !this.autoInsertEnabled;
+				this.updateAutoInsertBtn();
+				this.actionHandlers.setAutoInsert?.(this.autoInsertEnabled);
+			});
+		});
+
+		excerptToolsMenu.addItem((subItem) => {
+			subItem.setTitle(
+				this.canUseExcerptNotes()
+					? this.t("views.epubView.menu.screenshotTool")
+					: this.getFeatureActionLabel(
+							this.t("views.epubView.menu.screenshotTool"),
+							PREMIUM_FEATURES.EPUB_EXCERPT_NOTES
+					  )
+			);
+			subItem.setIcon("camera");
+			subItem.setChecked(this.canUseExcerptNotes() ? this.screenshotModeActive : false);
+			subItem.onClick(() => {
+				if (!this.canUseExcerptNotes()) {
+					this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
+					return;
+				}
+				this.screenshotModeActive = !this.screenshotModeActive;
+				this.updateScreenshotBtn();
+				this.actionHandlers.setScreenshotMode?.(this.screenshotModeActive);
+			});
+		});
+
+		excerptToolsMenu.addItem((subItem) => {
+			subItem.setTitle(
+				this.canUseExcerptNotes()
+					? this.t("views.epubView.menu.screenshotSaveAsImage")
+					: this.getFeatureActionLabel(
+							this.t("views.epubView.menu.screenshotSaveAsImage"),
+							PREMIUM_FEATURES.EPUB_EXCERPT_NOTES
+					  )
+			);
+			subItem.setIcon(this.screenshotSaveAsImage ? "image" : "code");
+			subItem.setChecked(this.canUseExcerptNotes() ? this.screenshotSaveAsImage : false);
+			subItem.onClick(() => {
+				if (!this.canUseExcerptNotes()) {
+					this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
+					return;
+				}
+				this.screenshotSaveAsImage = !this.screenshotSaveAsImage;
+				this.updateSaveAsImageBtn();
+				this.actionHandlers.setScreenshotSaveMode?.(this.screenshotSaveAsImage);
+			});
+		});
+	}
+
+	private populateExcerptNotesSettings(subMenu: Menu, excerptSettings: EpubExcerptSettings): void {
+		if (this.canUseExcerptNotes()) {
+			subMenu.addItem((item) => {
+				item.setTitle(this.t("views.epubView.menu.excerptTimestamp"));
+				item.setIcon("clock");
+				item.setChecked(excerptSettings.addCreationTime);
+				item.onClick(() => {
+					void this.actionHandlers.updateExcerptSettings?.({
+						addCreationTime: !excerptSettings.addCreationTime,
 					});
 				});
-			}
+			});
+		} else if (this.isPremiumFeaturePreviewEnabled()) {
+			subMenu.addItem((item) => {
+				item.setTitle(
+					this.getFeatureActionLabel(
+						this.t("views.epubView.menu.excerptTimestamp"),
+						PREMIUM_FEATURES.EPUB_EXCERPT_NOTES
+					)
+				);
+				item.setIcon("clock");
+				item.onClick(() => {
+					this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
+				});
+			});
+		}
 
-			if (!this.filePath) {
-				return;
-			}
-
-			if (this.canUseStyledExcerpts()) {
+		if (this.canUseStyledExcerpts()) {
 				subMenu.addItem((item) => {
 					item.setTitle(this.t("views.epubView.menu.concealedText"));
 					item.setIcon("eye");
-					const concealedMenu = (item as { setSubmenu: () => Menu }).setSubmenu();
+					const concealedMenu = this.resolveMenuSubmenu(item, subMenu);
 
 					concealedMenu.addItem((subItem) => {
 						subItem.setTitle(this.t("views.epubView.menu.concealStrikethroughText"));
@@ -854,52 +1014,75 @@ export class EpubView extends ItemView {
 				});
 			}
 
-			if (this.canUseExcerptNotes()) {
-				subMenu.addItem((item) => {
-					item.setTitle(this.t("views.epubView.menu.bookNotesTemplate"));
-					item.setIcon("file-text");
-					const templateMenu = (item as { setSubmenu: () => Menu }).setSubmenu();
+			// Book-notes export template selection is configured inside the export popover.
+	}
 
-					templateMenu.addItem((subItem) => {
-						subItem.setTitle(this.t("views.epubView.menu.template1"));
-						subItem.setChecked(excerptSettings.bookNotesExportTemplate === "template1");
-						subItem.onClick(() => {
-							if (excerptSettings.bookNotesExportTemplate === "template1") {
-								return;
-							}
-							void this.actionHandlers.updateExcerptSettings?.({
-								bookNotesExportTemplate: "template1",
-							});
-						});
-					});
+	private appendExcerptToolsPaneMenu(menu: Menu, excerptSettings: EpubExcerptSettings): void {
+		if (!this.shouldShowToolbarFeature(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES)) {
+			return;
+		}
 
-					templateMenu.addItem((subItem) => {
-						subItem.setTitle(this.t("views.epubView.menu.template2"));
-						subItem.setChecked(excerptSettings.bookNotesExportTemplate === "template2");
-						subItem.onClick(() => {
-							if (excerptSettings.bookNotesExportTemplate === "template2") {
-								return;
-							}
-							void this.actionHandlers.updateExcerptSettings?.({
-								bookNotesExportTemplate: "template2",
-							});
-						});
-					});
-				});
-			} else if (this.isPremiumFeaturePreviewEnabled()) {
-				subMenu.addItem((item) => {
-					item.setTitle(
-						this.getFeatureActionLabel(
-							this.t("views.epubView.menu.bookNotesTemplate"),
-							PREMIUM_FEATURES.EPUB_EXCERPT_NOTES
-						)
-					);
-					item.setIcon("file-text");
-					item.onClick(() => {
-						this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-					});
-				});
+		this.addPaneMenuGroup(menu, "views.epubView.menu.groupExcerptTools", "highlighter", (excerptToolsMenu) => {
+			this.populateExcerptToolToggleItems(excerptToolsMenu);
+
+			if (this.filePath) {
+				excerptToolsMenu.addSeparator();
+				this.populateExcerptNotesSettings(excerptToolsMenu, excerptSettings);
 			}
+		});
+	}
+
+	private appendCanvasPaneMenu(menu: Menu): void {
+		if (!this.shouldShowToolbarFeature(PREMIUM_FEATURES.EPUB_CANVAS_EXCERPTS)) {
+			return;
+		}
+
+		if (this.canUseCanvasExcerpts()) {
+			menu.addItem((item) => {
+				item.setTitle(
+					this.canvasModeActive
+						? this.t("views.epubView.label.canvasOn")
+						: this.t("views.epubView.label.canvasOff")
+				);
+				item.setIcon("layout-dashboard");
+				item.setChecked(this.canvasModeActive);
+				item.onClick((evt) => {
+					this.dismissPaneMenu(menu);
+					window.setTimeout(() => {
+						this.showCanvasMenu(evt);
+					}, 0);
+				});
+			});
+			return;
+		}
+
+		if (this.isPremiumFeaturePreviewEnabled()) {
+			menu.addItem((item) => {
+				item.setTitle(
+					this.getFeatureActionLabel(
+						this.t("views.epubView.label.canvasOff"),
+						PREMIUM_FEATURES.EPUB_CANVAS_EXCERPTS
+					)
+				);
+				item.setIcon("layout-dashboard");
+				item.onClick(() => {
+					this.dismissPaneMenu(menu);
+					this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_CANVAS_EXCERPTS);
+				});
+			});
+		}
+	}
+
+	private appendHelpPaneMenu(menu: Menu): void {
+		if (!this.actionHandlers.toggleTutorial) {
+			return;
+		}
+		menu.addItem((item) => {
+			item.setTitle(this.t("views.epubView.menu.tutorial"));
+			item.setIcon("circle-help");
+			item.onClick(() => {
+				this.actionHandlers.toggleTutorial?.();
+			});
 		});
 	}
 
@@ -917,7 +1100,10 @@ export class EpubView extends ItemView {
 					item.setTitle(this.t("views.epubView.menu.exportBookHighlights"));
 					item.setIcon("notebook-pen");
 					item.onClick((evt) => {
-						void this.actionHandlers.exportBookHighlightsToMarkdown?.(evt as MouseEvent);
+						this.dismissPaneMenu(menu);
+						window.setTimeout(() => {
+							void this.actionHandlers.exportBookHighlightsToMarkdown?.(evt as MouseEvent);
+						}, 0);
 					});
 				});
 			}
@@ -1587,6 +1773,7 @@ export class EpubView extends ItemView {
 			getBookSessionManager(this.app).releaseIfNoOpenLeaves(this.app, this.filePath);
 		}
 		this.disposeReaderKeymapScope();
+		await super.onClose();
 	}
 
 	private setupLinkedTabTracking(): void {
@@ -1837,12 +2024,22 @@ export class EpubView extends ItemView {
 
 	private updateSaveAsImageBtn(): void {
 		const icon = this.screenshotSaveAsImage ? "image" : "code";
-		const baseLabel = this.screenshotSaveAsImage
-			? this.t("views.epubView.label.saveAsImageOn")
-			: this.t("views.epubView.label.saveAsImageOff");
-		const label = this.canUseExcerptNotes()
-			? baseLabel
-			: this.getFeatureActionLabel(baseLabel, PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
+		const label = Platform.isMobile
+			? this.t("views.epubView.label.screenshotSaveAsImageToolbar")
+			: this.canUseExcerptNotes()
+				? this.t(
+						this.screenshotSaveAsImage
+							? "views.epubView.label.saveAsImageOn"
+							: "views.epubView.label.saveAsImageOff"
+				  )
+				: this.getFeatureActionLabel(
+						this.t(
+							this.screenshotSaveAsImage
+								? "views.epubView.label.saveAsImageOn"
+								: "views.epubView.label.saveAsImageOff"
+						),
+						PREMIUM_FEATURES.EPUB_EXCERPT_NOTES
+				  );
 		const visible = this.shouldShowToolbarFeature(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
 		this.applyActionButtonState(this.saveAsImageBtn, {
 			icon,
@@ -1859,12 +2056,22 @@ export class EpubView extends ItemView {
 	}
 
 	private updateScreenshotBtn(): void {
-		const baseLabel = this.screenshotModeActive
-			? this.t("views.epubView.label.screenshotToolOn")
-			: this.t("views.epubView.label.screenshotToolOff");
-		const label = this.canUseExcerptNotes()
-			? baseLabel
-			: this.getFeatureActionLabel(baseLabel, PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
+		const label = Platform.isMobile
+			? this.t("views.epubView.label.screenshotToolToolbar")
+			: this.canUseExcerptNotes()
+				? this.t(
+						this.screenshotModeActive
+							? "views.epubView.label.screenshotToolOn"
+							: "views.epubView.label.screenshotToolOff"
+				  )
+				: this.getFeatureActionLabel(
+						this.t(
+							this.screenshotModeActive
+								? "views.epubView.label.screenshotToolOn"
+								: "views.epubView.label.screenshotToolOff"
+						),
+						PREMIUM_FEATURES.EPUB_EXCERPT_NOTES
+				  );
 		const visible = this.shouldShowToolbarFeature(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
 		this.applyActionButtonState(this.screenshotBtn, {
 			label,
@@ -1879,12 +2086,22 @@ export class EpubView extends ItemView {
 	}
 
 	private updateAutoInsertBtn(): void {
-		const baseLabel = this.autoInsertEnabled
-			? this.t("views.epubView.label.autoModeOn")
-			: this.t("views.epubView.label.autoModeOff");
-		const label = this.canUseExcerptNotes()
-			? baseLabel
-			: this.getFeatureActionLabel(baseLabel, PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
+		const label = Platform.isMobile
+			? this.t("views.epubView.label.autoModeToolbar")
+			: this.canUseExcerptNotes()
+				? this.t(
+						this.autoInsertEnabled
+							? "views.epubView.label.autoModeOn"
+							: "views.epubView.label.autoModeOff"
+				  )
+				: this.getFeatureActionLabel(
+						this.t(
+							this.autoInsertEnabled
+								? "views.epubView.label.autoModeOn"
+								: "views.epubView.label.autoModeOff"
+						),
+						PREMIUM_FEATURES.EPUB_EXCERPT_NOTES
+				  );
 		const visible = this.shouldShowToolbarFeature(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
 		this.applyActionButtonState(this.autoInsertBtn, {
 			label,
@@ -1905,12 +2122,6 @@ export class EpubView extends ItemView {
 	}
 
 	private getReadingPositionActionLabel(): string {
-		if (!this.canUseReadingProgress() && !this.canUseReadingReference()) {
-			return this.getFeatureActionLabel(
-				this.getReadingPositionAutoSaveStateLabel(),
-				PREMIUM_FEATURES.EPUB_READING_PROGRESS
-			);
-		}
 		if (!this.canUseReadingReference()) {
 			return this.getReadingPositionAutoSaveStateLabel();
 		}
@@ -1950,7 +2161,6 @@ export class EpubView extends ItemView {
 		const visible =
 			this.canUseReadingProgress()
 			|| this.canUseReadingReference()
-			|| this.shouldShowToolbarFeature(PREMIUM_FEATURES.EPUB_READING_PROGRESS)
 			|| this.shouldShowToolbarFeature(PREMIUM_FEATURES.EPUB_READING_REFERENCE);
 		const active = this.canUseReadingReference() ? this.hasReadingReferencePoint : false;
 		this.applyActionButtonState(this.readingReferenceBtn, {
@@ -2010,228 +2220,6 @@ export class EpubView extends ItemView {
 		});
 		this.applyActionButtonState(this.inlineCanvasDirBtn, {
 			visible: visible && this.canvasModeActive,
-		});
-	}
-
-	private addMobileToolsToMenu(menu: Menu): void {
-		this.addPaneMenuGroup(menu, "views.epubView.menu.groupReadingTools", "book-open", (toolsMenu) => {
-			toolsMenu.addItem((item) => {
-				item.setTitle(
-					this.t("views.epubView.label.readingMode", {
-						mode: this.t("views.epubView.label.readingModeScrolled"),
-					})
-				);
-				item.setIcon("scroll-text");
-				item.setChecked(this.flowMode === "scrolled");
-				item.onClick(() => {
-					if (this.flowMode === "scrolled") return;
-					this.flowMode = "scrolled";
-					this.layoutMode = "paginated";
-					this.updateFlowBtn();
-					this.updateLayoutBtn();
-					this.actionHandlers.setFlowMode?.("scrolled");
-				});
-			});
-			toolsMenu.addItem((item) => {
-				item.setTitle(
-					this.t("views.epubView.label.readingMode", {
-						mode: this.t("views.epubView.label.readingModePaginated"),
-					})
-				);
-				item.setIcon("arrow-up-down");
-				item.setChecked(this.flowMode === "paginated");
-				item.onClick(() => {
-					if (this.flowMode === "paginated") return;
-					this.flowMode = "paginated";
-					this.updateFlowBtn();
-					this.updateLayoutBtn();
-					this.actionHandlers.setFlowMode?.("paginated");
-				});
-			});
-
-			this.appendMobileBookmarksProgressMenu(toolsMenu);
-			this.appendMobileExcerptToolsMenu(toolsMenu);
-
-			if (this.canUseCanvasExcerpts()) {
-				this.appendMobileCanvasMenu(toolsMenu);
-			}
-
-			if (this.hasWeaveIncrementalReadingHost()) {
-				toolsMenu.addItem((item) => {
-					item.setTitle(this.t("views.epubView.menu.markResumePoint"));
-					item.setIcon("bookmark-plus");
-					item.onClick((evt) => {
-						void this.actionHandlers.markIRResumePoint?.(evt as MouseEvent);
-					});
-				});
-			}
-		});
-
-		this.addPaneMenuGroup(menu, "views.epubView.menu.groupHelp", "circle-help", (helpMenu) => {
-			helpMenu.addItem((item) => {
-				item.setTitle(this.t("views.epubView.menu.tutorial"));
-				item.setIcon("circle-help");
-				item.onClick(() => {
-					this.actionHandlers.toggleTutorial?.();
-				});
-			});
-		});
-	}
-
-	private appendMobileBookmarksProgressMenu(menu: Menu): void {
-		menu.addItem((item) => {
-			item.setTitle(this.t("views.epubView.menu.groupBookmarksProgress"));
-			item.setIcon("bookmark");
-			const bookmarksMenu = (item as { setSubmenu: () => Menu }).setSubmenu();
-
-			bookmarksMenu.addItem((subItem) => {
-				subItem.setTitle(this.t("views.epubView.menu.addBookmark"));
-				subItem.setIcon("bookmark");
-				subItem.onClick(() => {
-					void this.actionHandlers.addBookmark?.();
-				});
-			});
-
-			if (this.actionHandlers.saveLastOpenBookmark) {
-				bookmarksMenu.addItem((subItem) => {
-					subItem.setTitle(this.t("views.epubView.menu.saveLastReadingPoint"));
-					subItem.setIcon("bookmark-check");
-					subItem.onClick(() => {
-						void this.actionHandlers.saveLastOpenBookmark?.();
-					});
-				});
-			}
-
-			bookmarksMenu.addItem((subItem) => {
-				subItem.setTitle(this.t("views.epubView.label.readingPosition"));
-				subItem.setIcon("flag");
-				subItem.setChecked(this.hasReadingReferencePoint);
-				subItem.onClick((evt) => {
-					this.openReadingPositionMenu(evt);
-				});
-			});
-		});
-	}
-
-	private appendMobileExcerptToolsMenu(menu: Menu): void {
-		if (!this.shouldShowToolbarFeature(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES)) {
-			return;
-		}
-
-		menu.addItem((item) => {
-			item.setTitle(this.t("views.epubView.menu.groupExcerptTools"));
-			item.setIcon("highlighter");
-			const excerptToolsMenu = (item as { setSubmenu: () => Menu }).setSubmenu();
-
-			excerptToolsMenu.addItem((subItem) => {
-				const baseLabel = this.screenshotSaveAsImage
-					? this.t("views.epubView.label.saveAsImageOn")
-					: this.t("views.epubView.label.saveAsImageOff");
-				subItem.setTitle(
-					this.canUseExcerptNotes()
-						? baseLabel
-						: this.getFeatureActionLabel(baseLabel, PREMIUM_FEATURES.EPUB_EXCERPT_NOTES)
-				);
-				subItem.setIcon(this.screenshotSaveAsImage ? "image" : "code");
-				subItem.setChecked(this.canUseExcerptNotes() ? this.screenshotSaveAsImage : false);
-				subItem.onClick(() => {
-					if (!this.canUseExcerptNotes()) {
-						this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-						return;
-					}
-					this.screenshotSaveAsImage = !this.screenshotSaveAsImage;
-					this.updateSaveAsImageBtn();
-					this.actionHandlers.setScreenshotSaveMode?.(this.screenshotSaveAsImage);
-				});
-			});
-
-			excerptToolsMenu.addItem((subItem) => {
-				const baseLabel = this.screenshotModeActive
-					? this.t("views.epubView.label.screenshotToolOn")
-					: this.t("views.epubView.label.screenshotToolOff");
-				subItem.setTitle(
-					this.canUseExcerptNotes()
-						? baseLabel
-						: this.getFeatureActionLabel(baseLabel, PREMIUM_FEATURES.EPUB_EXCERPT_NOTES)
-				);
-				subItem.setIcon("camera");
-				subItem.setChecked(this.canUseExcerptNotes() ? this.screenshotModeActive : false);
-				subItem.onClick(() => {
-					if (!this.canUseExcerptNotes()) {
-						this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-						return;
-					}
-					this.screenshotModeActive = !this.screenshotModeActive;
-					this.updateScreenshotBtn();
-					this.actionHandlers.setScreenshotMode?.(this.screenshotModeActive);
-				});
-			});
-
-			excerptToolsMenu.addItem((subItem) => {
-				const baseLabel = this.autoInsertEnabled
-					? this.t("views.epubView.label.autoModeOn")
-					: this.t("views.epubView.label.autoModeOff");
-				subItem.setTitle(
-					this.canUseExcerptNotes()
-						? baseLabel
-						: this.getFeatureActionLabel(baseLabel, PREMIUM_FEATURES.EPUB_EXCERPT_NOTES)
-				);
-				subItem.setIcon("zap");
-				subItem.setChecked(this.canUseExcerptNotes() ? this.autoInsertEnabled : false);
-				subItem.onClick(() => {
-					if (!this.canUseExcerptNotes()) {
-						this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
-						return;
-					}
-					this.autoInsertEnabled = !this.autoInsertEnabled;
-					this.updateAutoInsertBtn();
-					this.actionHandlers.setAutoInsert?.(this.autoInsertEnabled);
-				});
-			});
-		});
-	}
-
-	private appendMobileCanvasMenu(menu: Menu): void {
-		menu.addItem((item) => {
-			item.setTitle(this.t("views.epubView.menu.groupCanvas"));
-			item.setIcon("layout-dashboard");
-			const canvasMenu = (item as { setSubmenu: () => Menu }).setSubmenu();
-
-			canvasMenu.addItem((subItem) => {
-				subItem.setTitle(
-					this.canvasModeActive
-						? this.t("views.epubView.label.canvasOn")
-						: this.t("views.epubView.label.canvasOff")
-				);
-				subItem.setChecked(this.canvasModeActive);
-				subItem.onClick((e) => {
-					this.showCanvasMenu(e);
-				});
-			});
-
-			if (this.canvasModeActive) {
-				const dirs: { dir: CanvasLayoutDirection; icon: string }[] = [
-					{ dir: "down", icon: "arrow-down" },
-					{ dir: "right", icon: "arrow-right" },
-					{ dir: "up", icon: "arrow-up" },
-					{ dir: "left", icon: "arrow-left" },
-				];
-
-				for (const { dir, icon } of dirs) {
-					canvasMenu.addItem((subItem) => {
-						subItem.setTitle(this.getCanvasDirectionLabel(dir));
-						subItem.setIcon(icon);
-						subItem.setChecked(this.canvasDirection === dir);
-						subItem.onClick(() => {
-							const canvasService = this.actionHandlers.getCanvasService?.();
-							if (!canvasService) return;
-							this.canvasDirection = dir;
-							canvasService.setLayoutDirection(dir);
-							this.updateDirectionBtn();
-						});
-					});
-				}
-			}
 		});
 	}
 

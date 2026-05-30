@@ -8,12 +8,15 @@ import {
 } from "../../utils/wdeck-card-persistence";
 import { getEpubRuntime } from "./epub-runtime";
 import type { EpubBacklinkHighlightService } from "./EpubBacklinkHighlightService";
+import { EpubLinkService } from "./EpubLinkService";
 import { resolveEpubHighlightPersistenceSourcePath } from "./epub-highlight-source-path";
 
-export type EpubSavedCardSnapshot = Pick<
-	Card,
-	"uuid" | "content" | "sourceFile" | "sourceKind" | "sourceSubunitKey" | "deckId" | "customFields"
-> & {
+export type EpubSavedCardSnapshot = Pick<Card, "uuid" | "content"> & {
+	deckId?: string;
+	sourceFile?: string;
+	sourceKind?: string;
+	sourceSubunitKey?: string;
+	customFields?: Record<string, unknown>;
 	/** Vault path where excerpt content is stored; never the semantic EPUB path from `we_source`. */
 	persistenceSourcePath?: string;
 };
@@ -52,6 +55,7 @@ export interface EpubHighlightSyncRequestDetail {
 	epubFilePath?: string;
 	card?: EpubSavedCardSnapshot;
 	delayMs?: number;
+	reloadOnly?: boolean;
 }
 
 export interface EpubCardHighlightSyncBridgeOptions {
@@ -68,13 +72,15 @@ export function cardContentMayContainEpubLocator(content: string): boolean {
 	if (!normalized) {
 		return false;
 	}
-	return (
+	if (
 		normalized.includes("[!EPUB") ||
 		normalized.includes("weave-cfi=") ||
 		normalized.includes("weave-loc=") ||
-		normalized.includes("tuanki-cfi") ||
-		/we_source:\s*[\s\S]*\.epub/i.test(normalized)
-	);
+		normalized.includes("tuanki-cfi")
+	) {
+		return true;
+	}
+	return Boolean(EpubLinkService.extractFirstEpubLinkMarkup(normalized));
 }
 
 export function dispatchEpubHighlightSyncRequested(

@@ -2,13 +2,7 @@
   import { Setting } from "obsidian";
   import { onMount } from "svelte";
   import TabNavigation from "../ui/TabNavigation.svelte";
-  import {
-    DEFAULT_EPUB_EXCERPT_SETTINGS,
-    DEFAULT_EPUB_BOOKMARK_FOLDER,
-    EPUB_RUNTIME,
-    getEpubStorageService,
-    normalizeEpubBookmarkFolderPath,
-  } from "../../services/epub";
+  import { EPUB_RUNTIME, normalizeEpubBookmarkFolderPath } from "../../services/epub";
   import {
     DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_ENABLED,
     DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
@@ -22,13 +16,9 @@
   import { showNotification } from "../../utils/notifications";
   import { CURRENT_PLUGIN_DISPLAY_VERSION, CURRENT_PLUGIN_NAME } from "../../config/plugin-runtime";
   import { PremiumFeatureGuard, PREMIUM_FEATURES } from "../../services/premium/PremiumFeatureGuard";
-  import type { EpubExcerptSettings } from "../../services/epub";
   import { tr } from "../../utils/i18n";
-  import {
-    getBookshelfDisplayModeOptions,
-    getBookshelfDisplayModeOption,
-    normalizeBookshelfDisplayMode,
-  } from "../../services/epub/bookshelf-display-mode";
+  import { getEpubBacklinkHighlightService } from "../../services/epub/epub-backlink-highlight-access";
+  import { scheduleEpubExcerptCacheWarmup } from "../../services/epub/epub-excerpt-cache-warmup";
 
   interface Props {
     plugin: any;
@@ -43,15 +33,8 @@
   let stateVersion = $state(0);
   let premiumPreviewSettingsHost = $state<HTMLDivElement | null>(null);
   let readingSettingsHost = $state<HTMLDivElement | null>(null);
-  let featureSettingsHost = $state<HTMLDivElement | null>(null);
   let diagnosticsSettingsHost = $state<HTMLDivElement | null>(null);
   const premiumGuard = PremiumFeatureGuard.getInstance();
-  const BOOKSHELF_DISPLAY_SETTINGS_CHANGED_EVENT = EPUB_RUNTIME.events.bookshelfDisplaySettingsChanged;
-  const EXCERPT_SETTINGS_CHANGED_EVENT = EPUB_RUNTIME.events.excerptSettingsChanged;
-
-	function getStorageService() {
-		return getEpubStorageService(plugin.app);
-	}
 
   let tabs = $derived.by<Array<{ id: EpubSettingsTabId; label: string; icon: string }>>(() => [
     { id: "basic", label: t("epub.settings.tabs.basic"), icon: "" },
@@ -99,9 +82,7 @@
 
   let bookmarkFolderValue = $derived.by(() => {
     stateVersion;
-    return (
-      normalizeEpubBookmarkFolderPath(plugin.settings?.bookmarkFolder) || DEFAULT_EPUB_BOOKMARK_FOLDER
-    );
+    return normalizeEpubBookmarkFolderPath(plugin.settings?.bookmarkFolder);
   });
 
   let debugModeEnabled = $derived.by(() => {
@@ -112,11 +93,6 @@
   let sourceNavigationOpenInNewTab = $derived.by(() => {
     stateVersion;
     return plugin.settings?.sourceNavigationOpenInNewTab !== false;
-  });
-
-  let bookshelfDisplayMode = $derived.by(() => {
-    stateVersion;
-    return normalizeBookshelfDisplayMode(plugin.settings?.bookshelfDisplayMode);
   });
 
   let continuousReadingPositionAutoSaveEnabled = $derived.by(() => {
@@ -138,66 +114,13 @@
     return plugin.settings?.showPremiumFeaturesPreview === true;
   });
 
-  let excerptSettings = $state<EpubExcerptSettings>({ ...DEFAULT_EPUB_EXCERPT_SETTINGS });
-
-  let bookNotesExportTemplate = $derived.by(() => {
-    return excerptSettings.bookNotesExportTemplate ?? DEFAULT_EPUB_EXCERPT_SETTINGS.bookNotesExportTemplate;
-  });
-
   let bookmarkFolderInput = $state("");
   let continuousReadingPositionAutoSavePagesInput = $state("");
-  let bookmarkFolderCommitTimer: number | null = null;
-  let autoSavePagesCommitTimer: number | null = null;
 
   async function save(): Promise<void> {
     await plugin.saveSettings();
     stateVersion += 1;
   }
-
-  function clearBookmarkFolderCommitTimer(): void {
-    if (bookmarkFolderCommitTimer == null || typeof window === "undefined") {
-      return;
-    }
-    window.clearTimeout(bookmarkFolderCommitTimer);
-    bookmarkFolderCommitTimer = null;
-  }
-
-  function clearAutoSavePagesCommitTimer(): void {
-    if (autoSavePagesCommitTimer == null || typeof window === "undefined") {
-      return;
-    }
-    window.clearTimeout(autoSavePagesCommitTimer);
-    autoSavePagesCommitTimer = null;
-  }
-
-  function scheduleBookmarkFolderCommit(commit: () => void): void {
-    clearBookmarkFolderCommitTimer();
-    if (typeof window === "undefined") {
-      commit();
-      return;
-    }
-    bookmarkFolderCommitTimer = window.setTimeout(() => {
-      bookmarkFolderCommitTimer = null;
-      commit();
-    }, 320);
-  }
-
-  function scheduleAutoSavePagesCommit(commit: () => void): void {
-    clearAutoSavePagesCommitTimer();
-    if (typeof window === "undefined") {
-      commit();
-      return;
-    }
-    autoSavePagesCommitTimer = window.setTimeout(() => {
-      autoSavePagesCommitTimer = null;
-      commit();
-    }, 320);
-  }
-
-	async function syncAdvancedSettings(): Promise<void> {
-		const storageService = getStorageService();
-		excerptSettings = await storageService.loadExcerptSettings();
-	}
 
   $effect(() => {
     stateVersion;
@@ -206,8 +129,7 @@
   });
 
   async function updateBookmarkFolder(folderPath: string): Promise<void> {
-    const normalizedFolderPath =
-      normalizeEpubBookmarkFolderPath(folderPath) || DEFAULT_EPUB_BOOKMARK_FOLDER;
+    const normalizedFolderPath = normalizeEpubBookmarkFolderPath(folderPath);
 
     if (normalizedFolderPath === bookmarkFolderValue) {
       bookmarkFolderInput = bookmarkFolderValue;
@@ -248,24 +170,6 @@
     showNotification(enabled ? t("epub.settings.notifications.debugEnabled") : t("epub.settings.notifications.debugDisabled"), "success");
   }
 
-  async function updateBookshelfDisplayMode(mode: string): Promise<void> {
-    const normalizedMode = normalizeBookshelfDisplayMode(mode);
-    if (bookshelfDisplayMode === normalizedMode) {
-      return;
-    }
-
-    plugin.settings.bookshelfDisplayMode = normalizedMode;
-    plugin.settings.bookshelfAutoViewByLocationEnabled = normalizedMode === "adaptive";
-    await save();
-    window.dispatchEvent(new CustomEvent(BOOKSHELF_DISPLAY_SETTINGS_CHANGED_EVENT, {
-      detail: {
-        enabled: normalizedMode === "adaptive",
-        mode: normalizedMode,
-      },
-    }));
-    showNotification(t("epub.settings.notifications.bookshelfDisplayModeUpdated", { mode: getBookshelfDisplayModeOption(normalizedMode).label }), "success");
-  }
-
   async function updateContinuousReadingPositionAutoSaveEnabled(enabled: boolean): Promise<void> {
     const normalizedEnabled = normalizeContinuousReadingPositionAutoSaveEnabled(enabled);
     if (continuousReadingPositionAutoSaveEnabled === normalizedEnabled) {
@@ -298,29 +202,6 @@
     showNotification(t("epub.settings.notifications.autoSavePagesUpdated", { pages: normalizedPages }), "success");
   }
 
-	async function updateBookNotesExportTemplate(template: EpubExcerptSettings["bookNotesExportTemplate"]): Promise<void> {
-		if (bookNotesExportTemplate === template) {
-			return;
-		}
-
-		const nextExcerptSettings = {
-			...excerptSettings,
-			bookNotesExportTemplate: template,
-		};
-		const storageService = getStorageService();
-		await storageService.saveExcerptSettings(nextExcerptSettings);
-		excerptSettings = nextExcerptSettings;
-		window.dispatchEvent(new CustomEvent(EXCERPT_SETTINGS_CHANGED_EVENT, {
-			detail: { settings: nextExcerptSettings },
-		}));
-		showNotification(
-      t("epub.settings.notifications.templateSwitched", {
-        template: template === "template2" ? t("epub.settings.basic.template2") : t("epub.settings.basic.template1"),
-      }),
-      "success"
-    );
-	}
-
 	function canUsePremiumSetting(featureId: string): boolean {
 		return premiumGuard.canUseFeature(featureId, { page: "epub-settings" });
 	}
@@ -349,7 +230,6 @@
 	}
 
 	onMount(() => {
-		void syncAdvancedSettings();
 		const unsubscribePremium = premiumGuard.isPremiumActive.subscribe(() => {
 			handlePremiumUiStateChanged();
 		});
@@ -360,8 +240,6 @@
 			window.addEventListener(EPUB_RUNTIME.events.premiumUiStateChanged, handlePremiumUiStateChanged);
 		}
 		return () => {
-      clearBookmarkFolderCommitTimer();
-      clearAutoSavePagesCommitTimer();
 			unsubscribePremium();
 			unsubscribePreview();
 			if (typeof window !== "undefined") {
@@ -375,7 +253,6 @@
       activeTab !== "basic"
       || !premiumPreviewSettingsHost
       || !readingSettingsHost
-      || !featureSettingsHost
       || !diagnosticsSettingsHost
     ) {
       return;
@@ -384,7 +261,6 @@
     const clearBasicSettingsHosts = () => {
       premiumPreviewSettingsHost?.replaceChildren();
       readingSettingsHost?.replaceChildren();
-      featureSettingsHost?.replaceChildren();
       diagnosticsSettingsHost?.replaceChildren();
     };
 
@@ -413,9 +289,6 @@
       search.setValue(bookmarkFolderValue);
       search.onChange((value) => {
         bookmarkFolderInput = value;
-        scheduleBookmarkFolderCommit(() => {
-          void updateBookmarkFolder(search.inputEl.value);
-        });
       });
 
       const inputEl = search.inputEl;
@@ -426,14 +299,12 @@
       };
 
       const handleBlur = () => {
-        clearBookmarkFolderCommitTimer();
         void updateBookmarkFolder(inputEl.value);
       };
 
       const handleKeydown = (event: KeyboardEvent) => {
         if (event.key === "Enter") {
           event.preventDefault();
-          clearBookmarkFolderCommitTimer();
           void updateBookmarkFolder(inputEl.value);
           return;
         }
@@ -455,152 +326,73 @@
       cleanupFns.push(() => suggest.close());
     });
 
-    new Setting(readingSettingsHost)
-      .setName(t("epub.settings.basic.bookshelfDisplayMode"))
-      .setDesc(t("epub.settings.basic.bookshelfDisplayModeDesc"))
-      .setClass("epub-bookshelf-auto-view-setting")
-      .addDropdown((dropdown) => {
-        for (const option of getBookshelfDisplayModeOptions()) {
-          dropdown.addOption(option.mode, option.label);
-        }
-        dropdown.setValue(bookshelfDisplayMode);
-        dropdown.onChange(async (value) => {
-          await updateBookshelfDisplayMode(value);
-        });
+    const autoSaveSetting = new Setting(readingSettingsHost)
+      .setName(t("epub.settings.basic.autoSaveReadingPosition"))
+      .setDesc(t("epub.settings.basic.autoSaveReadingPositionDesc"))
+      .setClass("epub-reading-position-auto-save-toggle-setting");
+
+    autoSaveSetting.addToggle((toggle) => {
+      toggle.setValue(continuousReadingPositionAutoSaveEnabled);
+      toggle.onChange(async (value) => {
+        await updateContinuousReadingPositionAutoSaveEnabled(value);
+      });
+    });
+
+    const autoSavePagesSetting = new Setting(readingSettingsHost)
+      .setName(t("epub.settings.basic.autoSavePages"))
+      .setDesc(t("epub.settings.basic.autoSavePagesDesc", {
+        min: MIN_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
+        max: MAX_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
+        default: DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
+      }))
+      .setClass("epub-reading-position-auto-save-pages-setting");
+
+    autoSavePagesSetting.addText((text) => {
+      text.inputEl.type = "number";
+      text.inputEl.min = String(MIN_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES);
+      text.inputEl.max = String(MAX_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES);
+      text.setPlaceholder(String(DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES));
+      text.setValue(continuousReadingPositionAutoSavePagesInput);
+      text.setDisabled(!continuousReadingPositionAutoSaveEnabled);
+      text.onChange((value) => {
+        continuousReadingPositionAutoSavePagesInput = value;
       });
 
-    if (shouldShowPremiumSetting(PREMIUM_FEATURES.EPUB_READING_PROGRESS)) {
-      const readingProgressRestricted = !canUsePremiumSetting(PREMIUM_FEATURES.EPUB_READING_PROGRESS);
+      const inputEl = text.inputEl;
 
-      const registerPremiumBlockedRow = (setting: Setting) => {
-        if (!readingProgressRestricted) {
+      const commitValue = () => {
+        if (!continuousReadingPositionAutoSaveEnabled) {
+          continuousReadingPositionAutoSavePagesInput = String(continuousReadingPositionAutoSavePages);
+          text.setValue(String(continuousReadingPositionAutoSavePages));
           return;
         }
-        setting.settingEl.addClass("epub-premium-preview-setting");
-        const handleBlockedClick = (event: MouseEvent) => {
-          const target = event.target as HTMLElement | null;
-          if (target?.closest("a")) {
-            return;
-          }
-          event.preventDefault();
-          openPremiumFeaturePreviewForSetting(PREMIUM_FEATURES.EPUB_READING_PROGRESS);
-        };
-        setting.settingEl.addEventListener("click", handleBlockedClick);
-        cleanupFns.push(() => setting.settingEl.removeEventListener("click", handleBlockedClick));
+        void updateContinuousReadingPositionAutoSavePages(inputEl.value);
       };
 
-      const autoSaveSetting = new Setting(readingSettingsHost)
-        .setName(getPremiumSettingTitle(t("epub.settings.basic.autoSaveReadingPosition"), PREMIUM_FEATURES.EPUB_READING_PROGRESS))
-        .setDesc(t("epub.settings.basic.autoSaveReadingPositionDesc"))
-        .setClass("epub-reading-position-auto-save-toggle-setting");
+      const handleBlur = () => {
+        commitValue();
+      };
 
-      registerPremiumBlockedRow(autoSaveSetting);
-
-      autoSaveSetting.addToggle((toggle) => {
-        toggle.setValue(continuousReadingPositionAutoSaveEnabled);
-        toggle.setDisabled(readingProgressRestricted);
-        toggle.onChange(async (value) => {
-          if (readingProgressRestricted) {
-            openPremiumFeaturePreviewForSetting(PREMIUM_FEATURES.EPUB_READING_PROGRESS);
-            return;
-          }
-          await updateContinuousReadingPositionAutoSaveEnabled(value);
-        });
-      });
-
-      const autoSavePagesSetting = new Setting(readingSettingsHost)
-        .setName(getPremiumSettingTitle(t("epub.settings.basic.autoSavePages"), PREMIUM_FEATURES.EPUB_READING_PROGRESS))
-        .setDesc(t("epub.settings.basic.autoSavePagesDesc", {
-          min: MIN_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
-          max: MAX_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
-          default: DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
-        }))
-        .setClass("epub-reading-position-auto-save-pages-setting");
-
-      registerPremiumBlockedRow(autoSavePagesSetting);
-
-      autoSavePagesSetting.addText((text) => {
-        text.inputEl.type = "number";
-        text.inputEl.min = String(MIN_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES);
-        text.inputEl.max = String(MAX_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES);
-        text.setPlaceholder(String(DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES));
-        text.setValue(continuousReadingPositionAutoSavePagesInput);
-        text.setDisabled(readingProgressRestricted || !continuousReadingPositionAutoSaveEnabled);
-        text.onChange((value) => {
-          continuousReadingPositionAutoSavePagesInput = value;
-          if (readingProgressRestricted || !continuousReadingPositionAutoSaveEnabled) {
-            return;
-          }
-          scheduleAutoSavePagesCommit(() => {
-            void updateContinuousReadingPositionAutoSavePages(text.inputEl.value);
-          });
-        });
-
-        const inputEl = text.inputEl;
-
-        const commitValue = () => {
-          if (readingProgressRestricted) {
-            continuousReadingPositionAutoSavePagesInput = String(continuousReadingPositionAutoSavePages);
-            text.setValue(String(continuousReadingPositionAutoSavePages));
-            openPremiumFeaturePreviewForSetting(PREMIUM_FEATURES.EPUB_READING_PROGRESS);
-            return;
-          }
-          if (!continuousReadingPositionAutoSaveEnabled) {
-            continuousReadingPositionAutoSavePagesInput = String(continuousReadingPositionAutoSavePages);
-            text.setValue(String(continuousReadingPositionAutoSavePages));
-            return;
-          }
-          void updateContinuousReadingPositionAutoSavePages(inputEl.value);
-        };
-
-        const handleBlur = () => {
-          clearAutoSavePagesCommitTimer();
+      const handleKeydown = (event: KeyboardEvent) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
           commitValue();
-        };
+          return;
+        }
 
-        const handleKeydown = (event: KeyboardEvent) => {
-          if (readingProgressRestricted) {
-            event.preventDefault();
-            openPremiumFeaturePreviewForSetting(PREMIUM_FEATURES.EPUB_READING_PROGRESS);
-            return;
-          }
+        if (event.key === "Escape") {
+          continuousReadingPositionAutoSavePagesInput = String(continuousReadingPositionAutoSavePages);
+          text.setValue(String(continuousReadingPositionAutoSavePages));
+          inputEl.blur();
+        }
+      };
 
-          if (event.key === "Enter") {
-            event.preventDefault();
-            clearAutoSavePagesCommitTimer();
-            commitValue();
-            return;
-          }
+      inputEl.addEventListener("blur", handleBlur);
+      inputEl.addEventListener("keydown", handleKeydown);
 
-          if (event.key === "Escape") {
-            continuousReadingPositionAutoSavePagesInput = String(continuousReadingPositionAutoSavePages);
-            text.setValue(String(continuousReadingPositionAutoSavePages));
-            inputEl.blur();
-          }
-        };
-
-        inputEl.addEventListener("blur", handleBlur);
-        inputEl.addEventListener("keydown", handleKeydown);
-
-        cleanupFns.push(() => inputEl.removeEventListener("blur", handleBlur));
-        cleanupFns.push(() => inputEl.removeEventListener("keydown", handleKeydown));
-      });
-    }
-
-    new Setting(featureSettingsHost)
-      .setName(t("epub.settings.basic.exportTemplate"))
-      .setDesc(t("epub.settings.basic.exportTemplateDesc"))
-      .setClass("epub-book-notes-template-setting")
-      .addDropdown((dropdown) => {
-        dropdown.addOption("template1", t("epub.settings.basic.template1"));
-        dropdown.addOption("template2", t("epub.settings.basic.template2"));
-        dropdown.setValue(bookNotesExportTemplate);
-        dropdown.onChange(async (value) => {
-          if (value === "template1" || value === "template2") {
-            await updateBookNotesExportTemplate(value);
-          }
-        });
-      });
+      cleanupFns.push(() => inputEl.removeEventListener("blur", handleBlur));
+      cleanupFns.push(() => inputEl.removeEventListener("keydown", handleKeydown));
+    });
 
     new Setting(diagnosticsSettingsHost)
       .setName(t("epub.settings.basic.sourceNavigationOpenInNewTab"))
@@ -621,6 +413,28 @@
         toggle.setValue(debugModeEnabled);
         toggle.onChange(async (value) => {
           await updateDebugMode(value);
+        });
+      });
+
+    new Setting(diagnosticsSettingsHost)
+      .setName(t("epub.settings.basic.rebuildHighlightIndex"))
+      .setDesc(t("epub.settings.basic.rebuildHighlightIndexDesc"))
+      .setClass("epub-rebuild-highlight-index-setting")
+      .addButton((button) => {
+        button.setButtonText(t("epub.settings.basic.rebuildHighlightIndexAction"));
+        button.onClick(async () => {
+          button.setDisabled(true);
+          try {
+            const service = getEpubBacklinkHighlightService(plugin.app);
+            await service.rebuildHighlightIndexes();
+            scheduleEpubExcerptCacheWarmup(plugin.app, 2_000, { forceAll: true });
+            showNotification(t("epub.settings.basic.rebuildHighlightIndexSuccess"), "success");
+          } catch (error) {
+            console.error("[EpubSettings] rebuild highlight index failed:", error);
+            showNotification(t("epub.settings.basic.rebuildHighlightIndexFailed"), "error");
+          } finally {
+            button.setDisabled(false);
+          }
         });
       });
 
@@ -650,6 +464,9 @@
     {#if activeTab === "basic"}
       <section class="epub-settings-section epub-settings-section--compact">
         <div class="epub-settings-group epub-settings-group--panel epub-settings-group--preview-first">
+          <div class="epub-settings-group-header">
+            <h3 class="epub-settings-group-title with-accent-bar accent-purple">{t("epub.settings.groups.premiumPreview")}</h3>
+          </div>
           <div bind:this={premiumPreviewSettingsHost} class="epub-native-settings-host"></div>
         </div>
 
@@ -659,14 +476,6 @@
           </div>
 
           <div bind:this={readingSettingsHost} class="epub-native-settings-host"></div>
-        </div>
-
-        <div class="epub-settings-group epub-settings-group--panel">
-          <div class="epub-settings-group-header">
-            <h3 class="epub-settings-group-title with-accent-bar accent-purple">{t("epub.settings.groups.features")}</h3>
-          </div>
-
-          <div bind:this={featureSettingsHost} class="epub-native-settings-host"></div>
         </div>
 
         <div class="epub-settings-group epub-settings-group--panel">
@@ -726,7 +535,7 @@
           </div>
         </div>
 
-        <div class="epub-settings-group">
+        <div class="epub-settings-group epub-settings-group--panel">
           <div class="epub-settings-group-header">
             <h3 class="epub-settings-group-title with-accent-bar accent-purple">{t("epub.settings.about.contactTitle")}</h3>
           </div>
@@ -751,9 +560,24 @@
 
 <style>
   .epub-settings-root {
+    /* Semantic typography scale aligned with standalone IR settings */
+    --epub-settings-font-size-title: var(--font-ui-medium, 1rem);
+    --epub-settings-font-size-label: var(--font-ui-small, 0.95rem);
+    --epub-settings-font-size-desc: var(--font-ui-smaller, 0.85rem);
+    /* Spacing scale aligned with settings UI rhythm */
+    --epub-settings-gap-xs: 0.25rem;
+    --epub-settings-gap-sm: 0.35rem;
+    --epub-settings-gap-md: 0.75rem;
+    --epub-settings-gap-lg: 1rem;
+    --epub-settings-gap-xl: 1.5rem;
+    --epub-settings-panel-padding: 1rem;
+    --epub-settings-row-padding-y: 1.25rem;
+    --epub-settings-row-padding-x: 1.5rem;
+    --epub-settings-radius-row: 14px;
+    --epub-settings-radius-panel: 18px;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--epub-settings-gap-lg);
     padding: 0 0 1.5rem;
   }
 
@@ -766,7 +590,7 @@
     border: none;
     border-radius: 0;
     padding: 0;
-    gap: 0.35rem;
+    gap: var(--epub-settings-gap-sm);
     overflow-x: auto;
     scrollbar-width: none;
   }
@@ -778,7 +602,7 @@
   .epub-settings-tab-panel {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--epub-settings-gap-xl);
     min-width: 0;
     padding-inline: 0.5rem;
   }
@@ -786,12 +610,12 @@
   .epub-settings-section {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--epub-settings-gap-xl);
     min-width: 0;
   }
 
   .epub-settings-section--compact {
-    gap: 1rem;
+    gap: var(--epub-settings-gap-lg);
   }
 
   .epub-settings-section--compact .epub-settings-group-header {
@@ -801,15 +625,15 @@
   .epub-native-settings-host {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--epub-settings-gap-md);
     min-width: 0;
   }
 
   .epub-native-settings-host :global(.setting-item) {
     border: none;
-    border-radius: 14px;
+    border-radius: var(--epub-settings-radius-row);
     background: var(--background-secondary);
-    padding: 1.25rem 1.5rem;
+    padding: var(--epub-settings-row-padding-y) var(--epub-settings-row-padding-x);
   }
 
   .epub-native-settings-host :global(.epub-premium-preview-setting.setting-item) {
@@ -818,6 +642,18 @@
 
   .epub-native-settings-host :global(.setting-item-info) {
     min-width: 0;
+  }
+
+  .epub-native-settings-host :global(.setting-item-name) {
+    font-size: var(--epub-settings-font-size-label);
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  .epub-native-settings-host :global(.setting-item-description) {
+    font-size: var(--epub-settings-font-size-desc);
+    line-height: 1.55;
+    color: var(--text-muted);
   }
 
   .epub-native-settings-host :global(.epub-bookmark-setting .setting-item-control) {
@@ -860,29 +696,30 @@
   .epub-settings-group {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--epub-settings-gap-xs);
     min-width: 0;
   }
 
   .epub-settings-group--panel {
-    padding: 1rem;
+    padding: var(--epub-settings-panel-padding);
     border: 1px solid var(--background-modifier-border);
-    border-radius: 18px;
+    border-radius: var(--epub-settings-radius-panel);
     background: color-mix(in oklab, var(--background-primary), var(--background-secondary) 26%);
   }
 
   .epub-settings-group-header {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: var(--epub-settings-gap-sm);
     padding-bottom: 0.4rem;
   }
 
   .epub-settings-group-title {
     margin: 0;
-    font-size: 1rem;
+    font-size: var(--epub-settings-font-size-title);
     font-weight: 600;
     color: var(--text-normal);
+    line-height: 1.4;
   }
 
   .epub-settings-group-title.with-accent-bar {
@@ -898,7 +735,7 @@
     transform: translateY(-50%);
     width: 4px;
     height: 80%;
-    border-radius: 2px;
+    border-radius: var(--radius-s, 2px);
   }
 
   .epub-settings-group-title.accent-purple::before {
@@ -911,6 +748,7 @@
 
   .epub-settings-group-description {
     margin: 0;
+    font-size: var(--epub-settings-font-size-desc);
     color: var(--text-muted);
     line-height: 1.55;
   }
@@ -919,15 +757,15 @@
     display: flex;
     flex-direction: column;
     border: 1px solid var(--background-modifier-border);
-    border-radius: 12px;
+    border-radius: var(--radius-m, 12px);
     background: var(--background-secondary);
     overflow: hidden;
   }
 
   .epub-about-overview-section-label {
-    padding: 0.8rem 1.25rem;
+    padding: var(--epub-settings-gap-md) var(--epub-settings-row-padding-y);
     color: var(--text-muted);
-    font-size: 0.84rem;
+    font-size: var(--epub-settings-font-size-desc);
     font-weight: 600;
     line-height: 1.4;
     background: color-mix(in oklab, var(--background-secondary), var(--background-primary) 28%);
@@ -940,8 +778,8 @@
   .epub-about-overview-item {
     display: grid;
     grid-template-columns: minmax(7.5rem, 10rem) minmax(0, 1fr);
-    gap: 1rem;
-    padding: 0.95rem 1.25rem;
+    gap: var(--epub-settings-gap-lg);
+    padding: var(--epub-settings-gap-lg) var(--epub-settings-row-padding-y);
   }
 
   .epub-about-overview-item + .epub-about-overview-item {
@@ -951,18 +789,20 @@
   .epub-about-overview-label {
     color: var(--text-normal);
     font-weight: 600;
+    font-size: var(--epub-settings-font-size-label);
     line-height: 1.5;
   }
 
   .epub-about-overview-value {
     color: var(--text-muted);
+    font-size: var(--epub-settings-font-size-desc);
     line-height: 1.65;
   }
 
   .epub-about-links {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.25rem 0.75rem;
+    gap: var(--epub-settings-gap-xs) var(--epub-settings-gap-md);
     width: 100%;
   }
 
@@ -972,7 +812,7 @@
     justify-content: center;
     padding: 0.4rem 0.45rem;
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-m, 8px);
     background: transparent;
     color: var(--text-muted);
     text-decoration: none;
@@ -987,7 +827,7 @@
 
   @media (max-width: 720px) {
     .epub-settings-tabs :global(.tab-navigation) {
-      gap: 0.25rem;
+      gap: var(--epub-settings-gap-xs);
     }
 
     .epub-native-settings-host :global(.epub-bookmark-setting .setting-item-control) {
@@ -1010,16 +850,16 @@
     }
 
     .epub-native-settings-host :global(.setting-item) {
-      padding: 1rem;
+      padding: var(--epub-settings-panel-padding);
     }
 
     .epub-settings-group--panel {
-      padding: 0.9rem;
+      padding: calc(var(--epub-settings-panel-padding) - 0.1rem);
     }
 
     .epub-about-overview-item {
       grid-template-columns: 1fr;
-      gap: 0.35rem;
+      gap: var(--epub-settings-gap-sm);
     }
 
     .epub-about-links {

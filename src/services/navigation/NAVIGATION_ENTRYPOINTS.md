@@ -2,7 +2,7 @@
 
 | Entry | Current implementation | Target `NavigationIntent.kind` |
 |-------|------------------------|--------------------------------|
-| `EpubLinkService.navigateToEpubLocation` | `openBookForSourceNavigation` + pendingCfi | `book` |
+| `EpubLinkService.navigateToEpubLocation` | `NavigationHub.navigate` (`book` + `locate`) | `book` (requires `ensureBookSourceLocationAccess` when `locate` is set) |
 | `EpubLinkPostProcessor` click | → LinkService | `book` |
 | `epub-plugin-support.openEpubReader` | `openEpubInPreferredLeaf` | `book` (`policy.preferredLeaf: true`) |
 | `BookshelfView` open | `NavigationHub` (`policy.preferredLeaf: true`) | `book` |

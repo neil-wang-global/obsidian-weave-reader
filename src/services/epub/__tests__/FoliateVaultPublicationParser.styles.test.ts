@@ -113,4 +113,35 @@ describe("FoliateVaultPublicationParser stylesheet normalization", () => {
 		expect(doc.querySelector("a")?.getAttribute("onclick")).toBeNull();
 		expect(doc.querySelector("p")?.textContent).toBe("safe text");
 	});
+
+	it("sanitizes loader-repaired HTML before Foliate renders sections", () => {
+		const parser = new FoliateVaultPublicationParser({} as any);
+		const repaired = (parser as any).repairMarkupText(
+			`<html><body onload="alert('x')"><script>alert('x')</script><p>safe text</p></body></html>`,
+			"application/xhtml+xml",
+			"OEBPS/Text/chapter-1.xhtml"
+		);
+		const doc = new DOMParser().parseFromString(repaired, "application/xhtml+xml");
+		expect(doc.querySelector("script")).toBeNull();
+		expect(doc.querySelector("body")?.getAttribute("onload")).toBeNull();
+		expect(doc.querySelector("p")?.textContent).toBe("safe text");
+	});
+
+	it("repairs document-like hrefs even when manifest media type is non-html", async () => {
+		const parser = new FoliateVaultPublicationParser({} as any);
+		const parserAny = parser as any;
+		parserAny.findArchiveEntry = vi.fn(() => ({
+			async: vi.fn(async () =>
+				`<html><body onload="alert('x')"><script>alert('x')</script><p>safe text</p></body></html>`
+			),
+		}));
+		parserAny.inferMimeType = vi.fn(() => "application/xml");
+		parserAny.normalizeSectionHref = vi.fn((value: string) => value);
+		const loader = parserAny.createFoliateLoader();
+		const result = await loader.loadText("Text/chapter-1.xhtml");
+		const doc = new DOMParser().parseFromString(String(result || ""), "application/xhtml+xml");
+		expect(doc.querySelector("script")).toBeNull();
+		expect(doc.querySelector("body")?.getAttribute("onload")).toBeNull();
+		expect(doc.querySelector("p")?.textContent).toBe("safe text");
+	});
 });

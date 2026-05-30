@@ -5,6 +5,7 @@ import { DirectoryUtils } from "../../utils/directory-utils";
 import { safeReadJson } from "../../utils/safe-json-io";
 import { extractBodyContent, parseYAMLFromContent, setCardProperty } from "../../utils/yaml-utils";
 import { logger } from "../../utils/logger";
+import { getReaderHighlightIdentityKey } from "./highlight/highlight-identity";
 import { EpubLinkService } from "./EpubLinkService";
 import type { EpubStorageService } from "./EpubStorageService";
 import { getEpubStorageService } from "./epub-storage-access";
@@ -14,7 +15,12 @@ import {
 	resolveEpubHighlightPersistenceSourcePath,
 	type EpubHighlightPersistenceSourceCandidate,
 } from "./epub-highlight-source-path";
-import { epubVaultPathsReferToSameBook, resolveEpubVaultPath } from "./epub-vault-path";
+import { isSupportedBookPath } from "./book-format";
+import {
+	epubVaultPathsReferToSameBook,
+	resolveComparableBookVaultPath,
+	resolveEpubVaultPath,
+} from "./epub-vault-path";
 import { resolveEpubHost } from "./epub-host";
 import { getEpubRuntime } from "./epub-runtime";
 import type { HighlightSourceLocator } from "./reader-engine-types";
@@ -40,6 +46,8 @@ export interface BacklinkSourceMatch {
 	sourceFile: string;
 	sourceRef?: string;
 	excerptId?: string;
+	/** Canonical locator stored in the source note/card, when it differs from the live reader CFI. */
+	cfiRange?: string;
 }
 
 export interface BacklinkSourceHint {
@@ -266,6 +274,31 @@ export class EpubBacklinkHighlightService {
 		}
 	}
 
+	/**
+	 * Clears on-disk excerpt highlight cache and source-file index.
+	 * Per-book highlights are rebuilt lazily the next time a book is opened.
+	 */
+	async rebuildHighlightIndexes(): Promise<void> {
+		if (this.inflightDiskCacheWrite) {
+			await this.inflightDiskCacheWrite.catch(() => undefined);
+		}
+		if (this.inflightDiskCacheLoad) {
+			await this.inflightDiskCacheLoad.catch(() => undefined);
+		}
+
+		const emptyStore = this.createEmptyDiskCacheStore();
+		const cachePath = this.getDiskCachePath();
+		await DirectoryUtils.ensureDirForFile(this.app.vault.adapter, cachePath);
+		await this.app.vault.adapter.write(cachePath, JSON.stringify(emptyStore));
+
+		this.diskCacheStore = emptyStore;
+		this.diskCacheLoaded = true;
+		this.inflightDiskCacheLoad = null;
+		this.inflightDiskCacheWrite = null;
+		this.sourceIndexPrimed = false;
+		this.touchedSourceIndexPaths.clear();
+	}
+
 	async collectHighlights(
 		epubFilePath: string,
 		boundCanvasPath?: string | null,
@@ -368,6 +401,88 @@ export class EpubBacklinkHighlightService {
 				`(markdown=${manifest.markdownSources.length}, canvas=${manifest.canvasSources.length}, cardData=${manifest.cardDataSources.length})`
 		);
 		return normalizedHighlights;
+	}
+
+	/**
+	 * Rebuilds only the highlights contributed by the given source paths and merges them into the
+	 * existing per-book disk cache. Avoids vault-wide rescans after excerpt CRUD in a known file.
+	 */
+	async refreshBookHighlightsIncremental(
+		epubFilePath: string,
+		changedSourcePaths: string[],
+		boundCanvasPath?: string | null
+	): Promise<BacklinkHighlight[]> {
+		const normalizedPaths = Array.from(
+			new Set(
+				changedSourcePaths
+					.map((path) => normalizePath(String(path || "").trim()))
+					.filter((path) => path && this.isPotentialSourceIndexPath(path))
+			)
+		);
+		if (normalizedPaths.length === 0) {
+			return this.collectHighlights(epubFilePath, boundCanvasPath);
+		}
+
+		const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
+		const cacheKey = this.buildCacheKey(targetIdentity, boundCanvasPath);
+		const store = await this.loadDiskCacheStore();
+		const entry = store.entries[cacheKey];
+
+		if (!entry?.manifest || !Array.isArray(entry.highlights)) {
+			return this.collectHighlights(epubFilePath, boundCanvasPath, {
+				additionalSourcePaths: normalizedPaths,
+			});
+		}
+
+		const pathSet = new Set(normalizedPaths);
+		const retained = entry.highlights.filter(
+			(highlight) => !this.highlightReferencesAnySourcePath(highlight, pathSet)
+		);
+
+		const collected = await this.collectHighlightsFromSourcePaths(
+			targetIdentity,
+			normalizedPaths,
+			boundCanvasPath
+		);
+
+		const highlights = this.mergeBacklinkHighlightsByCfi(retained, collected.highlights);
+		const manifest = this.mergeHighlightSourceManifests(
+			this.normalizeCacheManifest(entry.manifest),
+			collected.manifest
+		);
+
+		const normalizedHighlights = this.cloneHighlightsForCache(highlights);
+		await this.persistCachedHighlights(
+			targetIdentity,
+			manifest,
+			normalizedHighlights,
+			boundCanvasPath
+		);
+
+		return normalizedHighlights;
+	}
+
+	private highlightReferencesAnySourcePath(
+		highlight: BacklinkHighlight,
+		sourcePaths: Set<string>
+	): boolean {
+		const candidates = new Set<string>();
+		const primary = normalizePath(String(highlight.sourceFile || "").trim());
+		if (primary) {
+			candidates.add(primary);
+		}
+		for (const locator of highlight.sourceLocators || []) {
+			const locatorPath = normalizePath(String(locator.sourceFile || "").trim());
+			if (locatorPath) {
+				candidates.add(locatorPath);
+			}
+		}
+		for (const path of candidates) {
+			if (sourcePaths.has(path)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	async savedCardReferencesEpubFile(
@@ -519,8 +634,26 @@ export class EpubBacklinkHighlightService {
 			if (!targets || typeof targets !== "object") {
 				continue;
 			}
-			if (targets[epubPath] || (fileName && targets[fileName])) {
-				paths.add(normalizePath(sourcePath));
+			const normalizedSourcePath = normalizePath(sourcePath);
+			let referencesTarget = Boolean(targets[epubPath] || (fileName && targets[fileName]));
+			if (!referencesTarget) {
+				for (const [targetKey, count] of Object.entries(targets)) {
+					if (!count) {
+						continue;
+					}
+					const comparableTarget = resolveComparableBookVaultPath(
+						this.app,
+						String(targetKey || ""),
+						normalizedSourcePath
+					);
+					if (epubVaultPathsReferToSameBook(comparableTarget, epubPath)) {
+						referencesTarget = true;
+						break;
+					}
+				}
+			}
+			if (referencesTarget) {
+				paths.add(normalizedSourcePath);
 			}
 		}
 
@@ -603,7 +736,7 @@ export class EpubBacklinkHighlightService {
 				record.kind === "cardData" &&
 				!indexedCardPaths.has(record.path) &&
 				record.directHighlights.some((entry) =>
-					this.isSameIndexedTarget(entry.target, targetIdentity)
+					this.isSameIndexedTarget(entry.target, targetIdentity, record.path)
 				)
 		);
 		if (!needsIndexScan) {
@@ -659,7 +792,7 @@ export class EpubBacklinkHighlightService {
 	): BacklinkHighlight[] {
 		const merged = new Map<string, BacklinkHighlight>();
 		for (const highlight of [...existing, ...incoming]) {
-			const key = EpubLinkService.normalizeCfi(highlight.cfiRange);
+			const key = getReaderHighlightIdentityKey(highlight);
 			if (!key) {
 				continue;
 			}
@@ -1275,7 +1408,8 @@ export class EpubBacklinkHighlightService {
 
 	private isSameIndexedTarget(
 		target: IndexedBacklinkTargetIdentity,
-		targetIdentity: EpubTargetIdentity
+		targetIdentity: EpubTargetIdentity,
+		sourceMarkdownPath?: string
 	): boolean {
 		if (
 			target.sourceId &&
@@ -1283,7 +1417,13 @@ export class EpubBacklinkHighlightService {
 		) {
 			return true;
 		}
-		return epubVaultPathsReferToSameBook(target.filePath, targetIdentity.filePath);
+		const left = resolveComparableBookVaultPath(
+			this.app,
+			target.filePath,
+			sourceMarkdownPath
+		);
+		const right = resolveComparableBookVaultPath(this.app, targetIdentity.filePath);
+		return epubVaultPathsReferToSameBook(left, right);
 	}
 
 	private collectHighlightsFromSourceIndexSnapshot(
@@ -1299,7 +1439,7 @@ export class EpubBacklinkHighlightService {
 
 		for (const record of sourceIndex.files) {
 			for (const entry of record.directHighlights) {
-				if (this.isSameIndexedTarget(entry.target, targetIdentity)) {
+				if (this.isSameIndexedTarget(entry.target, targetIdentity, record.path)) {
 					results.push(this.cloneHighlightsForCache([entry.highlight])[0]);
 				}
 			}
@@ -1315,7 +1455,7 @@ export class EpubBacklinkHighlightService {
 					}
 					const locator = this.buildCanvasFileNodeLocator(boundCanvasRecord.path, binding.nodeId);
 					for (const entry of boundSourceRecord.directHighlights) {
-						if (!this.isSameIndexedTarget(entry.target, targetIdentity)) {
+						if (!this.isSameIndexedTarget(entry.target, targetIdentity, boundSourceRecord.path)) {
 							continue;
 						}
 						results.push(
@@ -1347,7 +1487,7 @@ export class EpubBacklinkHighlightService {
 
 		for (const record of sourceIndex.files) {
 			const hasDirectMatch = record.directHighlights.some((entry) =>
-				this.isSameIndexedTarget(entry.target, targetIdentity)
+				this.isSameIndexedTarget(entry.target, targetIdentity, record.path)
 			);
 			if (!hasDirectMatch) {
 				continue;
@@ -1375,7 +1515,7 @@ export class EpubBacklinkHighlightService {
 						continue;
 					}
 					const hasBoundMatch = sourceRecord.directHighlights.some((entry) =>
-						this.isSameIndexedTarget(entry.target, targetIdentity)
+						this.isSameIndexedTarget(entry.target, targetIdentity, sourceRecord.path)
 					);
 					if (!hasBoundMatch) {
 						continue;
@@ -1554,6 +1694,7 @@ export class EpubBacklinkHighlightService {
 					sourceFile: preferredMatch.sourceFile,
 					sourceRef: preferredMatch.sourceRef,
 					excerptId: preferredMatch.excerptId,
+					cfiRange: preferredMatch.cfiRange,
 				};
 			}
 		}
@@ -1567,6 +1708,7 @@ export class EpubBacklinkHighlightService {
 			sourceFile: matched.sourceFile,
 			sourceRef: matched.sourceRef,
 			excerptId: matched.excerptId,
+			cfiRange: matched.cfiRange,
 		};
 	}
 
@@ -1841,8 +1983,20 @@ export class EpubBacklinkHighlightService {
 
 		try {
 			const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
+			const deletionLocator = await this.resolveDeletionLocator(
+				sourceFile,
+				cfiRange,
+				epubFilePath,
+				excerptId
+			);
 			const changed = await this.processVaultTextFile(sourceFile, (content) =>
-				this.removeCallout(content, cfiRange, targetIdentity, excerptId, sourceFile)
+				this.removeCalloutForDeletion(
+					content,
+					deletionLocator.cfiRange,
+					targetIdentity,
+					deletionLocator.excerptId,
+					sourceFile
+				)
 			);
 			if (changed) {
 				await this.notifyLinkedSourceMutation(sourceFile, "update", sourceRef);
@@ -2986,10 +3140,15 @@ export class EpubBacklinkHighlightService {
 		);
 	}
 
-	private removeCalloutByLocator(content: string, cfiRange: string, excerptId?: string): string {
+	private removeCalloutByLocator(
+		content: string,
+		cfiRange: string,
+		excerptId?: string,
+		sourceMarkdownPath?: string
+	): string {
 		const normalizedTargetCfi = EpubLinkService.normalizeCfi(cfiRange);
 		for (const callout of this.extractEpubCallouts(content)) {
-			const resolvedLink = this.resolveCalloutLink(callout);
+			const resolvedLink = this.resolveCalloutLink(callout, sourceMarkdownPath);
 			if (!resolvedLink) {
 				continue;
 			}
@@ -3115,7 +3274,7 @@ export class EpubBacklinkHighlightService {
 				if (!normalizedFilePath && !parsedLink.sourceId) {
 					continue;
 				}
-				if (normalizedFilePath && !normalizedFilePath.toLowerCase().endsWith(".epub")) {
+				if (normalizedFilePath && !isSupportedBookPath(normalizedFilePath)) {
 					continue;
 				}
 				return {
@@ -3132,8 +3291,9 @@ export class EpubBacklinkHighlightService {
 		const legacySourceKind = String(card?.sourceKind || "").trim().toLowerCase();
 		const legacySubunitKey = String(card?.sourceSubunitKey || "").trim();
 		if (
-			(!legacySourceFile || !legacySourceFile.toLowerCase().endsWith(".epub")) &&
-			legacySourceKind !== "epub"
+			(!legacySourceFile || !isSupportedBookPath(legacySourceFile)) &&
+			legacySourceKind !== "epub" &&
+			legacySourceKind !== "book"
 		) {
 			return null;
 		}
@@ -3535,6 +3695,87 @@ export class EpubBacklinkHighlightService {
 		return `fnv1a:${(hash >>> 0).toString(16).padStart(8, "0")}`;
 	}
 
+	private async resolveDeletionLocator(
+		sourceFile: string,
+		cfiRange: string,
+		epubFilePath: string,
+		excerptId?: string
+	): Promise<{ cfiRange: string; excerptId?: string }> {
+		const indexedLocator = await this.findSourceForCfi(cfiRange, epubFilePath, sourceFile);
+		if (indexedLocator?.cfiRange) {
+			return {
+				cfiRange: indexedLocator.cfiRange,
+				excerptId: excerptId || indexedLocator.excerptId,
+			};
+		}
+
+		const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
+		const file = this.app.vault.getAbstractFileByPath(sourceFile);
+		if (!(file && this.isTFile(file))) {
+			return { cfiRange, excerptId };
+		}
+
+		const content = await this.app.vault.cachedRead(file);
+		const callouts = this.parseEpubCallouts(content, targetIdentity, sourceFile);
+		const normalizedTargetCfi = EpubLinkService.normalizeCfi(cfiRange);
+		let matches = callouts.filter(
+			(callout) => EpubLinkService.normalizeCfi(callout.cfiRange) === normalizedTargetCfi
+		);
+		if (matches.length === 0) {
+			matches = callouts.filter((callout) =>
+				this.cfisReferToSameHighlightRegion(callout.cfiRange, cfiRange)
+			);
+		}
+		if (excerptId) {
+			const excerptMatches = callouts.filter((callout) => callout.excerptId === excerptId);
+			if (excerptMatches.length === 1) {
+				matches = excerptMatches;
+			}
+		}
+		if (matches.length === 1) {
+			return {
+				cfiRange: matches[0].cfiRange,
+				excerptId: excerptId || matches[0].excerptId,
+			};
+		}
+
+		return { cfiRange, excerptId };
+	}
+
+	private cfisReferToSameHighlightRegion(storedCfi: string, liveCfi: string): boolean {
+		const stored = EpubLinkService.normalizeCfi(storedCfi);
+		const live = EpubLinkService.normalizeCfi(liveCfi);
+		if (!stored || !live || stored === live) {
+			return stored === live;
+		}
+
+		const stripTerminalRange = (cfi: string): string =>
+			cfi.replace(/,\/\d+:\d+,\/\d+:\d+(?=\)$)/, "");
+		const storedBase = stripTerminalRange(stored);
+		const liveBase = stripTerminalRange(live);
+		return storedBase.length > 0 && storedBase === liveBase;
+	}
+
+	private removeCalloutForDeletion(
+		content: string,
+		cfiRange: string,
+		targetIdentity: EpubTargetIdentity,
+		excerptId?: string,
+		sourceMarkdownPath?: string
+	): string {
+		const removed = this.removeCallout(
+			content,
+			cfiRange,
+			targetIdentity,
+			excerptId,
+			sourceMarkdownPath
+		);
+		if (removed !== content) {
+			return removed;
+		}
+		return this.removeCalloutByLocator(content, cfiRange, excerptId, sourceMarkdownPath);
+	}
+
 	private removeCallout(
 		content: string,
 		cfiRange: string,
@@ -3546,7 +3787,12 @@ export class EpubBacklinkHighlightService {
 		const normalizedTargetCfi = EpubLinkService.normalizeCfi(cfiRange);
 		for (const callout of this.extractEpubCallouts(content)) {
 			const resolvedLink = this.resolveCalloutLink(callout, sourceMarkdownPath);
-			if (!resolvedLink || !this.isSameEpubTarget(resolvedLink, targetIdentity)) continue;
+			if (
+				!resolvedLink ||
+				!this.isSameEpubTarget(resolvedLink, targetIdentity, sourceMarkdownPath)
+			) {
+				continue;
+			}
 			if (this.isSameExcerptTarget(resolvedLink, normalizedTargetCfi, excerptId)) {
 				result = result.replace(callout.fullMatch, "");
 				result = result.replace(/\n{3,}/g, "\n\n");
@@ -3591,7 +3837,12 @@ export class EpubBacklinkHighlightService {
 		const normalizedTargetCfi = EpubLinkService.normalizeCfi(cfiRange);
 		for (const callout of this.extractEpubCallouts(content)) {
 			const resolvedLink = this.resolveCalloutLink(callout, sourceMarkdownPath);
-			if (!resolvedLink || !this.isSameEpubTarget(resolvedLink, targetIdentity)) continue;
+			if (
+				!resolvedLink ||
+				!this.isSameEpubTarget(resolvedLink, targetIdentity, sourceMarkdownPath)
+			) {
+				continue;
+			}
 			if (this.isSameExcerptTarget(resolvedLink, normalizedTargetCfi, excerptId)) {
 				const oldCalloutBlock = callout.fullMatch;
 				const oldCalloutHeader = oldCalloutBlock.split("\n")[0];
@@ -3631,7 +3882,12 @@ export class EpubBacklinkHighlightService {
 		const normalizedTargetCfi = EpubLinkService.normalizeCfi(cfiRange);
 		for (const callout of this.extractEpubCallouts(content)) {
 			const resolvedLink = this.resolveCalloutLink(callout, sourceMarkdownPath);
-			if (!resolvedLink || !this.isSameEpubTarget(resolvedLink, targetIdentity)) continue;
+			if (
+				!resolvedLink ||
+				!this.isSameEpubTarget(resolvedLink, targetIdentity, sourceMarkdownPath)
+			) {
+				continue;
+			}
 			if (this.isSameExcerptTarget(resolvedLink, normalizedTargetCfi, excerptId)) {
 				const oldCalloutBlock = callout.fullMatch;
 				const oldCalloutHeader = oldCalloutBlock.split("\n")[0];
@@ -3844,8 +4100,10 @@ export class EpubBacklinkHighlightService {
 		const results: BacklinkHighlight[] = [];
 		for (const callout of this.extractEpubCallouts(content)) {
 			const quotedBody = callout.quotedText;
-			const resolvedLink = this.resolveCalloutLink(callout);
-			if (!resolvedLink || !this.isSameEpubTarget(resolvedLink, targetIdentity)) continue;
+			const resolvedLink = this.resolveCalloutLink(callout, sourceFile);
+			if (!resolvedLink || !this.isSameEpubTarget(resolvedLink, targetIdentity, sourceFile)) {
+				continue;
+			}
 
 			const text = quotedBody
 				.split("\n")
@@ -3950,7 +4208,7 @@ export class EpubBacklinkHighlightService {
 		}
 		const rawFilePath = String(parsed.filePath || "").trim();
 		const resolvedFilePath =
-			resolveEpubVaultPath(this.app, rawFilePath, sourceMarkdownPath) || rawFilePath;
+			resolveComparableBookVaultPath(this.app, rawFilePath, sourceMarkdownPath) || rawFilePath;
 		return {
 			filePath: resolvedFilePath,
 			cfi: parsed.cfi,
@@ -3960,12 +4218,18 @@ export class EpubBacklinkHighlightService {
 		};
 	}
 
-	private isSameEpubTarget(link: ResolvedCalloutLink, targetIdentity: EpubTargetIdentity): boolean {
+	private isSameEpubTarget(
+		link: ResolvedCalloutLink,
+		targetIdentity: EpubTargetIdentity,
+		sourceMarkdownPath?: string
+	): boolean {
 		if (link.sourceId && targetIdentity.sourceIds.includes(link.sourceId)) {
 			return true;
 		}
 
-		return epubVaultPathsReferToSameBook(link.filePath, targetIdentity.filePath);
+		const left = resolveComparableBookVaultPath(this.app, link.filePath, sourceMarkdownPath);
+		const right = resolveComparableBookVaultPath(this.app, targetIdentity.filePath);
+		return epubVaultPathsReferToSameBook(left, right);
 	}
 
 	private textMayReferenceTarget(text: string, targetIdentity: EpubTargetIdentity): boolean {

@@ -43,7 +43,24 @@ export interface TutorialSection {
 	links?: TutorialLinkItem[];
 }
 
-export type TutorialLanguage = "zh-CN" | "en-US";
+import type { SupportedLanguage } from "../../utils/i18n";
+
+export type TutorialLanguage = "zh-CN" | "en-US" | "ja-JP" | "ko-KR";
+
+export type TutorialContentByTab = Record<TutorialTabId, TutorialSection[]>;
+
+export function resolveTutorialLanguage(language: SupportedLanguage): TutorialLanguage {
+	switch (language) {
+		case "zh-CN":
+			return "zh-CN";
+		case "ja-JP":
+			return "ja-JP";
+		case "ko-KR":
+			return "ko-KR";
+		default:
+			return "en-US";
+	}
+}
 
 export const EPUB_TUTORIAL_TABS_BY_LANG: Record<TutorialLanguage, TutorialTab[]> = {
 	"zh-CN": [
@@ -60,12 +77,23 @@ export const EPUB_TUTORIAL_TABS_BY_LANG: Record<TutorialLanguage, TutorialTab[]>
 		{ id: "tools", label: "Tools" },
 		{ id: "credits", label: "Credits" },
 	],
+	"ja-JP": [
+		{ id: "basics", label: "基本操作" },
+		{ id: "highlight", label: "ハイライトと注釈" },
+		{ id: "workflow", label: "抜粋ワークフロー" },
+		{ id: "tools", label: "ツール連携" },
+		{ id: "credits", label: "謝辞" },
+	],
+	"ko-KR": [
+		{ id: "basics", label: "기본 읽기" },
+		{ id: "highlight", label: "하이라이트와 주석" },
+		{ id: "workflow", label: "발췌 워크플로" },
+		{ id: "tools", label: "도구 연동" },
+		{ id: "credits", label: "감사의 말" },
+	],
 };
 
-export const EPUB_TUTORIAL_CONTENT_BY_LANG: Record<
-	TutorialLanguage,
-	Record<TutorialTabId, TutorialSection[]>
-> = {
+const EPUB_TUTORIAL_CONTENT_BY_LANG_BASE = {
 	"zh-CN": {
 		basics: [
 			{
@@ -641,4 +669,11 @@ export const EPUB_TUTORIAL_CONTENT_BY_LANG: Record<
 			},
 		],
 	},
+} satisfies Record<"zh-CN" | "en-US", TutorialContentByTab>;
+
+// Tutorial body: zh/en are authored; ja/ko intentionally reuse en-US until dedicated copy exists.
+export const EPUB_TUTORIAL_CONTENT_BY_LANG: Record<TutorialLanguage, TutorialContentByTab> = {
+	...EPUB_TUTORIAL_CONTENT_BY_LANG_BASE,
+	"ja-JP": EPUB_TUTORIAL_CONTENT_BY_LANG_BASE["en-US"],
+	"ko-KR": EPUB_TUTORIAL_CONTENT_BY_LANG_BASE["en-US"],
 };

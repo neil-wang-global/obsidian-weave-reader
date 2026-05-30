@@ -74,11 +74,20 @@ export function pendingLocateFromLegacyState(state: {
 	};
 }
 
+export function hasBookLocateTarget(
+	locate?: Pick<BookLocateIntent, "cfi" | "href"> | null
+): boolean {
+	if (!locate) {
+		return false;
+	}
+	return Boolean(String(locate.cfi || "").trim() || String(locate.href || "").trim());
+}
+
 export function bookLocateFromPending(pending: PendingLocateState | null): BookLocateIntent | null {
 	if (!pending) {
 		return null;
 	}
-	if (!pending.cfi && !pending.href) {
+	if (!hasBookLocateTarget(pending)) {
 		return null;
 	}
 	return {

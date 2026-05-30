@@ -52,7 +52,8 @@ function readTextFromResourceUrl(resourceUrl: string): Promise<string> {
 export function normalizeDesktopFoliateSandboxValue(
 	attributeName: string,
 	value: string,
-	stack?: string | null
+	stack?: string | null,
+	iframeElement?: Element | null
 ): string | null {
 	if (Platform.isMobile || attributeName.toLowerCase() !== "sandbox") {
 		return null;
@@ -62,9 +63,17 @@ export function normalizeDesktopFoliateSandboxValue(
 		return null;
 	}
 	const normalizedStack = String(stack || "").toLowerCase();
+	const iframePart = String(iframeElement?.getAttribute("part") || "").toLowerCase();
+	const shadowHostTagName = String(
+		iframeElement?.getRootNode() instanceof ShadowRoot
+			? (iframeElement.getRootNode() as ShadowRoot).host?.tagName
+			: ""
+	).toLowerCase();
 	const isFoliateDesktopFrame =
 		normalizedStack.includes("node_modules/foliate-js/paginator.js") ||
-		normalizedStack.includes("node_modules/foliate-js/fixed-layout.js");
+		normalizedStack.includes("node_modules/foliate-js/fixed-layout.js") ||
+		iframePart.split(/\s+/).includes("filter") ||
+		shadowHostTagName === "foliate-view";
 	if (!isFoliateDesktopFrame) {
 		return null;
 	}
@@ -106,7 +115,8 @@ export function installDesktopFoliateIframeSandboxPatch(): void {
 		const patchedValue = normalizeDesktopFoliateSandboxValue(
 			name,
 			String(value || ""),
-			new Error().stack
+			new Error().stack,
+			this
 		);
 		Reflect.apply(originalSetAttribute, this, [name, patchedValue ?? value]);
 	};

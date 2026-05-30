@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
 	mountSpy,
@@ -113,8 +113,14 @@ vi.mock('obsidian', () => {
 });
 
 import { EpubBookshelfSidebarView } from './EpubBookshelfSidebarView';
+import { currentLanguage, i18n, initI18n } from '../utils/i18n';
 
 describe('EpubBookshelfSidebarView', () => {
+	beforeEach(() => {
+		initI18n();
+		currentLanguage.set('zh-CN');
+	});
+
 	afterEach(() => {
 		mountSpy.mockClear();
 		unmountSpy.mockClear();
@@ -201,6 +207,6 @@ describe('EpubBookshelfSidebarView', () => {
 
 		await mountCall[1].props.onBack?.();
 		expect(plugin.openEpubReader).not.toHaveBeenCalled();
-		expect(noticeSpy).toHaveBeenCalledWith('暂无最近打开的 EPUB');
+		expect(noticeSpy).toHaveBeenCalledWith(i18n.t('views.epubView.notice.noRecentBook'));
 	});
 });

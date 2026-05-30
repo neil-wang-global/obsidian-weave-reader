@@ -440,7 +440,21 @@
 				return;
 			}
 
-			await readerService.goToLocation(savedProgress.cfi);
+			try {
+				await readerService.goToLocation(savedProgress.cfi);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error || "");
+				if (/navigation timed out/i.test(message)) {
+					logger.warn('[EpubReaderView] Saved EPUB progress restore timed out; continuing with the current reader position.', {
+						bookId: book?.id,
+						filePath,
+						savedProgress,
+						error,
+					});
+					return;
+				}
+				throw error;
+			}
 			if (isStaleRender(renderToken)) {
 				return;
 			}

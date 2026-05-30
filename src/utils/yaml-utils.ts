@@ -9,6 +9,7 @@
  */
 
 import { EpubLinkService } from "../services/epub/EpubLinkService";
+import { isSupportedBookPath } from "../services/epub/book-format";
 import { logger } from "./logger";
 import { getNormalizedDeckEntries, getSingleMemoryFormalDeckIds } from "./memory-deck-membership";
 import { TagExtractor } from "./tag-extractor";
@@ -94,7 +95,7 @@ export function parseEpubSourceInfo(content: string): {
 			}
 
 			const parsed = EpubLinkService.parseLinkMarkup(sourceValue);
-			if (!parsed?.filePath?.toLowerCase().endsWith(".epub")) {
+			if (!parsed?.filePath || !isSupportedBookPath(parsed.filePath)) {
 				continue;
 			}
 

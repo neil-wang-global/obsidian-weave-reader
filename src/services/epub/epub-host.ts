@@ -131,6 +131,7 @@ export interface EpubWeaveRemoveExcerptInput {
 	epubFilePath: string;
 	cfiRange: string;
 	cardId?: string;
+	excerptId?: string;
 	sourceFile?: string;
 	sourceRef?: string;
 	mode?: EpubWeaveExcerptRemovalMode;

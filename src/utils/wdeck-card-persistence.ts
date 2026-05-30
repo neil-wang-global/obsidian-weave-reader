@@ -1,12 +1,18 @@
 import { normalizePath } from "obsidian";
 import type { Card } from "../data/epub-bridge-types";
+import { isSupportedBookPath } from "../services/epub/book-format";
 
-export type WDeckPersistenceCardLike = Pick<Card, "uuid" | "deckId" | "sourceFile" | "customFields">;
+export type WDeckPersistenceCardLike = {
+	uuid?: string;
+	deckId?: string;
+	sourceFile?: string;
+	customFields?: Record<string, unknown>;
+};
 
 const WDECK_PERSISTENCE_FIELD = "wdeck" as const;
 
 export function isEpubSemanticSourcePath(path?: string | null): boolean {
-	return normalizePath(String(path || "").trim()).toLowerCase().endsWith(".epub");
+	return isSupportedBookPath(normalizePath(String(path || "").trim()));
 }
 
 export function isPersistedCardStorageSourcePath(path?: string | null): boolean {
@@ -27,8 +33,11 @@ export function isPersistedCardStorageSourcePath(path?: string | null): boolean 
  * Physical vault file that stores card/excerpt content (e.g. `.wdeck`), not the semantic EPUB path in `we_source`.
  */
 export function readWDeckPersistenceSourcePath(card: WDeckPersistenceCardLike): string | undefined {
+	const wdeckValue = card.customFields?.[WDECK_PERSISTENCE_FIELD];
+	const wdeckMeta =
+		wdeckValue && typeof wdeckValue === "object" ? (wdeckValue as { sourcePath?: unknown }) : null;
 	const wdeckSourcePath = normalizePath(
-		String(card.customFields?.[WDECK_PERSISTENCE_FIELD]?.sourcePath || "").trim()
+		String(wdeckMeta?.sourcePath || "").trim()
 	);
 	if (wdeckSourcePath && isPersistedCardStorageSourcePath(wdeckSourcePath)) {
 		return wdeckSourcePath;

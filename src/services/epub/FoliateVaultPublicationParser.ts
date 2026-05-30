@@ -257,6 +257,8 @@ export class FoliateVaultPublicationParser {
 	private sectionTitleByHref = new Map<string, string>();
 	private rawDocumentCache = new Map<string, Document>();
 	private processedDocumentCache = new Map<string, Document>();
+	/** Reader-aligned generic section DOM (from `section.load`, not `createDocument`). */
+	private genericSectionDocumentCache = new Map<number, Document>();
 	private metadata: FoliateLoadedPublication["metadata"] = {
 		title: "",
 		author: "",
@@ -621,14 +623,20 @@ export class FoliateVaultPublicationParser {
 
 		if (this.isCfiLike(normalizedTarget)) {
 			const resolved = this.resolveCfiTarget(normalizedTarget);
-			if (!resolved || resolved.index !== sectionIndex) {
-				return null;
+			if (resolved && resolved.index === sectionIndex) {
+				const cfiRange = this.resolveAnchorAsRange(
+					doc,
+					this.executeResolvedAnchor(resolved.anchor, doc, normalizedTarget),
+					currentRoot
+				);
+				if (cfiRange) {
+					return cfiRange;
+				}
 			}
-			return this.resolveAnchorAsRange(
-				doc,
-				this.executeResolvedAnchor(resolved.anchor, doc, normalizedTarget),
-				currentRoot
-			);
+			if (currentTextHint) {
+				return this.findRangeByTextQuote(currentRoot, { highlight: currentTextHint });
+			}
+			return null;
 		}
 
 		const legacyReadium = this.parseAnyLegacyReadiumLocation(normalizedTarget);
@@ -836,7 +844,7 @@ export class FoliateVaultPublicationParser {
 	}
 
 	private async hydrateTocPageNumbers(): Promise<void> {
-		if (this.tocItems.length === 0 || this.sectionDescriptors.length === 0) {
+		if (!this.currentBook || this.tocItems.length === 0 || this.sectionDescriptors.length === 0) {
 			return;
 		}
 
@@ -844,11 +852,22 @@ export class FoliateVaultPublicationParser {
 	}
 
 	private async hydrateTocItemPageNumber(item: TocItem): Promise<void> {
-		const pageNumber = await this.resolveHrefPageNumber(item.href);
-		if (typeof pageNumber === "number" && Number.isFinite(pageNumber) && pageNumber > 0) {
-			item.pageNumber = pageNumber;
-		} else {
-			item.pageNumber = undefined;
+		if (!this.currentBook) {
+			return;
+		}
+		try {
+			const pageNumber = await this.resolveHrefPageNumber(item.href);
+			if (typeof pageNumber === "number" && Number.isFinite(pageNumber) && pageNumber > 0) {
+				item.pageNumber = pageNumber;
+			} else {
+				item.pageNumber = undefined;
+			}
+		} catch (error) {
+			// Background TOC hydration can race with parser disposal.
+			if (!this.currentBook) {
+				return;
+			}
+			throw error;
 		}
 
 		if (item.subitems?.length) {
@@ -881,6 +900,7 @@ export class FoliateVaultPublicationParser {
 		this.sectionTitleByHref.clear();
 		this.rawDocumentCache.clear();
 		this.processedDocumentCache.clear();
+		this.genericSectionDocumentCache.clear();
 		this.metadata = {
 			title: "",
 			author: "",
@@ -904,7 +924,10 @@ export class FoliateVaultPublicationParser {
 				}
 				const raw = await entry.async("text");
 				const mediaType = this.inferMimeType(normalizedHref);
-				if (this.isRewritableDocumentMediaType(mediaType)) {
+				if (
+					this.isRewritableDocumentMediaType(mediaType) ||
+					this.isDocumentHrefLike(normalizedHref)
+				) {
 					return this.repairMarkupText(raw, mediaType, normalizedHref);
 				}
 				return raw;
@@ -1382,7 +1405,7 @@ export class FoliateVaultPublicationParser {
 	}
 
 	private supportsEpubCfiNavigation(): boolean {
-		return this.getBook().sections.length > 0;
+		return (this.currentBook?.sections.length || 0) > 0;
 	}
 
 	private async findTocHrefForSection(targetIndex: number): Promise<string> {
@@ -1503,10 +1526,84 @@ export class FoliateVaultPublicationParser {
 		if (!section) {
 			return null;
 		}
-		if (typeof section.createDocument === "function") {
-			return section.createDocument();
+		return this.loadReaderAlignedGenericSectionDocument(section, index);
+	}
+
+	/**
+	 * MOBI/AZW3 sections expose both `createDocument()` (skeleton HTML) and `load()`
+	 * (reader HTML with resources inlined). Locators must use the same DOM as foliate's iframe.
+	 */
+	private async loadReaderAlignedGenericSectionDocument(
+		section: FoliateSection,
+		index: number
+	): Promise<Document | null> {
+		if (this.genericSectionDocumentCache.has(index)) {
+			return this.genericSectionDocumentCache.get(index) || null;
 		}
-		return null;
+
+		let doc: Document | null = null;
+		if (typeof section.load === "function") {
+			try {
+				const loaded = await section.load();
+				const url = String(loaded || "").trim();
+				if (url) {
+					const markup = await this.fetchMarkupFromSectionLoadUrl(url);
+					if (markup) {
+						let transformed = markup;
+						try {
+							transformed = await this.inlineFoliateBlobStylesheets(
+								markup,
+								"application/xhtml+xml"
+							);
+						} catch (error) {
+							logger.warn(
+								"[FoliateVaultPublicationParser] Failed to transform reader-aligned generic section:",
+								{ index, error }
+							);
+						}
+						doc = this.parseGenericSectionMarkup(transformed);
+					}
+				}
+			} catch (error) {
+				logger.warn(
+					"[FoliateVaultPublicationParser] Failed to load reader-aligned generic section:",
+					{ index, error }
+				);
+			}
+		}
+
+		if (!doc && typeof section.createDocument === "function") {
+			doc = await section.createDocument();
+		}
+
+		if (doc) {
+			this.genericSectionDocumentCache.set(index, doc);
+		}
+		return doc;
+	}
+
+	private async fetchMarkupFromSectionLoadUrl(url: string): Promise<string> {
+		if (!url.startsWith("blob:")) {
+			throw new Error(`Unsupported generic section load URL: ${url}`);
+		}
+		const response = await fetch(url);
+		if (!response.ok) {
+			throw new Error(`Failed to fetch generic section markup (${response.status})`);
+		}
+		return response.text();
+	}
+
+	private parseGenericSectionMarkup(markup: string): Document {
+		let doc = this.parseMarkupDocument(
+			markup,
+			this.getMarkupParserType("application/xhtml+xml"),
+			"foliate-generic-section",
+			true
+		);
+		if (doc.querySelector("parsererror") || !doc.documentElement?.namespaceURI) {
+			doc = this.parseMarkupDocument(markup, "text/html", "foliate-generic-section", true);
+		}
+		return doc;
 	}
 
 	private attachHtmlTransformPipeline(book: FoliateBook): void {
@@ -3550,11 +3647,44 @@ export class FoliateVaultPublicationParser {
 		try {
 			const parserType = this.getMarkupParserType(mediaType);
 			const doc = this.parseMarkupDocument(raw, parserType, path, true);
+			this.sanitizeFoliateLoaderDocument(doc);
 			return parserType === "text/html"
 				? doc.documentElement.outerHTML
 				: new XMLSerializer().serializeToString(doc);
 		} catch {
 			return raw;
+		}
+	}
+
+	/**
+	 * Loader-stage sanitization keeps iframe-based reader text extraction intact while
+	 * stripping executable script vectors before markup reaches Foliate's sandboxed frame.
+	 */
+	private sanitizeFoliateLoaderDocument(doc: Document): void {
+		for (const element of Array.from(doc.querySelectorAll("script, object, embed"))) {
+			element.remove();
+		}
+		for (const metaElement of Array.from(doc.querySelectorAll("meta[http-equiv]"))) {
+			const httpEquiv = metaElement.getAttribute("http-equiv") || "";
+			if (httpEquiv.trim().toLowerCase() === "refresh") {
+				metaElement.remove();
+			}
+		}
+		for (const element of Array.from(doc.querySelectorAll("*"))) {
+			for (const attribute of Array.from(element.attributes)) {
+				const attributeName = attribute.name;
+				const attributeValue = attribute.value || "";
+				if (/^on/i.test(attributeName)) {
+					element.removeAttribute(attributeName);
+					continue;
+				}
+				if (
+					DANGEROUS_URL_ATTRIBUTES.includes(attributeName.toLowerCase()) &&
+					SCRIPT_PROTOCOL_PATTERN.test(attributeValue)
+				) {
+					element.removeAttribute(attributeName);
+				}
+			}
 		}
 	}
 

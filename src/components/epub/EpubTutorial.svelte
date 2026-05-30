@@ -3,7 +3,7 @@
 	import {
 		EPUB_TUTORIAL_CONTENT_BY_LANG,
 		EPUB_TUTORIAL_TABS_BY_LANG,
-		type TutorialLanguage,
+		resolveTutorialLanguage,
 		type TutorialTabId
 	} from './epub-tutorial-content';
 	import { currentLanguage, tr } from '../../utils/i18n';
@@ -15,7 +15,7 @@
 
 	let { visible, onClose }: Props = $props();
 	let t = $derived($tr);
-	let tutorialLanguage = $derived<TutorialLanguage>($currentLanguage === 'en-US' ? 'en-US' : 'zh-CN');
+	let tutorialLanguage = $derived(resolveTutorialLanguage($currentLanguage));
 	let tutorialTabs = $derived(EPUB_TUTORIAL_TABS_BY_LANG[tutorialLanguage]);
 	let tutorialContent = $derived(EPUB_TUTORIAL_CONTENT_BY_LANG[tutorialLanguage]);
 

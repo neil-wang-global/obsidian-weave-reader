@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Vault } from "obsidian";
+import { getReaderHighlightIdentityKey } from "../highlight/highlight-identity";
 import { FoliateReaderService } from "../FoliateReaderService";
 
 vi.mock("obsidian", async () => {
@@ -77,6 +78,134 @@ describe("FoliateReaderService comment marker layering", () => {
 			});
 			expect(rendered.renderSignature).toContain("style:underline");
 			expect(rendered.renderSignature).toContain("comment:visible");
+		} finally {
+			service.destroy();
+		}
+	});
+
+	it("keeps multiple highlights that share a canonical CFI but have different excerpt ids", async () => {
+		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
+		try {
+			const sharedCfi = "epubcfi(/6/26)";
+			const highlights = [
+				{
+					cfiRange: sharedCfi,
+					color: "yellow",
+					text: "第一段摘录",
+					excerptId: "excerpt-a",
+					chapterIndex: 12,
+					presentation: "highlight" as const,
+				},
+				{
+					cfiRange: sharedCfi,
+					color: "green",
+					text: "第二段摘录",
+					excerptId: "excerpt-b",
+					chapterIndex: 12,
+					presentation: "highlight" as const,
+				},
+			];
+
+			vi.spyOn(service as any, "resolveHighlightAnchorCfi").mockImplementation(
+				(async (...args: any[]) => {
+					const [highlight] = args as [{ excerptId?: string; cfiRange: string }];
+					if (highlight.excerptId === "excerpt-a") {
+						return "epubcfi(/6/26!/4/2/1,/1:0,/1:4)";
+					}
+					if (highlight.excerptId === "excerpt-b") {
+						return "epubcfi(/6/26!/4/2/2,/1:0,/1:4)";
+					}
+					return highlight.cfiRange;
+				}) as any
+			);
+			vi.spyOn((service as any).parser, "getSectionIndexForCfi").mockReturnValue(12);
+			vi.spyOn(service as any, "getVisibleFramesWithIndex").mockReturnValue([{ index: 12 }]);
+			const view = {
+				addAnnotation: vi.fn(async (..._args: any[]) => undefined),
+				deleteAnnotation: vi.fn(async () => undefined),
+				removeEventListener: vi.fn(),
+				close: vi.fn(),
+				remove: vi.fn(),
+			};
+			(service as any).foliateView = view;
+
+			await service.applyHighlights(highlights);
+
+			expect((service as any).highlightDataMap.size).toBe(2);
+			expect(view.addAnnotation).toHaveBeenCalledTimes(2);
+			const values = view.addAnnotation.mock.calls.map(
+				(call) => (call[0] as unknown as { value?: string }).value
+			);
+			expect(new Set(values).size).toBe(2);
+			const renderedValues = view.addAnnotation.mock.calls.map(
+				(call) => (call[0] as unknown as { value?: string; excerptId?: string }).value
+			);
+			expect(renderedValues).toEqual(
+				expect.arrayContaining([
+					"epubcfi(/6/26!/4/2/1,/1:0,/1:4)",
+					"epubcfi(/6/26!/4/2/2,/1:0,/1:4)",
+				])
+			);
+		} finally {
+			service.destroy();
+		}
+	});
+
+	it("falls back to excerpt text when foliate supplies empty annotation rects", async () => {
+		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
+		try {
+			const doc = document.implementation.createHTMLDocument("novel");
+			const paragraph = doc.createElement("p");
+			paragraph.textContent = "不能要太高悬赏";
+			doc.body.appendChild(paragraph);
+
+			const frame = {
+				index: 12,
+				href: "txt-section-13.xhtml",
+				document: doc,
+				frameElement: null,
+				frame: {
+					document: doc,
+					window: doc.defaultView as Window,
+					cfiFromRange: () => null,
+				},
+			};
+			vi.spyOn(service as any, "getVisibleFramesWithIndex").mockReturnValue([frame]);
+			vi.spyOn((service as any).parser, "resolveRangeInLoadedSection").mockImplementation(
+				((...args: any[]) => {
+					const [_cfi, document, index, textHint] = args as [string, Document, number, string?];
+					if (index !== 12 || !textHint) {
+						return null;
+					}
+					const range = document.createRange();
+					range.selectNodeContents(paragraph);
+					return range;
+				}) as any
+			);
+
+			const annotation = (service as any).createAnnotation({
+				cfiRange: "epubcfi(/6/26!/4/2/4,/17:15,/17:22)",
+				color: "green",
+				text: "不能要太高悬赏",
+				chapterIndex: 12,
+				presentation: "highlight",
+			});
+			vi.spyOn(service as any, "extractRangeClientRects").mockReturnValue([
+				{ left: 10, top: 20, width: 120, height: 18 },
+			]);
+			const compositeSpy = vi.spyOn(service as any, "createCompositeAnnotationOverlay");
+			const draw = vi.fn((factory: (rects: unknown[], options?: unknown) => SVGElement) => {
+				factory([]);
+			});
+
+			await (service as any).drawAnnotation(annotation, draw);
+
+			expect(compositeSpy).toHaveBeenCalledTimes(1);
+			const overlayRects = compositeSpy.mock.calls[0]?.[1] as Array<{
+				width: number;
+				height: number;
+			}>;
+			expect(overlayRects).toEqual([{ left: 10, top: 20, width: 120, height: 18 }]);
 		} finally {
 			service.destroy();
 		}

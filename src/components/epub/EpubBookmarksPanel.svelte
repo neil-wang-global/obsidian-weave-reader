@@ -2,6 +2,7 @@
 	import { setIcon, type App } from 'obsidian';
 	import { onMount } from 'svelte';
 	import { tr } from '../../utils/i18n';
+	import EpubLoadingState from './EpubLoadingState.svelte';
 	import { logger } from '../../utils/logger';
 	import { EpubBookmarkService, type EpubBookmarkRecord } from '../../services/epub/EpubBookmarkService';
 	import type { EpubBook } from '../../services/epub';
@@ -148,7 +149,9 @@
 
 <div class="epub-bookmarks-panel">
 	{#if loading}
-		<div class="bm-empty">{t('epub.bookmarks.loading')}</div>
+		<div class="bm-empty">
+			<EpubLoadingState message={t('epub.bookmarks.loading')} />
+		</div>
 	{:else if bookmarks.length === 0}
 		<div class="bm-empty">
 			<div class="bm-empty-label">{t('epub.bookmarks.empty')}</div>

@@ -104,7 +104,8 @@ class AIConfigStore {
 
 		const aiConfig = this.plugin.settings.aiConfig;
 		if (!aiConfig) {
-			logger.warn("[AIConfigStore] aiConfig不存在，使用默认值");
+			this.plugin.settings.aiConfig = createDefaultPersistedAIConfig();
+			logger.info("[AIConfigStore] aiConfig不存在，已初始化默认值");
 			return;
 		}
 

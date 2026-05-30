@@ -1,4 +1,5 @@
 import { extractErrorMessage } from "../../types/utility-types";
+import { i18n } from "../../utils/i18n";
 import { logger } from "../../utils/logger";
 
 export type EpubErrorCode =
@@ -127,31 +128,32 @@ function buildUserMessage(
 ): string {
 	switch (code) {
 		case "file_not_found":
-			return "EPUB 文件不存在或已被移动，请确认源文件仍在库中";
+			return i18n.t("epub.errors.fileNotFound");
 		case "load_timeout":
-			return "EPUB 加载超时，可能是该书结构复杂或内部资源异常，请稍后重试";
+			return i18n.t("epub.errors.loadTimeout");
 		case "invalid_archive":
-			return "该 EPUB 压缩包已损坏，或当前读取到的文件数据不完整，暂时无法打开";
+			return i18n.t("epub.errors.invalidArchive");
 		case "missing_container":
-			return "该 EPUB 缺少必要的容器索引，当前无法打开";
+			return i18n.t("epub.errors.missingContainer");
 		case "missing_package_document":
-			return "该 EPUB 缺少必要的 package 文档，当前无法打开";
+			return i18n.t("epub.errors.missingPackageDocument");
 		case "invalid_markup":
 			return operation === "toc"
-				? "该 EPUB 的目录或章节文档格式异常，当前无法读取目录"
-				: "该 EPUB 的章节文档格式异常，当前无法正常打开";
+				? i18n.t("epub.errors.invalidMarkupToc")
+				: i18n.t("epub.errors.invalidMarkupOpen");
 		case "invalid_cfi_target":
 			return operation === "navigate"
-				? "该 EPUB 的内部定位信息异常，无法跳转到目标位置"
-				: "该 EPUB 的内部导航结构异常，但已自动回退到可用阅读位置";
+				? i18n.t("epub.errors.invalidCfiNavigate")
+				: i18n.t("epub.errors.invalidCfiFallback");
 		case "render_failed":
-			return "EPUB 阅读器渲染失败，请重试或切换阅读模式后再试";
+			return i18n.t("epub.errors.renderFailed");
 		case "toc_load_failed":
-			return "EPUB 目录加载失败，请稍后重试";
+			return i18n.t("epub.errors.tocLoadFailed");
 		default:
-			return rawMessage && rawMessage !== "未知错误"
-				? `EPUB 处理失败：${rawMessage}`
-				: "EPUB 处理失败";
+			if (rawMessage && rawMessage !== "未知错误" && rawMessage !== "Unknown error") {
+				return i18n.t("epub.errors.unknownWithMessage", { message: rawMessage });
+			}
+			return i18n.t("epub.errors.unknown");
 	}
 }
 

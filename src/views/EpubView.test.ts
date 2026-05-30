@@ -77,10 +77,20 @@ vi.mock('./EpubSidebarView', () => ({
 
 vi.mock('obsidian', () => {
 	class Scope {
-		public destroyed = false;
-		register(): void {}
-		destroy(): void {
-			this.destroyed = true;
+		private handlers = new Set<object>();
+
+		register(): object {
+			const handler = {};
+			this.handlers.add(handler);
+			return handler;
+		}
+
+		unregister(handler: object): void {
+			this.handlers.delete(handler);
+		}
+
+		getHandlerCount(): number {
+			return this.handlers.size;
 		}
 	}
 
@@ -103,6 +113,8 @@ vi.mock('obsidian', () => {
 		}
 
 		async setState(): Promise<void> {}
+
+		async onClose(): Promise<void> {}
 	}
 
 	return {
@@ -219,7 +231,7 @@ describe('EpubView', () => {
 		);
 	});
 
-	it('creates a keymap scope before registering reader keyboard shortcuts', () => {
+	it('registers reader page shortcuts on a view scope and unregisters them on dispose', () => {
 		const parentScope = {};
 		const app = { scope: parentScope };
 		const view = new EpubView({ app } as any, { app } as any);
@@ -228,11 +240,29 @@ describe('EpubView', () => {
 		(view as any).registerReaderKeyboardShortcuts();
 
 		expect((view as any).scope).toBeTruthy();
-		expect((view as any).scope.destroyed).toBe(false);
+		expect((view as any).readerKeymapHandlers).toHaveLength(2);
+		expect((view as any).scope.getHandlerCount()).toBe(2);
 
 		(view as any).disposeReaderKeymapScope();
 
 		expect((view as any).scope).toBeNull();
+		expect((view as any).readerKeymapHandlers).toHaveLength(0);
+	});
+
+	it('re-registers reader shortcuts without leaking handlers from the previous scope', () => {
+		const parentScope = {};
+		const app = { scope: parentScope };
+		const view = new EpubView({ app } as any, { app } as any);
+		(view as any).app = app;
+
+		(view as any).registerReaderKeyboardShortcuts();
+		const firstScope = (view as any).scope;
+
+		(view as any).registerReaderKeyboardShortcuts();
+
+		expect(firstScope.getHandlerCount()).toBe(0);
+		expect((view as any).readerKeymapHandlers).toHaveLength(2);
+		expect((view as any).scope.getHandlerCount()).toBe(2);
 	});
 
 	it('opens the paragraph mode premium preview instead of toggling when the capability is unavailable', () => {

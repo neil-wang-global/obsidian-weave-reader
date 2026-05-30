@@ -1,8 +1,38 @@
 import type { SupportedLanguage, TranslationKey } from "../types";
 
-export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
+type EpubTranslationLocale = "zh-CN" | "en-US";
+
+export const epubTranslations: Record<EpubTranslationLocale, TranslationKey> = {
 	"zh-CN": {
 		epub: {
+			common: {
+				loadingData: "正在加载数据…",
+				unknownFormat: "未知格式",
+			},
+			errors: {
+				fileNotFound: "EPUB 文件不存在或已被移动，请确认源文件仍在库中",
+				loadTimeout: "EPUB 加载超时，可能是该书结构复杂或内部资源异常，请稍后重试",
+				invalidArchive: "该 EPUB 压缩包已损坏，或当前读取到的文件数据不完整，暂时无法打开",
+				missingContainer: "该 EPUB 缺少必要的容器索引，当前无法打开",
+				missingPackageDocument: "该 EPUB 缺少必要的 package 文档，当前无法打开",
+				invalidMarkupToc: "该 EPUB 的目录或章节文档格式异常，当前无法读取目录",
+				invalidMarkupOpen: "该 EPUB 的章节文档格式异常，当前无法正常打开",
+				invalidCfiNavigate: "该 EPUB 的内部定位信息异常，无法跳转到目标位置",
+				invalidCfiFallback: "该 EPUB 的内部导航结构异常，但已自动回退到可用阅读位置",
+				renderFailed: "EPUB 阅读器渲染失败，请重试或切换阅读模式后再试",
+				tocLoadFailed: "EPUB 目录加载失败，请稍后重试",
+				unknownWithMessage: "EPUB 处理失败：{message}",
+				unknown: "EPUB 处理失败",
+			},
+			plainText: {
+				defaultSectionTitle: "正文",
+				numberedSectionTitle: "正文 {index}",
+			},
+			commands: {
+				aiSplitUnavailable: "暂无可用的自定义 AI 拆分功能",
+				aiSplitConfig: "AI 拆分配置",
+				standalonePluginLabel: "独立 EPUB 插件",
+			},
 			displayMode: {
 				adaptive: {
 					label: "跟随位置",
@@ -27,20 +57,18 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				freeColumnTitle: "基础免费功能",
 				premiumColumnTitle: "高级付费功能",
 				continueBasicReading: "继续基础阅读",
+				limitedTimeOpenSuffix: " (限时开放)",
 				lockedFormatNotice: "{format} 阅读是高级功能，请激活许可证后使用",
 				freeFeatures: {
 					basicReading: {
-						title: "EPUB 基础阅读",
-						description: "免费打开 EPUB 文件，支持正文阅读、章节切换与目录跳转。",
+						title: "EPUB 与 TXT 基础阅读",
+						description:
+							"免费打开 EPUB 与 TXT 书籍，支持正文阅读、章节切换与目录跳转（TXT 按段落分章）。",
 					},
 					bookmarksAndNavigation: {
-						title: "书签",
-						description: "免费使用书签目录、当前页书签保存与书签列表跳转。",
-					},
-					readingProgress: {
-						title: "阅读进度与连续阅读",
+						title: "书签与阅读进度",
 						description:
-							"自动保存与恢复阅读位置、书架进度展示、连续阅读自动保存，以及上次阅读点记录。",
+							"免费使用书签目录、当前页书签、书签列表跳转，以及阅读位置保存恢复、书架进度展示与连续阅读自动保存。",
 					},
 					incrementalReadingEntry: {
 						title: "增量阅读入口",
@@ -66,8 +94,8 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				},
 				premiumFeatures: {
 					nonEpubFormats: {
-						title: "非 EPUB 格式阅读",
-						description: "解锁 MOBI、AZW3、FB2、FBZ、TXT、CBZ 等扩展格式。",
+						title: "扩展格式阅读",
+						description: "解锁 MOBI、AZW3、FB2、FBZ、CBZ 等扩展格式（EPUB 与 TXT 免费）。",
 					},
 					readingReference: {
 						title: "参考阅读点与顶部贴纸",
@@ -88,7 +116,7 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 					sourceLocation: {
 						title: "双向溯源定位",
 						description:
-							"无论从阅读器跳转到笔记保存位置，还是从笔记点击书籍链接回到原文定位，都属于高级功能。",
+							"在阅读器与笔记、Canvas、卡片之间按摘录链接精确定位；适用于 EPUB、MOBI、TXT、CBZ 等所有支持格式，未激活许可证时不可用。",
 					},
 					footnotePreview: {
 						title: "脚注浮窗预览",
@@ -106,12 +134,12 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				nextScreen: "下一屏",
 				nextPage: "下一页",
 				pageStatus: "第 {current} / {total} 页",
-				locating: "定位中...",
+				locating: "正在定位页码…",
 				jumpLabel: "跳转页数",
 				jumpAction: "跳转",
 			},
 			bookmarks: {
-				loading: "加载中...",
+				loading: "正在加载书签…",
 				empty: "暂无书签",
 				hint: "点击阅读器顶部书签按钮即可保存当前位置",
 				goto: "跳转到 {chapter}",
@@ -120,7 +148,9 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				chapterFallback: "第 {chapter} 章",
 			},
 			notes: {
-				loading: "正在加载摘录...",
+				loading: "正在加载摘录…",
+				preparing: "正在准备摘录索引…",
+				syncing: "正在同步摘录…",
 				empty: "暂时还没有摘录，阅读时选中文本后就可以在这里回看。",
 				noMatches: "没有匹配的摘录，请尝试调整 tag:、source:、comment:、type: 或 color: 条件。",
 				emptyExcerpt: "摘录内容为空",
@@ -130,7 +160,9 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 			},
 			toc: {
 				addToIncrementalReading: "添加到增量阅读",
-				empty: "目录还没有加载出来，请稍后再试。",
+				loading: "正在加载目录…",
+				empty: "此书暂无目录",
+				loadFailed: "目录加载失败，请稍后重试",
 				ariaLabel: "目录",
 				lastReadBadge: "上次阅读",
 				lastReadBadgeTitle: "上次阅读位置",
@@ -192,7 +224,7 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 					settings: "设置",
 				},
 				searchPlaceholder: "搜索书籍，或输入 status:、author:、created:",
-				refreshing: "正在刷新书架...",
+				refreshing: "正在加载书架数据…",
 				empty: "我的书架中还没有书籍或漫画，先去扫描库中书籍和漫画并加入书架吧。",
 				noMatches: "未找到匹配结果",
 				noMatchesWithQuery: "未找到匹配 {query} 的结果",
@@ -206,7 +238,14 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				unknownAuthor: "未知作者",
 				currentBook: "当前书籍",
 				translator: "译者：{name}",
+				wordCountWan: "{value} 万字",
+				wordCountKilo: "{value} 千字",
+				wordCountChars: "{value} 字",
+				chapterCount: "{count} 章",
 				progress: "阅读进度 {progress}%",
+				continueReadingBadge: "继续阅读",
+				continueReadingCta: "继续阅读",
+				continueReadingLastRead: "上次阅读 {time}",
 				notFoundRemoved: "这本书的源文件已不存在，已从书架移除",
 				refreshSuccess: "EPUB：我的书架已刷新",
 				refreshSuccessWithCleanup: "EPUB：我的书架已刷新，并清理 {count} 条失效书籍记录",
@@ -232,6 +271,7 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				menu: {
 					openInNewTab: "在新标签页打开",
 					viewFullInfo: "查看书籍完整信息",
+					rename: "重命名",
 					markCompleted: "标记为已读完",
 					clearCompleted: "取消已读完标记",
 					customCover: "自定义书籍封面",
@@ -249,6 +289,92 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 					resetSuccess: "我的书架：已恢复默认封面",
 					failed: "我的书架：更新书籍封面失败",
 					notOnShelf: "我的书架：当前书籍不在书架中",
+				},
+				rename: {
+					title: "重命名书籍",
+					label: "书籍名称",
+					placeholder: "输入新的书籍名称",
+					hint: "书架、阅读器标签与书签笔记将同步使用此名称。",
+					confirm: "保存",
+					cancel: "取消",
+					success: "已重命名为「{title}」",
+					failed: "我的书架：重命名失败",
+				},
+				importModal: {
+					searchPlaceholder: "按书名或路径搜索",
+					filterPending: "未导入",
+					filterAdded: "已导入",
+					cancel: "取消",
+					confirm: "加入我的书架",
+					confirmWithCount: "加入我的书架 ({count})",
+					summary:
+						"扫描共 {total} 本 · 未导入 {pending} 本 · 已导入 {added} 本 · 当前显示 {visible} 本 · 已选 {selected} 本",
+					statusAdded: "已加入",
+					statusPending: "待加入",
+					emptySearch: "没有匹配的书籍或漫画",
+					emptyPending: "当前没有可加入的书籍或漫画",
+					emptyAdded: "当前没有已在书架中的书籍或漫画",
+				},
+				bookInfoModal: {
+					title: "书籍完整信息",
+					untitledBook: "未命名书籍",
+					translatorByline: "译者：{name}",
+					sectionReading: "阅读信息",
+					sectionFile: "文件信息",
+					sectionDescription: "内容简介",
+					sectionNoteStats: "笔记统计",
+					noteStatsUnavailable: "当前暂时无法完成笔记统计。",
+					author: "作者",
+					translator: "译者",
+					publisher: "出版社",
+					publishYear: "出版年",
+					identifier: "标识符",
+					series: "系列",
+					chapterCount: "章节数",
+					chapterCountValue: "{count} 章",
+					wordCount: "字数",
+					wordCountValue: "{count} 字",
+					price: "定价",
+					subjects: "主题",
+					rights: "版权",
+					readingProgress: "阅读进度",
+					lastRead: "最近阅读",
+					totalReadTime: "累计阅读",
+					firstRecorded: "首次记录",
+					completedAt: "读完时间",
+					fileSize: "文件大小",
+					filePath: "存放路径",
+					excerptTotal: "摘录总数",
+					excerptWithComments: "含批注摘录",
+					sourceFiles: "来源文件",
+					durationMinutes: "{minutes} 分钟",
+					durationHours: "{hours} 小时",
+					durationHoursMinutes: "{hours} 小时 {minutes} 分钟",
+				},
+				bookDeleteModal: {
+					title: "删除书籍文件",
+					untitledBook: "未命名书籍",
+					translatorByline: "译者：{name}",
+					progressRead: "{progress}% 已读",
+					confirmBody:
+						"确认后将删除仓库中的书籍文件，并清理书架索引与本地阅读缓存。",
+					sectionNoteStats: "关联摘录笔记统计",
+					noteStatsUnavailable: "当前无法完成关联摘录统计，你仍可继续删除书籍文件。",
+					statLinkedExcerpts: "关联摘录",
+					statExcerptsWithComments: "含批注摘录",
+					statSourceFiles: "来源文件",
+					sectionImpact: "删除影响",
+					impactDeleteFile: "删除当前书籍文件。",
+					impactClearShelf: "清理该书的书架记录、本地阅读状态与阅读器缓存。",
+					impactKeepNotes:
+						"Markdown、Canvas、卡片数据中的摘录笔记不会被删除。",
+					sectionFile: "文件信息",
+					fileName: "文件名",
+					format: "格式",
+					fileSize: "文件大小",
+					path: "路径",
+					cancel: "取消",
+					confirm: "删除书籍文件",
 				},
 			},
 			globalSidebar: {
@@ -413,6 +539,8 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				chapterLocateFailed: "未能定位当前章节，请稍后重试",
 				chapterExtractFailed: "未能提取当前章节正文，请稍后重试",
 				exportMarkdownFailed: "导出 Markdown 失败，请重试",
+				markdownExported: "已导出 Markdown：{fileName}",
+				sourceOpenedWithoutLocate: "已打开源文档，但未精确定位到溯源内容",
 				excerptNotesFeatureNotice: "摘录与批注是高级功能，请激活许可证后使用",
 				concealed: "隐藏",
 				highlight: "高亮",
@@ -468,7 +596,8 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				cardLocateUnavailable: "打开摘录来源卡片功能暂不可用",
 				cardLocated: "已在卡片管理中定位该摘录卡片",
 				cardLocateFailed: "打开摘录来源卡片失败",
-				loading: "加载中...",
+				loading: "正在加载书籍…",
+				highlightLoadingHint: "正文高亮摘录正在加载中，请稍候…",
 				nextChapter: "下一章节",
 				minutesOnly: "{count}分",
 				hoursMinutes: "{hours}时{minutes}分",
@@ -499,6 +628,9 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				},
 				exportNotesPopover: {
 					title: "导出本书摘录笔记",
+					templateLabel: "导出笔记模板",
+					template1: "模板 1",
+					template2: "模板 2",
 					typeLabel: "导出笔记类型",
 					cancel: "取消",
 					export: "导出笔记",
@@ -566,6 +698,7 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 					contactTitle: "联系方式",
 				},
 				groups: {
+					premiumPreview: "高级预览",
 					reading: "阅读位置与书签",
 					features: "功能入口与摘录",
 					diagnostics: "开发与诊断",
@@ -605,6 +738,12 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 					template2: "模板 2",
 					debugMode: "调试模式",
 					debugModeDesc: "开启后会输出更完整的调试日志，便于排查脚注预览、阅读器渲染与热重载问题。",
+					rebuildHighlightIndex: "重建 EPUB 摘录索引",
+					rebuildHighlightIndexDesc:
+						"删除插件目录中的摘录缓存与来源索引后，在下次打开书籍时后台重建。不会删除笔记、Canvas 或 .wdeck 中的卡片正文。",
+					rebuildHighlightIndexAction: "重建索引",
+					rebuildHighlightIndexSuccess: "摘录索引缓存已清除，下次打开书籍时将重新建立。",
+					rebuildHighlightIndexFailed: "清除摘录索引缓存失败，请查看控制台日志。",
 					sourceNavigationOpenInNewTab: "溯源跳转时在新标签页打开笔记",
 					sourceNavigationOpenInNewTabDesc:
 						"从阅读器跳转到 Markdown、Canvas 或 JSON 来源时，优先复用已打开的标签页；关闭后会在新标签页打开，便于与当前书籍并排阅读。",
@@ -734,6 +873,43 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 	},
 	"en-US": {
 		epub: {
+			common: {
+				loadingData: "Loading data…",
+				unknownFormat: "Unknown format",
+			},
+			errors: {
+				fileNotFound:
+					"The EPUB file is missing or was moved. Please confirm the source file is still in the vault",
+				loadTimeout:
+					"EPUB loading timed out. The book structure may be complex or contain broken resources. Please try again",
+				invalidArchive:
+					"This EPUB archive appears corrupted or incomplete and cannot be opened right now",
+				missingContainer:
+					"This EPUB is missing the required container index and cannot be opened",
+				missingPackageDocument:
+					"This EPUB is missing the required package document and cannot be opened",
+				invalidMarkupToc:
+					"This EPUB has invalid table-of-contents markup and the TOC cannot be loaded",
+				invalidMarkupOpen:
+					"This EPUB has invalid chapter markup and cannot be opened normally",
+				invalidCfiNavigate:
+					"This EPUB has invalid internal location data and cannot jump to the target position",
+				invalidCfiFallback:
+					"This EPUB has invalid navigation structure, but a readable fallback position was used",
+				renderFailed: "The EPUB reader failed to render. Retry or switch reading mode",
+				tocLoadFailed: "Failed to load the EPUB table of contents. Please try again",
+				unknownWithMessage: "EPUB processing failed: {message}",
+				unknown: "EPUB processing failed",
+			},
+			plainText: {
+				defaultSectionTitle: "Body",
+				numberedSectionTitle: "Body {index}",
+			},
+			commands: {
+				aiSplitUnavailable: "No custom AI split actions are available",
+				aiSplitConfig: "AI split configuration",
+				standalonePluginLabel: "Standalone EPUB plugin",
+			},
 			displayMode: {
 				adaptive: {
 					label: "Follow location",
@@ -759,22 +935,19 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				freeColumnTitle: "Free features",
 				premiumColumnTitle: "Premium features",
 				continueBasicReading: "Continue basic reading",
+				limitedTimeOpenSuffix: " (Limited-time access)",
 				lockedFormatNotice:
 					"{format} reading is a premium feature. Please activate a license to use it",
 				freeFeatures: {
 					basicReading: {
-						title: "Basic EPUB reading",
+						title: "Basic EPUB and TXT reading",
 						description:
-							"Open EPUB files for free with chapter navigation and table of contents browsing.",
+							"Open EPUB and TXT books for free with chapter navigation and table of contents browsing (TXT is split by paragraphs).",
 					},
 					bookmarksAndNavigation: {
-						title: "Bookmarks",
-						description: "Use bookmark folders, page bookmarks, and bookmark list navigation for free.",
-					},
-					readingProgress: {
-						title: "Reading progress and continuous reading",
+						title: "Bookmarks and reading progress",
 						description:
-							"Automatically save and restore reading position, bookshelf progress, continuous auto-save, and last-reading-point recording.",
+							"Use bookmark folders, page bookmarks, bookmark list navigation, reading position save/restore, bookshelf progress, and continuous-reading autosave for free.",
 					},
 					incrementalReadingEntry: {
 						title: "Incremental reading entry",
@@ -802,8 +975,8 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				},
 				premiumFeatures: {
 					nonEpubFormats: {
-						title: "Non-EPUB format reading",
-						description: "Unlock MOBI, AZW3, FB2, FBZ, TXT, CBZ, and other formats.",
+						title: "Extended format reading",
+						description: "Unlock MOBI, AZW3, FB2, FBZ, CBZ, and other formats (EPUB and TXT remain free).",
 					},
 					readingReference: {
 						title: "Reading reference point and top sticker",
@@ -826,7 +999,7 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 					sourceLocation: {
 						title: "Bidirectional source location",
 						description:
-							"Both directions are premium: jumping from the reader to the saved note location, and clicking an EPUB link inside notes to return to the exact book location.",
+							"Precise excerpt-linked navigation between the reader and notes, Canvas, or cards across EPUB, MOBI, TXT, CBZ, and every other supported book format. Requires an active license.",
 					},
 					footnotePreview: {
 						title: "Footnote popover preview",
@@ -846,12 +1019,12 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				nextScreen: "Next screen",
 				nextPage: "Next page",
 				pageStatus: "Page {current} / {total}",
-				locating: "Locating...",
+				locating: "Locating page…",
 				jumpLabel: "Jump to page",
 				jumpAction: "Jump",
 			},
 			bookmarks: {
-				loading: "Loading...",
+				loading: "Loading bookmarks…",
 				empty: "No bookmarks yet",
 				hint: "Use the bookmark button in the reader header to save the current location",
 				goto: "Go to {chapter}",
@@ -860,7 +1033,9 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				chapterFallback: "Chapter {chapter}",
 			},
 			notes: {
-				loading: "Loading excerpts...",
+				loading: "Loading excerpts…",
+				preparing: "Preparing excerpt index…",
+				syncing: "Syncing excerpts…",
 				empty: "There are no excerpts yet. Select text while reading and you can review them here.",
 				noMatches:
 					"No excerpts matched. Try adjusting tag:, source:, comment:, type:, or color: filters.",
@@ -871,7 +1046,9 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 			},
 			toc: {
 				addToIncrementalReading: "Add to incremental reading",
-				empty: "The table of contents has not loaded yet. Please try again shortly.",
+				loading: "Loading table of contents…",
+				empty: "This book has no table of contents",
+				loadFailed: "Failed to load the table of contents. Please try again.",
 				ariaLabel: "Table of contents",
 				lastReadBadge: "Last read",
 				lastReadBadgeTitle: "Last reading position",
@@ -933,7 +1110,7 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 					settings: "Settings",
 				},
 				searchPlaceholder: "Search books, or type status:, author:, created:",
-				refreshing: "Refreshing bookshelf...",
+				refreshing: "Loading bookshelf data…",
 				empty:
 					"There are no books or comics in My Bookshelf yet. Scan your vault and add some first.",
 				noMatches: "No matching results found",
@@ -948,7 +1125,13 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				unknownAuthor: "Unknown author",
 				currentBook: "Current book",
 				translator: "Translator: {name}",
+				wordCountKilo: "{value}k words",
+				wordCountChars: "{value} words",
+				chapterCount: "{count} chapters",
 				progress: "Reading progress {progress}%",
+				continueReadingBadge: "Continue reading",
+				continueReadingCta: "Continue reading",
+				continueReadingLastRead: "Last read {time}",
 				notFoundRemoved:
 					"The source file for this book no longer exists and it has been removed from the bookshelf",
 				refreshSuccess: "EPUB: My Bookshelf refreshed",
@@ -977,6 +1160,7 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				menu: {
 					openInNewTab: "Open in new tab",
 					viewFullInfo: "View full book information",
+					rename: "Rename",
 					markCompleted: "Mark as finished",
 					clearCompleted: "Clear finished mark",
 					customCover: "Custom book cover",
@@ -994,6 +1178,94 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 					resetSuccess: "Bookshelf: default cover restored",
 					failed: "Bookshelf: failed to update cover",
 					notOnShelf: "Bookshelf: this book is not on the shelf",
+				},
+				rename: {
+					title: "Rename book",
+					label: "Book title",
+					placeholder: "Enter a new book title",
+					hint: "This title is used on the bookshelf, reader tab, and bookmark notes.",
+					confirm: "Save",
+					cancel: "Cancel",
+					success: "Renamed to \"{title}\"",
+					failed: "My Bookshelf: failed to rename book",
+				},
+				importModal: {
+					searchPlaceholder: "Search by title or path",
+					filterPending: "Not imported",
+					filterAdded: "Imported",
+					cancel: "Cancel",
+					confirm: "Add to My Bookshelf",
+					confirmWithCount: "Add to My Bookshelf ({count})",
+					summary:
+						"Scanned {total} · Not imported {pending} · Imported {added} · Showing {visible} · Selected {selected}",
+					statusAdded: "Added",
+					statusPending: "Pending",
+					emptySearch: "No matching books or comics",
+					emptyPending: "No books or comics available to add",
+					emptyAdded: "No books or comics are already on the bookshelf",
+				},
+				bookInfoModal: {
+					title: "Full book information",
+					untitledBook: "Untitled book",
+					translatorByline: "Translator: {name}",
+					sectionReading: "Reading information",
+					sectionFile: "File information",
+					sectionDescription: "Description",
+					sectionNoteStats: "Note statistics",
+					noteStatsUnavailable: "Note statistics are temporarily unavailable.",
+					author: "Author",
+					translator: "Translator",
+					publisher: "Publisher",
+					publishYear: "Published",
+					identifier: "Identifier",
+					series: "Series",
+					chapterCount: "Chapters",
+					chapterCountValue: "{count} chapters",
+					wordCount: "Word count",
+					wordCountValue: "{count} words",
+					price: "Price",
+					subjects: "Subjects",
+					rights: "Rights",
+					readingProgress: "Reading progress",
+					lastRead: "Last read",
+					totalReadTime: "Total reading time",
+					firstRecorded: "First recorded",
+					completedAt: "Completed at",
+					fileSize: "File size",
+					filePath: "Path",
+					excerptTotal: "Total excerpts",
+					excerptWithComments: "Excerpts with comments",
+					sourceFiles: "Source files",
+					durationMinutes: "{minutes} min",
+					durationHours: "{hours} hr",
+					durationHoursMinutes: "{hours} hr {minutes} min",
+				},
+				bookDeleteModal: {
+					title: "Delete book file",
+					untitledBook: "Untitled book",
+					translatorByline: "Translator: {name}",
+					progressRead: "{progress}% read",
+					confirmBody:
+						"This will delete the book file from the vault and clear bookshelf index and local reading cache.",
+					sectionNoteStats: "Linked excerpt statistics",
+					noteStatsUnavailable:
+						"Linked excerpt statistics are unavailable. You can still delete the book file.",
+					statLinkedExcerpts: "Linked excerpts",
+					statExcerptsWithComments: "Excerpts with comments",
+					statSourceFiles: "Source files",
+					sectionImpact: "Deletion impact",
+					impactDeleteFile: "Delete the current book file.",
+					impactClearShelf:
+						"Clear this book's bookshelf record, local reading state, and reader cache.",
+					impactKeepNotes:
+						"Excerpt notes in Markdown, Canvas, and card data will not be deleted.",
+					sectionFile: "File information",
+					fileName: "File name",
+					format: "Format",
+					fileSize: "File size",
+					path: "Path",
+					cancel: "Cancel",
+					confirm: "Delete book file",
 				},
 			},
 			globalSidebar: {
@@ -1168,6 +1440,9 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				chapterLocateFailed: "Unable to locate the current chapter. Please try again",
 				chapterExtractFailed: "Unable to extract the current chapter body. Please try again",
 				exportMarkdownFailed: "Markdown export failed. Please try again",
+				markdownExported: "Exported Markdown: {fileName}",
+				sourceOpenedWithoutLocate:
+					"Opened the source note, but could not locate the linked excerpt precisely",
 				excerptNotesFeatureNotice:
 					"Excerpts and annotations are premium features. Please activate a license to use them",
 				concealed: "Concealed",
@@ -1227,7 +1502,8 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				cardLocateUnavailable: "Opening the source excerpt card is currently unavailable",
 				cardLocated: "Located the excerpt card in Card Management",
 				cardLocateFailed: "Failed to open the source excerpt card",
-				loading: "Loading...",
+				loading: "Loading book…",
+				highlightLoadingHint: "Highlight excerpts are still loading in the reader...",
 				nextChapter: "Next chapter",
 				minutesOnly: "{count} min",
 				hoursMinutes: "{hours} hr {minutes} min",
@@ -1258,6 +1534,9 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 				},
 				exportNotesPopover: {
 					title: "Export excerpt notes for this book",
+					templateLabel: "Export template",
+					template1: "Template 1",
+					template2: "Template 2",
 					typeLabel: "Exported note types",
 					cancel: "Cancel",
 					export: "Export notes",
@@ -1326,6 +1605,7 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 					contactTitle: "Contact",
 				},
 				groups: {
+					premiumPreview: "Premium preview",
 					reading: "Reading position and bookmarks",
 					features: "Feature entry points and excerpts",
 					diagnostics: "Development and diagnostics",
@@ -1349,7 +1629,7 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 						"When enabled, locked premium entries remain visible in settings and the reader so users can inspect feature tiers.",
 					bookmarkFolder: "Bookmark folder",
 					bookmarkFolderDesc:
-						"Bookmark files are saved to the selected folder as part of reading progress and location tracking.",
+						"Bookmark files are saved to the selected folder as a free basic capability.",
 					bookmarkFolderPlaceholder: "Choose a folder path",
 					bookshelfDisplayMode: "Default bookshelf display mode",
 					bookshelfDisplayModeDesc:
@@ -1368,6 +1648,14 @@ export const epubTranslations: Record<SupportedLanguage, TranslationKey> = {
 					debugMode: "Debug mode",
 					debugModeDesc:
 						"Enable more complete debug logs to troubleshoot footnote previews, reader rendering, and hot-reload issues.",
+					rebuildHighlightIndex: "Rebuild EPUB excerpt index",
+					rebuildHighlightIndexDesc:
+						"Deletes excerpt cache and source-index files under the plugin data folder; indexes rebuild in the background the next time you open a book. Your notes, canvases, and .wdeck cards are not deleted.",
+					rebuildHighlightIndexAction: "Rebuild index",
+					rebuildHighlightIndexSuccess:
+						"Excerpt index cache cleared. Indexes will rebuild the next time you open a book.",
+					rebuildHighlightIndexFailed:
+						"Failed to clear the excerpt index cache. Check the console for details.",
 					sourceNavigationOpenInNewTab: "Open source notes in a new tab when locating",
 					sourceNavigationOpenInNewTabDesc:
 						"When jumping from the reader to Markdown, Canvas, or JSON sources, reuse an open tab when possible. When disabled, sources open in a new tab for side-by-side reading.",

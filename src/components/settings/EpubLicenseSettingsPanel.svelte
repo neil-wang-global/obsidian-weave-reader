@@ -165,6 +165,11 @@
 
 <style>
   .epub-license-settings-panel {
+    /* Spacing tokens aligned with settings panel */
+    --epub-settings-gap-sm: 0.35rem;
+    --epub-settings-gap-lg: 1rem;
+    --epub-settings-panel-padding: 1rem;
+    --epub-settings-radius-panel: 18px;
     display: flex;
     flex-direction: column;
     min-width: 0;
@@ -173,17 +178,17 @@
   .epub-license-settings-card {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    padding: 1rem;
+    gap: var(--epub-settings-gap-lg);
+    padding: var(--epub-settings-panel-padding);
     border: 1px solid var(--background-modifier-border);
-    border-radius: 18px;
+    border-radius: var(--epub-settings-radius-panel);
     background: color-mix(in oklab, var(--background-primary), var(--background-secondary) 26%);
   }
 
   .epub-license-settings-header {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: var(--epub-settings-gap-sm);
     min-width: 0;
   }
 
@@ -191,14 +196,15 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--epub-settings-gap-lg);
   }
 
   .section-title {
     margin: 0;
-    font-size: 1rem;
+    font-size: var(--epub-settings-font-size-title, var(--font-ui-medium, 1rem));
     font-weight: 600;
     color: var(--text-normal);
+    line-height: 1.4;
   }
 
   .section-title.with-accent-bar {
@@ -214,7 +220,7 @@
     transform: translateY(-50%);
     width: 4px;
     height: 80%;
-    border-radius: 2px;
+    border-radius: var(--radius-s, 2px);
   }
 
   .section-title.accent-purple::before {
@@ -223,8 +229,9 @@
 
   .section-description {
     margin: 0;
+    font-size: var(--epub-settings-font-size-desc, var(--font-ui-smaller, 0.85rem));
     color: var(--text-muted);
-    line-height: 1.6;
+    line-height: 1.55;
   }
 
   .epub-license-settings-content :global(.enhanced-activation-form .activation-form) {
@@ -234,8 +241,8 @@
   .epub-license-settings-content :global(.enhanced-activation-form .input-section:not(:first-child)) {
     display: grid;
     grid-template-columns: minmax(7rem, 9rem) minmax(0, 1fr);
-    column-gap: 1rem;
-    row-gap: 0.35rem;
+    column-gap: var(--epub-settings-gap-lg);
+    row-gap: var(--epub-settings-gap-sm);
     align-items: start;
   }
 
@@ -261,8 +268,8 @@
 
   @media (max-width: 720px) {
     .epub-license-settings-card {
-      padding: 0.9rem;
-      border-radius: 14px;
+      padding: calc(var(--epub-settings-panel-padding) - 0.1rem);
+      border-radius: var(--radius-l, 14px);
     }
 
     .epub-license-settings-content :global(.enhanced-activation-form .input-section:not(:first-child)) {

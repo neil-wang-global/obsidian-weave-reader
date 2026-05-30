@@ -90,6 +90,50 @@ describe('EpubAnnotationService', () => {
 		expect(backlinkService.collectHighlights).toHaveBeenCalledTimes(2);
 	});
 
+	it('keeps separate highlights for the same coarse cfi when excerpt ids differ', async () => {
+		const storageService = {
+			removeLegacyHighlights: vi.fn(async () => {}),
+			loadConcealedTexts: vi.fn(async () => []),
+			getCanvasBinding: vi.fn(async () => null),
+		} as any;
+
+		const backlinkService = {
+			collectHighlights: vi.fn(async () => [
+				{
+					cfiRange: 'epubcfi(/6/26)',
+					color: 'yellow',
+					text: '第一段摘录',
+					excerptId: 'excerpt-a',
+					sourceFile: 'Notes/demo.md',
+					createdTime: 1,
+				},
+				{
+					cfiRange: 'epubcfi(/6/26)',
+					color: 'green',
+					text: '第二段摘录',
+					excerptId: 'excerpt-b',
+					sourceFile: 'Notes/demo.md',
+					createdTime: 2,
+				},
+			]),
+		} as any;
+
+		const service = new EpubAnnotationService(storageService);
+
+		await expect(service.collectAllHighlights('book-1', 'Books/demo.txt', backlinkService)).resolves.toEqual([
+			expect.objectContaining({
+				cfiRange: 'epubcfi(/6/26)',
+				text: '第一段摘录',
+				excerptId: 'excerpt-a',
+			}),
+			expect.objectContaining({
+				cfiRange: 'epubcfi(/6/26)',
+				text: '第二段摘录',
+				excerptId: 'excerpt-b',
+			}),
+		]);
+	});
+
 	it('merges all source locators for the same cfi and preserves the preferred primary source', async () => {
 		const storageService = {
 			removeLegacyHighlights: vi.fn(async () => {}),
@@ -270,8 +314,12 @@ describe('EpubAnnotationService', () => {
 		expect(markdown).toContain('- **出版社**: 测试出版社');
 		expect(markdown).toContain('- **阅读进度**: 42%');
 		expect(markdown).toContain('## 高亮');
-		expect(markdown).toMatch(/> \[!EPUB\|yellow\] \[\[Books\/demo\.epub#weave-cfi=epubcfi\(\/6\/4\)&sid=epubsrc-demo&eid=excerpt-a\|demo\]\] \[雪夜的故事\] 2026-04-27 13:32\n> 第一条高亮\n/);
-		expect(markdown).toMatch(/> \[!EPUB\|blue\] \[\[Books\/demo\.epub#weave-cfi=epubcfi\(\/6\/6\)&sid=epubsrc-demo&eid=excerpt-b\|demo\]\] \[晨光\] 2026-04-28 09:15\n> 第二条高亮\n/);
+		expect(markdown).toMatch(
+			/> \[!EPUB\|yellow\] \[\[Books\/demo\.epub#weave-cfi=epubcfi\(\/6\/4\).*&sid=epubsrc-demo&eid=excerpt-a\|demo\]\] \[雪夜的故事\] 2026-04-27 13:32\n> 第一条高亮\n/
+		);
+		expect(markdown).toMatch(
+			/> \[!EPUB\|blue\] \[\[Books\/demo\.epub#weave-cfi=epubcfi\(\/6\/6\).*&sid=epubsrc-demo&eid=excerpt-b\|demo\]\] \[晨光\] 2026-04-28 09:15\n> 第二条高亮\n/
+		);
 		expect(markdown).toContain('> 第一条高亮');
 		expect(markdown).toContain('> 第二条高亮');
 	});

@@ -118,7 +118,7 @@ export class EpubIrResumePointAccess {
 			return [];
 		}
 
-		const index = await safeReadJson<IRPointFileIndex | null>(adapter, indexPath, null, this.app);
+		const index = await safeReadJson<IRPointFileIndex | null>(adapter, indexPath, this.app);
 		const files = Array.isArray(index?.files) ? index.files : [];
 		const results: EpubIrResumePointRecord[] = [];
 
@@ -133,12 +133,7 @@ export class EpubIrResumePointAccess {
 				continue;
 			}
 
-			const fileData = await safeReadJson<IRPointFileData | null>(
-				adapter,
-				absolutePath,
-				null,
-				this.app
-			);
+			const fileData = await safeReadJson<IRPointFileData | null>(adapter, absolutePath, this.app);
 			const points = Array.isArray(fileData?.points) ? fileData.points : [];
 			for (const point of points) {
 				if (!point?.id || !isEpubBookmarkPoint(point)) {
@@ -170,7 +165,7 @@ export class EpubIrResumePointAccess {
 			return false;
 		}
 
-		const index = await safeReadJson<IRPointFileIndex | null>(adapter, indexPath, null, this.app);
+		const index = await safeReadJson<IRPointFileIndex | null>(adapter, indexPath, this.app);
 		const files = Array.isArray(index?.files) ? index.files : [];
 
 		for (const entry of files) {
@@ -184,12 +179,7 @@ export class EpubIrResumePointAccess {
 				continue;
 			}
 
-			const fileData = await safeReadJson<IRPointFileData | null>(
-				adapter,
-				absolutePath,
-				null,
-				this.app
-			);
+			const fileData = await safeReadJson<IRPointFileData | null>(adapter, absolutePath, this.app);
 			if (!fileData || !Array.isArray(fileData.points)) {
 				continue;
 			}
@@ -243,7 +233,7 @@ export class EpubIrResumePointAccess {
 			return [];
 		}
 
-		const raw = await safeReadJson<unknown>(adapter, legacyPath, [], this.app);
+		const raw = await safeReadJson<unknown>(adapter, legacyPath, this.app);
 		const tasks = Array.isArray(raw) ? raw : [];
 		const results: EpubIrResumePointRecord[] = [];
 
@@ -280,7 +270,7 @@ export class EpubIrResumePointAccess {
 			return false;
 		}
 
-		const raw = await safeReadJson<unknown>(adapter, legacyPath, [], this.app);
+		const raw = await safeReadJson<unknown>(adapter, legacyPath, this.app);
 		if (!Array.isArray(raw)) {
 			return false;
 		}

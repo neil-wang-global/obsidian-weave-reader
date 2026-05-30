@@ -313,6 +313,56 @@ describe('EpubBacklinkHighlightService', () => {
 		);
 	});
 
+	it('refreshBookHighlightsIncremental patches disk cache from changed sources only', async () => {
+		const notePath = 'Notes/incremental-patch.md';
+		const initialContent = [
+			'> [!EPUB|green] [[Books/demo.epub#weave-cfi=readium%3Akeep|Demo]]',
+			'> Keep me',
+			'',
+			'> [!EPUB|yellow] [[Books/demo.epub#weave-cfi=readium%3Aupdate|Demo]]',
+			'> Old quote',
+			'',
+		].join('\n');
+		const { app, files } = createMockApp({
+			[notePath]: initialContent,
+		});
+		app.metadataCache.resolvedLinks = {
+			[notePath]: {
+				'Books/demo.epub': 1,
+			},
+		};
+		const service = new EpubBacklinkHighlightService(app);
+
+		await service.collectHighlights('Books/demo.epub');
+		files.set(
+			notePath,
+			[
+				'> [!EPUB|green] [[Books/demo.epub#weave-cfi=readium%3Akeep|Demo]]',
+				'> Keep me',
+				'',
+				'> [!EPUB|blue] [[Books/demo.epub#weave-cfi=readium%3Aupdate|Demo]]',
+				'> New quote',
+				'',
+			].join('\n')
+		);
+
+		const patched = await service.refreshBookHighlightsIncremental('Books/demo.epub', [notePath]);
+		expect(patched).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					cfiRange: 'readium:keep',
+					text: 'Keep me',
+				}),
+				expect.objectContaining({
+					cfiRange: 'readium:update',
+					color: 'blue',
+					text: 'New quote',
+				}),
+			])
+		);
+		expect(patched).toHaveLength(2);
+	});
+
 	it('invalidates cached highlights when the source excerpt is removed', async () => {
 		const notePath = 'Notes/cache-invalidation.md';
 		const noteContent = [
@@ -565,6 +615,7 @@ describe('EpubBacklinkHighlightService', () => {
 		expect(match).toEqual({
 			sourceFile: jsonPath,
 			sourceRef: 'card:card-b',
+			cfiRange: 'readium:beta',
 		});
 	});
 
@@ -595,6 +646,7 @@ describe('EpubBacklinkHighlightService', () => {
 		expect(match).toEqual({
 			sourceFile: jsonPath,
 			sourceRef: 'card:card-b',
+			cfiRange: 'readium:legacy-beta',
 		});
 	});
 
@@ -626,6 +678,180 @@ describe('EpubBacklinkHighlightService', () => {
 				hasCommentDivider: false,
 			}),
 		]);
+	});
+
+	it('collects FB2 highlights from markdown callouts with relative attachment paths', async () => {
+		const bookPath =
+			'附件/史蒂夫 · 乔布斯传 (修订版) = Steve Jobs A Biography ([美] 沃尔特 · 艾萨克森 (Walter Isaacson) 著 管延圻 etc.) (z-library.sk, 1lib.sk, z-lib.sk).fb2';
+		const notePath = '笔记/乔布斯摘录.md';
+		const linkMarkup =
+			'[[../../附件/史蒂夫 · 乔布斯传 (修订版) = Steve Jobs A Biography ([美] 沃尔特 · 艾萨克森 (Walter Isaacson) 著 管延圻 etc.) (z-library.sk, 1lib.sk, z-lib.sk).fb2#weave-cfi=epubcfi(/6/22!/4/2/18,/1:0,/1:18)&text=1972%E5%B9%B4%E6%98%A5%E5%A4%A9%EF%BC%8C%E4%B9%94%E5%B8%83%E6%96%AF%E5%8D%B3%E5%B0%86%E9%AB%98%E4%B8%AD%E6%AF%95%E4%B8%9A%E6%97%B6&chapter=10|史蒂夫 · 乔布斯传]]';
+		const noteContent = [
+			`> [!EPUB|green] ${linkMarkup} [3 出离] 2026-05-26 20:46`,
+			'> 1972年春天，乔布斯即将高中毕业时',
+		].join('\n');
+		const { app } = createMockApp({
+			[notePath]: noteContent,
+			[bookPath]: 'binary',
+		});
+		app.metadataCache.resolvedLinks = {
+			[notePath]: {
+				[`../../${bookPath}`]: 1,
+			},
+		};
+		const service = new EpubBacklinkHighlightService(app);
+		(service as any).storageService.ensureSourceIdentity = vi.fn(async () => ({
+			sourceId: 'epubsrc-jobs',
+		}));
+
+		await expect(service.collectHighlights(bookPath)).resolves.toEqual([
+			expect.objectContaining({
+				cfiRange: 'epubcfi(/6/22!/4/2/18,/1:0,/1:18)',
+				text: '1972年春天，乔布斯即将高中毕业时',
+				chapterIndex: 10,
+				sourceFile: notePath,
+			}),
+		]);
+	});
+
+	it('deletes MOBI markdown excerpts linked through relative attachment paths', async () => {
+		const bookPath =
+			'附件/史蒂夫•乔布斯传(Steve JobsA Biography) (沃尔特•艾萨克森 (Walter Isaacson)) (z-library.sk, 1lib.sk, z-lib.sk).mobi';
+		const notePath = '笔记/乔布斯摘录.md';
+		const linkMarkup =
+			'[[../../附件/史蒂夫•乔布斯传(Steve JobsA Biography) (沃尔特•艾萨克森 (Walter Isaacson)) (z-library.sk, 1lib.sk, z-lib.sk).mobi#weave-cfi=epubcfi(/6/14!/4/12,/1:0,/1:11)&text=%E6%88%91%E8%AE%A4%E8%AF%86%E4%BB%96%E6%98%AF%E5%9C%A81984%E5%B9%B4&chapter=6|史蒂夫•乔布斯传]]';
+		const noteContent = [
+			`> [!EPUB|green] ${linkMarkup} [Introduction 前言] 2026-05-26 21:23`,
+			'> 我认识他是在1984年',
+			'',
+			'Plain tail',
+		].join('\n');
+		const { app, files } = createMockApp({
+			[notePath]: noteContent,
+			[bookPath]: 'binary',
+		});
+		app.metadataCache.resolvedLinks = {
+			[notePath]: {
+				[`../../${bookPath}`]: 1,
+			},
+		};
+		const service = new EpubBacklinkHighlightService(app);
+		(service as any).storageService.ensureSourceIdentity = vi.fn(async () => ({
+			sourceId: 'epubsrc-jobs-mobi',
+		}));
+
+		const deleted = await service.deleteHighlight(
+			notePath,
+			'epubcfi(/6/14!/4/12,/1:0,/1:11)',
+			bookPath
+		);
+
+		expect(deleted).toBe(true);
+		expect(files.get(notePath)).toBe('Plain tail');
+	});
+
+	it('deletes MOBI markdown excerpts when the live reader CFI drifts from the stored callout locator', async () => {
+		const bookPath = '附件/demo.mobi';
+		const notePath = '笔记/demo.md';
+		const noteContent = [
+			'> [!EPUB|green] [[../../附件/demo.mobi#weave-cfi=epubcfi(/6/14!/4/12,/1:0,/1:11)&text=hello&chapter=6|demo]]',
+			'> 我认识他是在1984年',
+			'',
+			'Plain tail',
+		].join('\n');
+		const { app, files } = createMockApp({
+			[notePath]: noteContent,
+			[bookPath]: 'binary',
+		});
+		const service = new EpubBacklinkHighlightService(app);
+
+		const deleted = await service.deleteHighlight(
+			notePath,
+			'epubcfi(/6/14!/4/12,/1:0,/1:12)',
+			bookPath
+		);
+
+		expect(deleted).toBe(true);
+		expect(files.get(notePath)).toBe('Plain tail');
+	});
+
+	it('returns stored cfiRange from findSourceForCfi when the live reader CFI drifts', async () => {
+		const bookPath = '附件/demo.mobi';
+		const notePath = '笔记/demo.md';
+		const noteContent = [
+			'> [!EPUB|green] [[../../附件/demo.mobi#weave-cfi=epubcfi(/6/14!/4/12,/1:0,/1:11)&text=hello&chapter=6|demo]]',
+			'> 我认识他是在1984年',
+		].join('\n');
+		const { app } = createMockApp({
+			[notePath]: noteContent,
+			[bookPath]: 'binary',
+		});
+		const service = new EpubBacklinkHighlightService(app);
+
+		await expect(
+			service.findSourceForCfi('epubcfi(/6/14!/4/12,/1:0,/1:12)', bookPath, notePath, {
+				text: '我认识他是在1984年',
+			})
+		).resolves.toEqual(
+			expect.objectContaining({
+				sourceFile: notePath,
+				cfiRange: 'epubcfi(/6/14!/4/12,/1:0,/1:11)',
+			})
+		);
+	});
+
+	it('collects FB2 highlights from markdown callouts and wdeck we_source cards', async () => {
+		const notePath = 'Notes/fb2-excerpts.md';
+		const wdeckPath = 'weave/memory/deck-files/fb2-deck_01.wdeck';
+		const noteContent = [
+			'> [!EPUB|yellow] [[Books/novel.fb2#weave-cfi=epubcfi(/6/4!/4/2,/1:0,/1:8)&text=FB2%20quote&sid=epubsrc-fb2|novel]] [第一章]',
+			'> FB2 quote',
+		].join('\n');
+		const wdeckContent = JSON.stringify({
+			fileType: 'wdeck',
+			logicalDeckId: 'deck-fb2',
+			cards: [
+				{
+					uuid: 'card-fb2',
+					modified: '2026-05-20T10:00:00.000Z',
+					content: [
+						'---',
+						'we_source: "[[Books/novel.fb2#weave-cfi=readium%3Afb2-card&sid=epubsrc-fb2|novel]]"',
+						'---',
+						'Card FB2 quote',
+					].join('\n'),
+				},
+			],
+		});
+		const { app } = createMockApp({
+			[notePath]: noteContent,
+			[wdeckPath]: wdeckContent,
+			'Books/novel.fb2': 'binary',
+		});
+		app.metadataCache.resolvedLinks = {
+			[notePath]: { 'Books/novel.fb2': 1 },
+		};
+		const service = new EpubBacklinkHighlightService(app);
+		(service as any).storageService.ensureSourceIdentity = vi.fn(async () => ({
+			sourceId: 'epubsrc-fb2',
+		}));
+
+		const highlights = await service.collectHighlights('Books/novel.fb2');
+		expect(highlights).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					cfiRange: 'epubcfi(/6/4!/4/2,/1:0,/1:8)',
+					text: 'FB2 quote',
+					sourceFile: notePath,
+				}),
+				expect.objectContaining({
+					cfiRange: 'readium:fb2-card',
+					text: 'Card FB2 quote',
+					sourceFile: wdeckPath,
+					sourceRef: 'card:card-fb2',
+				}),
+			])
+		);
 	});
 
 	it('collects wdeck highlights from YAML we_source cards when no EPUB callout block exists', async () => {
@@ -836,6 +1062,43 @@ describe('EpubBacklinkHighlightService', () => {
 		const parsed = JSON.parse(files.get(wdeckPath) || '{}');
 		expect(parsed.payload.cardMap['card-map-a'].content).toContain('[!EPUB|green]');
 		expect(parsed.payload.cardMap['card-map-b'].content).toContain('[!EPUB|purple]');
+	});
+
+	it('rebuildHighlightIndexes clears cached highlights and source index on disk', async () => {
+		const cachePath =
+			'.obsidian/plugins/weave/cache/incremental-reading/epub-backlink-highlights-cache.json';
+		const cacheContent = JSON.stringify({
+			version: '1.3.0',
+			lastUpdated: '2026-01-01T00:00:00.000Z',
+			entries: {
+				'Books/demo.epub::': {
+					manifest: { markdownSources: [], canvasSources: [], cardDataSources: [] },
+					highlights: [
+						{
+							cfiRange: 'epubcfi(/6/2)',
+							color: 'yellow',
+							text: 'cached',
+							sourceFile: 'Notes/a.md',
+						},
+					],
+				},
+			},
+			sourceIndex: {
+				version: '1.3.0',
+				updatedAt: '2026-01-01T00:00:00.000Z',
+				files: [{ path: 'Notes/a.md', kind: 'markdown', mtime: 1, size: 2, targets: [] }],
+			},
+		});
+		const { app, files } = createMockApp({
+			[cachePath]: cacheContent,
+		});
+		const service = new EpubBacklinkHighlightService(app);
+
+		await service.rebuildHighlightIndexes();
+
+		const next = JSON.parse(files.get(cachePath) || '{}');
+		expect(next.entries).toEqual({});
+		expect(next.sourceIndex).toBeUndefined();
 	});
 
 	it('rebuilds stale disk source index caches so wdeck highlights are collected after upgrade', async () => {
@@ -1405,6 +1668,7 @@ describe('EpubBacklinkHighlightService', () => {
 		expect(match).toEqual({
 			sourceFile: wdeckPath,
 			sourceRef: 'card:card-b',
+			cfiRange: 'readium:beta',
 		});
 	});
 

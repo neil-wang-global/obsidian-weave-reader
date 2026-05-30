@@ -4,15 +4,17 @@
 
 <script lang="ts">
         import { onDestroy, onMount, untrack } from 'svelte';
+        import { get } from 'svelte/store';
         import { setIcon, TFile, TAbstractFile, Menu, Notice, normalizePath } from 'obsidian';
         import type { App } from 'obsidian';
         import { logger } from '../../utils/logger';
         import {
-                EpubBacklinkHighlightService,
+                getEpubBacklinkHighlightService,
                 EPUB_RUNTIME,
                 canUseEpubReadingProgress,
                 getEpubStorageService,
-                resolveEpubHost
+                resolveEpubHost,
+                warmEpubExcerptCachesForPaths,
         } from '../../services/epub';
         import { PremiumFeatureGuard } from '../../services/premium/PremiumFeatureGuard';
         import { getBookFormatDisplayLabel, isSupportedBookFile, stripSupportedBookExtension } from '../../services/epub/book-format';
@@ -25,8 +27,9 @@
         } from '../../services/epub/book-progress';
         import { epubActiveDocumentStore } from '../../stores/epub-active-document-store';
         import { getNavigationHub } from '../../services/navigation/navigation-hub-access';
-        import { tr } from '../../utils/i18n';
+        import { currentLanguage, tr } from '../../utils/i18n';
         import EpubSearchInput from './EpubSearchInput.svelte';
+        import EpubLoadingState from './EpubLoadingState.svelte';
         import { parseSearchQuery, type DateRange, type SearchQuery } from '../../utils/search-parser';
         import {
                 getBookshelfDisplayModeOptions,
@@ -59,6 +62,8 @@
                 translator?: string;
                 publisher?: string;
                 coverImage?: string;
+                wordCount?: number;
+                chapterCount?: number;
                 progress: number;
                 lastReadTime: number;
                 createdTime: number;
@@ -68,14 +73,12 @@
         interface DisplayBookItem extends EpubFileInfo {
                 displayTitle: string;
                 bylineText: string;
-                tagValues: Array<{
-                        value: string;
-                        tone: 'primary' | 'secondary';
-                }>;
+                statsLine: string;
                 metaText: string;
                 author: string;
                 translator?: string;
                 publisher?: string;
+                wordCount?: number;
                 formatLabel: string;
                 progress: number;
                 lastReadTime: number;
@@ -145,13 +148,14 @@
         let pendingBookshelfRefresh = false;
         let pendingBookshelfRefreshNotice = false;
         let coverLoadTimer: ReturnType<typeof setTimeout> | null = null;
+        let metadataRetryTimer: ReturnType<typeof setTimeout> | null = null;
         const storageService = untrack(() => getEpubStorageService(app));
         let coverPersistTimer: ReturnType<typeof setTimeout> | null = null;
         const coverPersistPending = new Map<string, string | null>();
-        const MAX_VISIBLE_COVER_LOADS = 18;
         const BOOKSHELF_DATA_CHANGED_EVENT = EPUB_RUNTIME.events.bookshelfDataChanged;
         const BOOKSHELF_REFRESH_REQUEST_EVENT = EPUB_RUNTIME.events.bookshelfRefreshRequest;
         const BOOKSHELF_DISPLAY_SETTINGS_CHANGED_EVENT = EPUB_RUNTIME.events.bookshelfDisplaySettingsChanged;
+        const BOOK_DISPLAY_TITLE_CHANGED_EVENT = EPUB_RUNTIME.events.bookDisplayTitleChanged;
         const BOOKSHELF_READING_STATUS_OPTIONS: BookshelfReadingStatus[] = ['未开始', '阅读中', '已读完'];
 
         function getLocalizedReadingStatus(status: BookshelfReadingStatus): string {
@@ -223,6 +227,14 @@
                         translator: book.metadata.translator?.trim() || undefined,
                         publisher: book.metadata.publisher?.trim() || undefined,
                         coverImage: book.metadata.coverImage?.trim() || undefined,
+                        wordCount:
+                                typeof book.metadata.wordCount === 'number' && book.metadata.wordCount > 0
+                                        ? book.metadata.wordCount
+                                        : undefined,
+                        chapterCount:
+                                typeof book.metadata.chapterCount === 'number' && book.metadata.chapterCount > 0
+                                        ? book.metadata.chapterCount
+                                        : undefined,
                         progress: resolveDisplayProgress(book),
                         lastReadTime: Number.isFinite(book.readingStats?.lastReadTime) ? book.readingStats.lastReadTime : 0,
                         createdTime: Number.isFinite(book.readingStats?.createdTime) ? book.readingStats.createdTime : 0,
@@ -305,6 +317,7 @@
                 return [
                         file.displayTitle,
                         file.metaText,
+                        file.statsLine,
                         file.name,
                         file.folder,
                         file.author,
@@ -623,10 +636,11 @@
                 }
         }
 
-        async function loadBookMetadata(files: EpubFileInfo[], runId: number): Promise<void> {
+        async function loadBookMetadata(files: EpubFileInfo[], runId: number, allowRetry = true): Promise<void> {
                 try {
                         const [books, scanEntries] = await Promise.all([
-                                storageService.loadBooks({ hydrateStates: false }),
+                                // Bookshelf progress/reading status depends on hydrated readingState.
+                                storageService.loadBooks({ hydrateStates: true }),
                                 storageService.loadScanIndex(),
                         ]);
                         if (runId !== refreshRunId) return;
@@ -665,6 +679,15 @@
                 } catch {
                         if (runId === refreshRunId) {
                                 bookMetaByPath = new Map();
+                                if (allowRetry) {
+                                        if (metadataRetryTimer) {
+                                                clearTimeout(metadataRetryTimer);
+                                        }
+                                        metadataRetryTimer = setTimeout(() => {
+                                                metadataRetryTimer = null;
+                                                void loadBookMetadata(files, runId, false);
+                                        }, 180);
+                                }
                         }
                 }
         }
@@ -718,6 +741,7 @@
                         const loaded = await publicationParser.load(file.path);
                         const coverUrl = loaded.coverImage || null;
                         if (runId !== refreshRunId) return;
+                        mergeParsedBookshelfMetadata(file.path, loaded.metadata);
                         cacheResolvedCover(file.path, coverUrl);
                 } catch {
                         if (runId === refreshRunId) {
@@ -742,7 +766,7 @@
 
         function scheduleVisibleCoverLoading(files: EpubFileInfo[], runId: number) {
                 cancelScheduledCoverLoading();
-                const queue = files.slice(0, MAX_VISIBLE_COVER_LOADS);
+                const queue = files.slice();
                 let index = 0;
 
                 const step = () => {
@@ -764,10 +788,105 @@
                 coverLoadTimer = setTimeout(step, 16);
         }
 
-        function formatSize(bytes: number): string {
-                if (bytes < 1024) return `${bytes} B`;
-                if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-                return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+        function mergeParsedBookshelfMetadata(
+                filePath: string,
+                metadata: Partial<BookMetadata> | null | undefined
+        ): void {
+                const existing = bookMetaByPath.get(filePath);
+                if (!existing || !metadata) {
+                        return;
+                }
+
+                const next: BookshelfBookMeta = { ...existing };
+                let changed = false;
+
+                if (
+                        typeof metadata.wordCount === 'number'
+                        && metadata.wordCount > 0
+                        && metadata.wordCount !== existing.wordCount
+                ) {
+                        next.wordCount = metadata.wordCount;
+                        changed = true;
+                }
+
+                const publisher = metadata.publisher?.trim();
+                if (publisher && publisher !== existing.publisher) {
+                        next.publisher = publisher;
+                        changed = true;
+                }
+
+                const translator = metadata.translator?.trim();
+                if (translator && translator !== existing.translator) {
+                        next.translator = translator;
+                        changed = true;
+                }
+
+                if (
+                        typeof metadata.chapterCount === 'number'
+                        && metadata.chapterCount > 0
+                        && metadata.chapterCount !== existing.chapterCount
+                ) {
+                        next.chapterCount = metadata.chapterCount;
+                        changed = true;
+                }
+
+                if (!changed) {
+                        return;
+                }
+
+                const nextMeta = new Map(bookMetaByPath);
+                nextMeta.set(filePath, next);
+                bookMetaByPath = nextMeta;
+        }
+
+        function formatCompactWordCountValue(value: number): string {
+                return value >= 100
+                        ? String(Math.round(value))
+                        : value.toFixed(1).replace(/\.0$/, '');
+        }
+
+        function formatBookshelfChapterCount(chapterCount: number | undefined): string {
+                if (!Number.isFinite(chapterCount) || !chapterCount || chapterCount <= 0) {
+                        return '';
+                }
+
+                return t('epub.bookshelf.chapterCount', {
+                        count: new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(chapterCount),
+                });
+        }
+
+        function formatBookshelfWordCount(wordCount: number | undefined): string {
+                if (!Number.isFinite(wordCount) || !wordCount || wordCount <= 0) {
+                        return '';
+                }
+
+                const isChinese = get(currentLanguage) === 'zh-CN';
+
+                if (isChinese) {
+                        if (wordCount >= 10000) {
+                                return t('epub.bookshelf.wordCountWan', {
+                                        value: formatCompactWordCountValue(wordCount / 10000),
+                                });
+                        }
+                        if (wordCount >= 1000) {
+                                return t('epub.bookshelf.wordCountKilo', {
+                                        value: formatCompactWordCountValue(wordCount / 1000),
+                                });
+                        }
+                        return t('epub.bookshelf.wordCountChars', {
+                                value: new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 }).format(wordCount),
+                        });
+                }
+
+                if (wordCount >= 1000) {
+                        return t('epub.bookshelf.wordCountKilo', {
+                                value: formatCompactWordCountValue(wordCount / 1000),
+                        });
+                }
+
+                return t('epub.bookshelf.wordCountChars', {
+                        value: new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(wordCount),
+                });
         }
 
         function clampProgress(progress: number): number {
@@ -1077,7 +1196,7 @@
         }
 
         async function collectBookNoteStats(filePath: string): Promise<BookNoteStats> {
-                const backlinkService = new EpubBacklinkHighlightService(app);
+                        const backlinkService = getEpubBacklinkHighlightService(app);
                 try {
                         const highlights = await backlinkService.collectHighlights(filePath);
                         const sourceFiles = new Set<string>();
@@ -1275,6 +1394,130 @@
                 }
         }
 
+        function buildBookForRename(
+                context: ResolvedBookContext,
+                nextTitle: string
+        ): EpubBook {
+                if (context.storedBook) {
+                        return {
+                                ...context.storedBook,
+                                metadata: {
+                                        ...context.storedBook.metadata,
+                                        title: nextTitle,
+                                },
+                        };
+                }
+
+                return {
+                        id: '',
+                        filePath: context.targetPath,
+                        metadata: {
+                                ...context.metadata,
+                                title: nextTitle,
+                                author: context.metadata.author || t('epub.bookshelf.unknownAuthor'),
+                                chapterCount: context.metadata.chapterCount ?? 0,
+                        },
+                        currentPosition: { chapterIndex: 0, cfi: '', percent: 0 },
+                        readingStats: {
+                                totalReadTime: 0,
+                                lastReadTime: 0,
+                                createdTime: Date.now(),
+                        },
+                };
+        }
+
+        function patchBookshelfMetaTitle(filePath: string, nextTitle: string): void {
+                const existing = bookMetaByPath.get(filePath);
+                if (!existing) {
+                        return;
+                }
+                const nextMeta = new Map(bookMetaByPath);
+                nextMeta.set(filePath, { ...existing, title: nextTitle });
+                bookMetaByPath = nextMeta;
+        }
+
+        function broadcastRenamedBookTitle(book: EpubBook): void {
+                const normalizedPath = normalizePath(book.filePath || '');
+                const nextTitle = book.metadata.title?.trim() || '';
+                if (!normalizedPath || !nextTitle) {
+                        return;
+                }
+
+                const shared = epubActiveDocumentStore.getSharedState();
+                if (
+                        shared.book
+                        && normalizePath(shared.filePath || '') === normalizedPath
+                ) {
+                        epubActiveDocumentStore.setSharedState({
+                                book: {
+                                        ...shared.book,
+                                        metadata: {
+                                                ...shared.book.metadata,
+                                                title: nextTitle,
+                                        },
+                                },
+                        });
+                }
+
+                for (const leaf of app.workspace.getLeavesOfType(EPUB_RUNTIME.viewTypes.reader)) {
+                        const view = leaf.view as { updateBookTitle?: (title: string) => void };
+                        const leafFilePath = normalizePath(
+                                String(leaf.getViewState()?.state?.filePath || leaf.getViewState()?.state?.file || '').trim()
+                        );
+                        if (typeof view?.updateBookTitle !== 'function' || leafFilePath !== normalizedPath) {
+                                continue;
+                        }
+                        view.updateBookTitle(nextTitle);
+                }
+
+                window.dispatchEvent(
+                        new CustomEvent(BOOK_DISPLAY_TITLE_CHANGED_EVENT, {
+                                detail: { filePath: normalizedPath, title: nextTitle },
+                        })
+                );
+        }
+
+        async function renameBookFromShelf(filePath: string): Promise<void> {
+                try {
+                        const context = await resolveBookContext(filePath);
+                        if (!context) {
+                                return;
+                        }
+
+                        const currentTitle =
+                                context.storedBook?.metadata.title?.trim()
+                                || context.metadata.title?.trim()
+                                || context.file.basename;
+                        const { EpubBookRenameModal } = await import('../modals/EpubBookRenameModal');
+                        const modal = new EpubBookRenameModal(app, {
+                                title: t('epub.bookshelf.rename.title'),
+                                label: t('epub.bookshelf.rename.label'),
+                                placeholder: t('epub.bookshelf.rename.placeholder'),
+                                hint: t('epub.bookshelf.rename.hint'),
+                                confirmLabel: t('epub.bookshelf.rename.confirm'),
+                                cancelLabel: t('epub.bookshelf.rename.cancel'),
+                                initialTitle: currentTitle,
+                        });
+                        const nextTitle = await modal.openAndWait();
+                        if (!nextTitle || nextTitle === currentTitle) {
+                                return;
+                        }
+
+                        const book = buildBookForRename(context, nextTitle);
+                        const savedBook = await storageService.updateBookDisplayTitle(book);
+                        patchBookshelfMetaTitle(filePath, nextTitle);
+                        if (context.targetPath !== filePath) {
+                                patchBookshelfMetaTitle(context.targetPath, nextTitle);
+                        }
+                        broadcastRenamedBookTitle(savedBook);
+                        notifyBookshelfChanged(false);
+                        new Notice(t('epub.bookshelf.rename.success', { title: nextTitle }));
+                } catch (error) {
+                        logger.error('Failed to rename book from shelf:', error);
+                        new Notice(t('epub.bookshelf.rename.failed'));
+                }
+        }
+
         async function clearBookCompletionFromShelf(filePath: string) {
                 try {
                         const context = await resolveBookContext(filePath);
@@ -1305,6 +1548,13 @@
                                 .setIcon('info')
                                 .onClick(() => {
                                         void showBookInfo(filePath);
+                                });
+                });
+                menu.addItem((item) => {
+                        item.setTitle(t('epub.bookshelf.menu.rename'))
+                                .setIcon('pencil')
+                                .onClick(() => {
+                                        void renameBookFromShelf(filePath);
                                 });
                 });
                 if (meta?.readingStatus === '已读完') {
@@ -1352,34 +1602,44 @@
         function buildBylineText(meta?: BookshelfBookMeta): string {
                 const values = [
                         meta?.author?.trim() || '',
-                        meta?.translator?.trim() ? t('epub.bookshelf.translator', { name: meta.translator.trim() }) : ''
+                        meta?.translator?.trim() ? t('epub.bookshelf.translator', { name: meta.translator.trim() }) : '',
+                        meta?.publisher?.trim() || '',
                 ].filter(Boolean);
                 return values.join(' · ');
         }
 
-        function buildBookTags(file: EpubFileInfo, meta?: BookshelfBookMeta): DisplayBookItem['tagValues'] {
+        function buildBookStatsLine(file: EpubFileInfo, meta?: BookshelfBookMeta): string {
                 return [
-                        {
-                                value: getBookFormatDisplayLabel(file.path),
-                                tone: 'primary' as const
-                        },
-                        {
-                                value: meta?.publisher?.trim() || '',
-                                tone: 'secondary' as const
-                        },
-                        {
-                                value: formatSize(file.size),
-                                tone: 'secondary' as const
-                        }
-                ].filter((tag) => Boolean(tag.value));
+                        formatBookshelfWordCount(meta?.wordCount),
+                        formatBookshelfChapterCount(meta?.chapterCount),
+                        getBookFormatDisplayLabel(file.path),
+                ]
+                        .filter(Boolean)
+                        .join(' · ');
         }
 
         function buildMetaText(file: EpubFileInfo, meta?: BookshelfBookMeta): string {
                 const bylineText = buildBylineText(meta);
-                const tags = buildBookTags(file, meta);
-                return [bylineText, ...tags.map((tag) => tag.value)]
+                const statsLine = buildBookStatsLine(file, meta);
+                return [bylineText, statsLine]
                         .filter(Boolean)
                         .join(' · ');
+        }
+
+        function formatLastReadTime(timestamp: number): string {
+                if (!Number.isFinite(timestamp) || timestamp <= 0) {
+                        return '';
+                }
+                try {
+                        return new Intl.DateTimeFormat(undefined, {
+                                month: 'numeric',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                        }).format(new Date(timestamp));
+                } catch {
+                        return '';
+                }
         }
 
         let displayBooks = $derived.by(() => {
@@ -1387,7 +1647,7 @@
                         .map((file) => {
                                 const meta = bookMetaByPath.get(file.path);
                                 const bylineText = buildBylineText(meta);
-                                const tagValues = buildBookTags(file, meta);
+                                const statsLine = buildBookStatsLine(file, meta);
                                 const progress = meta?.progress || 0;
                                 const lastReadTime = meta?.lastReadTime || 0;
                                 const formatLabel = getBookFormatDisplayLabel(file.path);
@@ -1398,11 +1658,12 @@
                                         ...file,
                                         displayTitle: meta?.title || file.name || 'EPUB',
                                         bylineText,
-                                        tagValues,
+                                        statsLine,
                                         metaText: buildMetaText(file, meta),
                                         author: meta?.author?.trim() || '',
                                         translator: meta?.translator?.trim() || undefined,
                                         publisher: meta?.publisher?.trim() || undefined,
+                                        wordCount: meta?.wordCount,
                                         formatLabel,
                                         progress,
                                         lastReadTime,
@@ -1418,6 +1679,15 @@
                                 return a.displayTitle.localeCompare(b.displayTitle, 'zh-CN');
                         });
         });
+
+        let continueReadingBookPath = $derived.by(() => {
+                const recentBook = displayBooks.find((book) => book.lastReadTime > 0);
+                return recentBook?.path || null;
+        });
+
+        function isContinueReadingBook(file: DisplayBookItem): boolean {
+                return Boolean(continueReadingBookPath && file.path === continueReadingBookPath);
+        }
 
         let availableAuthorOptions = $derived.by(() =>
                 buildUniqueSortedValues(displayBooks.map((book) => book.author))
@@ -1437,9 +1707,20 @@
 
         let parsedBookshelfSearchQuery = $derived.by(() => parseSearchQuery(searchQuery));
 
-        let filteredFiles = $derived.by(() =>
-                displayBooks.filter((book) => matchesBookshelfQuery(book, parsedBookshelfSearchQuery))
-        );
+        let filteredFiles = $derived.by(() => {
+                const matchedBooks = displayBooks.filter((book) => matchesBookshelfQuery(book, parsedBookshelfSearchQuery));
+                if (!continueReadingBookPath) {
+                        return matchedBooks;
+                }
+
+                const pinnedIndex = matchedBooks.findIndex((book) => book.path === continueReadingBookPath);
+                if (pinnedIndex <= 0) {
+                        return matchedBooks;
+                }
+
+                const [pinnedBook] = matchedBooks.splice(pinnedIndex, 1);
+                return pinnedBook ? [pinnedBook, ...matchedBooks] : matchedBooks;
+        });
         let useListVirtualScroll = $derived.by(() =>
                 shouldUseBookshelfListVirtualScroll(filteredFiles.length, effectiveViewMode)
         );
@@ -1532,6 +1813,10 @@
                                         }
 
                                 await refreshBookshelf();
+                                warmEpubExcerptCachesForPaths(
+                                        app,
+                                        addedEntries.map((entry) => entry.path)
+                                );
                                 notifyBookshelfChanged(false);
                                 new Notice(t('epub.bookshelf.vaultScanAdded', { count: addedEntries.length }));
                         },
@@ -1679,6 +1964,10 @@
                                 clearTimeout(coverPersistTimer);
                                 coverPersistTimer = null;
                         }
+                        if (metadataRetryTimer) {
+                                clearTimeout(metadataRetryTimer);
+                                metadataRetryTimer = null;
+                        }
                         for (const [path, cover] of coverPersistPending.entries()) {
                                 void storageService.cacheBookshelfCoverImage(path, cover);
                         }
@@ -1741,20 +2030,20 @@
                         --weave-bookshelf-card-radius: var(--radius-xl);
                         --weave-bookshelf-card-padding: var(--size-4-3);
                         --weave-bookshelf-card-gap: var(--size-4-3);
-                        --weave-bookshelf-card-shadow: 0 8px 18px rgba(0, 0, 0, 0.035);
-                        --weave-bookshelf-card-shadow-hover: 0 12px 24px rgba(0, 0, 0, 0.05);
-                        --weave-bookshelf-grid-card-shadow-hover: 0 12px 24px rgba(0, 0, 0, 0.06);
-                        --weave-bookshelf-cover-tile-shadow: 0 12px 28px rgba(0, 0, 0, 0.06);
-                        --weave-bookshelf-cover-tile-shadow-hover: 0 16px 34px rgba(0, 0, 0, 0.09);
-                        --weave-bookshelf-thumb-width: 56px;
-                        --weave-bookshelf-thumb-height: 78px;
+                        --weave-bookshelf-card-shadow: 0 3px 10px rgba(0, 0, 0, 0.028);
+                        --weave-bookshelf-card-shadow-hover: 0 7px 16px rgba(0, 0, 0, 0.044);
+                        --weave-bookshelf-grid-card-shadow-hover: 0 8px 18px rgba(0, 0, 0, 0.048);
+                        --weave-bookshelf-cover-tile-shadow: 0 6px 14px rgba(0, 0, 0, 0.036);
+                        --weave-bookshelf-cover-tile-shadow-hover: 0 10px 22px rgba(0, 0, 0, 0.055);
+                        --weave-bookshelf-thumb-width: 60px;
+                        --weave-bookshelf-thumb-height: 88px;
                         --weave-bookshelf-thumb-radius: var(--radius-l);
                         --weave-bookshelf-thumb-icon-size: 20px;
                         --weave-bookshelf-title-size: calc(var(--font-text-size) * 0.9375);
                         --weave-bookshelf-meta-size: var(--font-ui-smaller);
                         --weave-bookshelf-chip-size: calc(var(--font-ui-smaller) * 0.9);
                         --weave-bookshelf-chip-primary-size: calc(var(--font-ui-smaller) * 0.95);
-                        --weave-bookshelf-progress-size: 52px;
+                        --weave-bookshelf-progress-size: 46px;
                         --weave-bookshelf-progress-font-size: var(--font-ui-smaller);
                         --weave-bookshelf-grid-gap: var(--size-4-3);
                         --weave-bookshelf-grid-padding-inline: var(--size-4-4);
@@ -1796,8 +2085,11 @@
                 }
 
                 .epub-bookshelf-list.is-virtualized :global(.virtual-scroll-item) {
-                        border-bottom: none;
+                        display: flex;
+                        flex-direction: column;
                         align-items: stretch;
+                        justify-content: flex-start;
+                        border-bottom: none;
                 }
 
                 .epub-bookshelf-root.is-list-virtualized .epub-book-item {
@@ -1938,6 +2230,9 @@
         .epub-bookshelf-list {
                 display: flex;
                 flex-direction: column;
+                align-items: stretch;
+                width: 100%;
+                min-width: 0;
                 gap: var(--size-4-2);
                 padding: var(--size-4-2) var(--weave-bookshelf-grid-padding-inline) var(--weave-bookshelf-grid-padding-bottom);
         }
@@ -1952,49 +2247,72 @@
                 text-align: center;
         }
 
-        .epub-book-item {
-                display: flex;
-                align-items: center;
-                gap: var(--weave-bookshelf-card-gap);
+        .epub-bookshelf-root .epub-book-item {
+                display: grid;
+                position: relative;
+                width: 100%;
+                max-width: 100%;
+                box-sizing: border-box;
+                grid-template-columns: var(--weave-bookshelf-thumb-width) minmax(0, 1fr) auto;
+                grid-template-rows: minmax(var(--weave-bookshelf-thumb-height), auto) auto;
+                column-gap: var(--weave-bookshelf-card-gap);
+                row-gap: var(--size-2-2);
+                align-items: start;
                 padding: var(--weave-bookshelf-card-padding);
                 border-radius: var(--weave-bookshelf-card-radius);
-                border: 1px solid color-mix(in srgb, var(--background-modifier-border) 68%, transparent);
-                background: color-mix(in srgb, var(--weave-elevated-background, var(--background-primary)) 97%, transparent);
+                border: 1px solid color-mix(in srgb, var(--background-modifier-border) 62%, transparent);
+                background: color-mix(in srgb, var(--weave-elevated-background, var(--background-primary)) 98%, transparent);
                 box-shadow: var(--weave-bookshelf-card-shadow);
                 transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+                cursor: pointer;
+                margin-bottom: 0;
         }
 
-        .epub-book-item.is-opening {
+        .epub-bookshelf-root .epub-book-item.is-continue-reading {
+                border-color: color-mix(in srgb, var(--interactive-accent) 38%, var(--background-modifier-border));
+                background: linear-gradient(
+                        105deg,
+                        color-mix(in srgb, var(--interactive-accent) 9%, var(--weave-elevated-background, var(--background-primary))) 0%,
+                        color-mix(in srgb, var(--weave-elevated-background, var(--background-primary)) 98%, transparent) 62%
+                );
+                box-shadow: 0 10px 20px rgba(var(--interactive-accent-rgb), 0.08);
+        }
+
+        .epub-bookshelf-root .epub-book-item.is-opening {
                 opacity: 0.68;
                 pointer-events: none;
         }
 
-        .epub-book-item:hover,
-        .epub-book-item:focus-visible {
-                transform: translateY(-1px);
+        .epub-bookshelf-root .epub-book-item:hover,
+        .epub-bookshelf-root .epub-book-item:focus-visible {
+                transform: translateY(-0.5px);
                 border-color: color-mix(in srgb, var(--interactive-accent) 24%, var(--background-modifier-border));
                 background: color-mix(in srgb, var(--weave-elevated-background, var(--background-primary)) 100%, transparent);
                 box-shadow: var(--weave-bookshelf-card-shadow-hover);
                 outline: none;
         }
 
-        .book-thumb,
-        .book-thumb-placeholder {
+        .epub-bookshelf-root .book-thumb,
+        .epub-bookshelf-root .book-thumb-placeholder {
                 width: var(--weave-bookshelf-thumb-width);
                 height: var(--weave-bookshelf-thumb-height);
                 border-radius: var(--weave-bookshelf-thumb-radius);
-                flex: 0 0 var(--weave-bookshelf-thumb-width);
+                grid-column: 1;
+                grid-row: 1;
+                flex-shrink: 0;
                 overflow: hidden;
                 background: color-mix(in srgb, var(--weave-surface-background, var(--background-secondary)) 92%, transparent);
-                border: 1px solid color-mix(in srgb, var(--background-modifier-border) 56%, transparent);
+                border: 1px solid color-mix(in srgb, var(--background-modifier-border) 52%, transparent);
         }
 
-        .book-thumb {
+        .epub-bookshelf-root .book-thumb {
                 object-fit: cover;
                 display: block;
+                outline: 1px solid color-mix(in srgb, white 16%, transparent);
+                outline-offset: -1px;
         }
 
-        .book-thumb-placeholder {
+        .epub-bookshelf-root .book-thumb-placeholder {
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -2006,18 +2324,22 @@
                 height: var(--weave-bookshelf-thumb-icon-size);
         }
 
-        .book-info {
+        .epub-bookshelf-root .book-info {
+                grid-column: 2;
+                grid-row: 1;
                 min-width: 0;
-                flex: 1;
+                flex: initial;
                 display: flex;
                 flex-direction: column;
-                gap: var(--size-2-3);
+                justify-content: flex-start;
+                gap: var(--size-2-1);
+                padding-block: 1px;
         }
 
-        .book-name {
+        .epub-bookshelf-root .book-name {
                 font-size: var(--weave-bookshelf-title-size);
                 font-weight: 600;
-                line-height: 1.42;
+                line-height: 1.38;
                 color: var(--text-normal);
                 display: -webkit-box;
                 -webkit-line-clamp: 2;
@@ -2027,7 +2349,7 @@
                 word-break: break-word;
         }
 
-        .book-meta-text {
+        .epub-bookshelf-root .book-meta-text {
                 font-size: var(--weave-bookshelf-meta-size);
                 line-height: 1.45;
                 color: var(--text-muted);
@@ -2036,44 +2358,40 @@
                 text-overflow: ellipsis;
         }
 
-        .book-meta-chips {
-                display: flex;
-                flex-wrap: wrap;
-                gap: calc(var(--size-2-2) + 1px);
-                margin-top: var(--size-2-1);
+        .epub-bookshelf-root .book-meta-footer {
+                grid-column: 2;
+                grid-row: 2;
+                width: 100%;
+                min-width: 0;
+                align-self: start;
+                font-size: var(--weave-bookshelf-chip-size);
+                line-height: 1.35;
+                letter-spacing: 0.01em;
+                color: color-mix(in srgb, var(--text-muted) 96%, var(--text-normal));
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
         }
 
-        .book-meta-chip {
-                display: inline-flex;
-                align-items: center;
-                min-height: 22px;
-                padding: 0 8px;
-                border-radius: 999px;
-                border: 1px solid color-mix(in srgb, var(--background-modifier-border) 54%, transparent);
-                background: color-mix(in srgb, var(--background-primary) 70%, transparent);
-                color: var(--text-faint);
-                font-size: var(--weave-bookshelf-chip-size);
-                line-height: 1.15;
+        .book-continue-action {
+                grid-column: 3;
+                grid-row: 2;
+                justify-self: end;
+                align-self: end;
+                font-size: var(--weave-bookshelf-chip-primary-size);
+                font-weight: 700;
+                letter-spacing: 0.02em;
+                color: color-mix(in srgb, var(--interactive-accent) 80%, var(--text-normal));
                 white-space: nowrap;
         }
 
-        .book-meta-chip.is-primary {
-                background: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-secondary));
-                border-color: color-mix(in srgb, var(--interactive-accent) 18%, var(--background-modifier-border));
-                color: var(--text-normal);
-                font-weight: 600;
-                font-size: var(--weave-bookshelf-chip-primary-size);
-        }
-
-        .book-meta-chip.is-secondary {
-                background: color-mix(in srgb, var(--background-primary) 46%, transparent);
-                border-color: color-mix(in srgb, var(--background-modifier-border) 42%, transparent);
-                color: color-mix(in srgb, var(--text-muted) 82%, var(--text-faint));
-        }
-
-        .book-progress-badge {
+        .epub-bookshelf-root .book-progress-badge {
+                grid-column: 3;
+                grid-row: 1;
+                align-self: start;
+                margin-top: 2px;
                 --book-progress: 0%;
-                --book-progress-ring: color-mix(in srgb, var(--interactive-accent) 82%, white 8%);
+                --book-progress-ring: color-mix(in srgb, var(--interactive-accent) 64%, var(--text-muted));
                 width: var(--weave-bookshelf-progress-size);
                 height: var(--weave-bookshelf-progress-size);
                 flex: 0 0 var(--weave-bookshelf-progress-size);
@@ -2084,27 +2402,27 @@
                 position: relative;
                 color: var(--text-normal);
                 font-size: var(--weave-bookshelf-progress-font-size);
-                font-weight: 700;
+                font-weight: 600;
                 letter-spacing: -0.02em;
                 background:
-                        radial-gradient(circle at center, color-mix(in srgb, var(--weave-elevated-background, var(--background-primary)) 96%, transparent) 60%, transparent 61%),
+                        radial-gradient(circle at center, color-mix(in srgb, var(--weave-elevated-background, var(--background-primary)) 98%, transparent) 63%, transparent 64%),
                         conic-gradient(
                                 from -90deg,
                                 var(--book-progress-ring) 0 var(--book-progress),
-                                color-mix(in srgb, var(--background-modifier-border) 78%, transparent) var(--book-progress) 100%
+                                color-mix(in srgb, var(--background-modifier-border) 66%, transparent) var(--book-progress) 100%
                         );
                 box-shadow:
-                        inset 0 0 0 1px color-mix(in srgb, var(--background-modifier-border) 72%, transparent),
-                        0 10px 18px rgba(0, 0, 0, 0.06);
+                        inset 0 0 0 1px color-mix(in srgb, var(--background-modifier-border) 62%, transparent),
+                        0 3px 8px rgba(0, 0, 0, 0.035);
         }
 
         .book-progress-badge::after {
                 content: '';
                 position: absolute;
-                inset: 6px;
+                inset: 5px;
                 border-radius: 50%;
-                background: color-mix(in srgb, var(--weave-elevated-background, var(--background-primary)) 98%, transparent);
-                box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--background-modifier-border) 56%, transparent);
+                background: color-mix(in srgb, var(--weave-elevated-background, var(--background-primary)) 99%, transparent);
+                box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--background-modifier-border) 50%, transparent);
         }
 
         .book-progress-badge span {
@@ -2114,7 +2432,11 @@
         }
 
         .book-progress-badge.is-progress-start {
-                --book-progress-ring: #9aa3b2;
+                --book-progress-ring: color-mix(in srgb, var(--text-faint) 78%, var(--background-modifier-border));
+        }
+
+        .book-progress-badge.is-progress-start span {
+                color: var(--text-faint);
         }
 
         .book-progress-badge.is-progress-low {
@@ -2201,11 +2523,11 @@
                 flex-direction: column;
                 padding: 8px;
                 border-radius: var(--radius-xl);
-                border: 1px solid color-mix(in srgb, var(--background-modifier-border) 68%, transparent);
-                background: color-mix(in srgb, var(--weave-elevated-background, var(--background-primary)) 97%, transparent);
+                border: 1px solid color-mix(in srgb, var(--background-modifier-border) 62%, transparent);
+                background: color-mix(in srgb, var(--weave-elevated-background, var(--background-primary)) 98%, transparent);
                 box-shadow: var(--weave-bookshelf-card-shadow);
                 cursor: pointer;
-                transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
+                transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease, background 0.14s ease;
         }
 
         .epub-book-card.is-opening {
@@ -2213,10 +2535,20 @@
                 pointer-events: none;
         }
 
+        .epub-book-card.is-continue-reading {
+                border-color: color-mix(in srgb, var(--interactive-accent) 40%, var(--background-modifier-border));
+                background: linear-gradient(
+                        120deg,
+                        color-mix(in srgb, var(--interactive-accent) 10%, var(--weave-elevated-background, var(--background-primary))) 0%,
+                        color-mix(in srgb, var(--weave-elevated-background, var(--background-primary)) 98%, transparent) 66%
+                );
+        }
+
         .epub-book-card:hover,
         .epub-book-card:focus-visible {
-                transform: translateY(-2px);
+                transform: translateY(-1px);
                 border-color: color-mix(in srgb, var(--interactive-accent) 24%, var(--background-modifier-border));
+                background: color-mix(in srgb, var(--weave-elevated-background, var(--background-primary)) 100%, transparent);
                 box-shadow: var(--weave-bookshelf-grid-card-shadow-hover);
                 outline: none;
         }
@@ -2227,6 +2559,8 @@
                 object-fit: cover;
                 border-radius: var(--weave-bookshelf-card-cover-radius);
                 display: block;
+                outline: 1px solid color-mix(in srgb, white 14%, transparent);
+                outline-offset: -1px;
         }
 
         .card-cover-placeholder {
@@ -2275,6 +2609,14 @@
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
+        }
+
+        .card-continue-cta {
+                font-size: var(--weave-bookshelf-chip-primary-size);
+                font-weight: 700;
+                line-height: 1.35;
+                letter-spacing: 0.02em;
+                color: color-mix(in srgb, var(--interactive-accent) 82%, var(--text-normal));
         }
 
         .card-progress {
@@ -2340,12 +2682,13 @@
         .epub-book-cover-tile {
                 display: flex;
                 flex-direction: column;
+                position: relative;
                 border-radius: var(--radius-xl);
                 overflow: hidden;
-                border: 1px solid color-mix(in srgb, var(--background-modifier-border) 58%, transparent);
-                background: color-mix(in srgb, var(--weave-elevated-background, var(--background-primary)) 96%, transparent);
+                border: 1px solid color-mix(in srgb, var(--background-modifier-border) 62%, transparent);
+                background: color-mix(in srgb, var(--weave-elevated-background, var(--background-primary)) 98%, transparent);
                 box-shadow: var(--weave-bookshelf-cover-tile-shadow);
-                transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
+                transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease, background 0.14s ease;
         }
 
         .epub-book-cover-tile.is-opening {
@@ -2353,10 +2696,16 @@
                 pointer-events: none;
         }
 
+        .epub-book-cover-tile.is-continue-reading {
+                border-color: color-mix(in srgb, var(--interactive-accent) 38%, var(--background-modifier-border));
+                box-shadow: 0 9px 20px rgba(var(--interactive-accent-rgb), 0.1);
+        }
+
         .epub-book-cover-tile:hover,
         .epub-book-cover-tile:focus-visible {
-                transform: translateY(-2px);
+                transform: translateY(-1px);
                 border-color: color-mix(in srgb, var(--interactive-accent) 24%, var(--background-modifier-border));
+                background: color-mix(in srgb, var(--weave-elevated-background, var(--background-primary)) 100%, transparent);
                 box-shadow: var(--weave-bookshelf-cover-tile-shadow-hover);
                 outline: none;
         }
@@ -2365,6 +2714,25 @@
                 overflow: hidden;
                 border-radius: 15px 15px 0 0;
                 background: color-mix(in srgb, var(--weave-surface-background, var(--background-secondary)) 84%, transparent);
+        }
+
+        .cover-tile-continue-badge {
+                position: absolute;
+                top: 10px;
+                left: 10px;
+                z-index: 2;
+                display: inline-flex;
+                align-items: center;
+                padding: 3px 8px;
+                border-radius: 999px;
+                font-size: 10px;
+                font-weight: 700;
+                letter-spacing: 0.03em;
+                color: color-mix(in srgb, var(--interactive-accent) 92%, var(--text-normal));
+                background: color-mix(in srgb, var(--background-primary) 90%, transparent);
+                border: 1px solid color-mix(in srgb, var(--interactive-accent) 32%, var(--background-modifier-border));
+                backdrop-filter: blur(2px);
+                pointer-events: none;
         }
 
         .cover-tile-img,
@@ -2376,6 +2744,8 @@
 
         .cover-tile-img {
                 object-fit: cover;
+                outline: 1px solid color-mix(in srgb, white 12%, transparent);
+                outline-offset: -1px;
         }
 
         .cover-tile-placeholder {
@@ -2487,8 +2857,9 @@
         }
 
         @container (max-width: 360px) {
-                .epub-book-item {
-                        gap: 12px;
+                .epub-bookshelf-root .epub-book-item {
+                        column-gap: 12px;
+                        row-gap: 8px;
                         padding: 11px;
                 }
 
@@ -2565,6 +2936,7 @@
 	<div
 		class="epub-book-item"
 		class:is-opening={openingBookPath === file.path}
+		class:is-continue-reading={isContinueReadingBook(file)}
 		style={animateEntry ? `animation-delay: ${Math.min(index, 8) * 36}ms` : undefined}
 		onclick={() => switchBook(file.path)}
 		oncontextmenu={(e) => handleContextMenu(e, file.path)}
@@ -2581,17 +2953,36 @@
 		{/if}
 		<div class="book-info">
 			<div class="book-name">{file.displayTitle}</div>
-			{#if file.bylineText}
-				<div class="book-meta-text">{file.bylineText}</div>
-			{/if}
-			{#if file.tagValues.length > 0}
-				<div class="book-meta-chips">
-					{#each file.tagValues as tagValue}
-						<div class={`book-meta-chip is-${tagValue.tone}`}>{tagValue.value}</div>
-					{/each}
-				</div>
+			{#if isContinueReadingBook(file)}
+				{#if file.bylineText}
+					<div class="book-meta-text book-author">{file.bylineText}</div>
+				{/if}
+			{:else}
+				{#if file.author}
+					<div class="book-meta-text book-author">{file.author}</div>
+				{/if}
+				{#if file.translator}
+					<div class="book-meta-text book-translator">
+						{t('epub.bookshelf.translator', { name: file.translator })}
+					</div>
+				{/if}
+				{#if file.publisher}
+					<div class="book-meta-text book-publisher">{file.publisher}</div>
+				{/if}
 			{/if}
 		</div>
+		{#if isContinueReadingBook(file)}
+			{#if file.lastReadTime > 0}
+				<div class="book-meta-footer">
+					{t('epub.bookshelf.continueReadingLastRead', { time: formatLastReadTime(file.lastReadTime) })}
+				</div>
+			{:else if file.statsLine}
+				<div class="book-meta-footer">{file.statsLine}</div>
+			{/if}
+			<div class="book-continue-action">{t('epub.bookshelf.continueReadingCta')}</div>
+		{:else if file.statsLine}
+			<div class="book-meta-footer">{file.statsLine}</div>
+		{/if}
 		{#if canShowBookshelfProgress}
 			<div
 				class={`book-progress-badge ${getBookshelfProgressToneClass(file.progress)}`}
@@ -2625,9 +3016,17 @@
         </div>
 {/if}
 
+{#if loadingBooks && epubFiles.length > 0}
+        <div class="epub-bookshelf-loading-banner">
+                <EpubLoadingState variant="inline" message={t('epub.bookshelf.refreshing')} />
+        </div>
+{/if}
+
 {#key `${effectiveViewMode}:${bookshelfDisplayMode}:${detectedSurfaceContext}:${useListVirtualScroll}`}
         {#if loadingBooks && epubFiles.length === 0}
-                <div class="epub-placeholder">{t('epub.bookshelf.refreshing')}</div>
+                <div class="epub-placeholder">
+                        <EpubLoadingState message={t('epub.bookshelf.refreshing')} />
+                </div>
         {:else if filteredFiles.length === 0}
                 <div class="epub-placeholder">
                         {emptyStateMessage}
@@ -2663,6 +3062,7 @@
 				<div
 					class="epub-book-cover-tile"
 					class:is-opening={openingBookPath === file.path}
+					class:is-continue-reading={isContinueReadingBook(file)}
 					style="animation-delay: {index * 28}ms"
 					onclick={() => switchBook(file.path)}
 					oncontextmenu={(e) => handleContextMenu(e, file.path)}
@@ -2676,6 +3076,9 @@
 						? `${file.displayTitle} · ${clampProgress(file.progress)}%`
 						: file.displayTitle}
 				>
+					{#if isContinueReadingBook(file)}
+						<span class="cover-tile-continue-badge">{t('epub.bookshelf.continueReadingBadge')}</span>
+					{/if}
 					<div class="cover-tile-media">
 						{#if covers.get(file.path)}
 							<img src={covers.get(file.path)} alt="" class="cover-tile-img" />
@@ -2701,6 +3104,7 @@
 				<div
 					class="epub-book-card"
 					class:is-opening={openingBookPath === file.path}
+					class:is-continue-reading={isContinueReadingBook(file)}
 					style="animation-delay: {index * 36}ms"
 					onclick={() => switchBook(file.path)}
 					oncontextmenu={(e) => handleContextMenu(e, file.path)}
@@ -2717,15 +3121,26 @@
 					{/if}
 					<div class="card-body">
 						<div class="card-title">{file.displayTitle}</div>
-						{#if file.bylineText}
-							<div class="card-author">{file.bylineText}</div>
+						{#if isContinueReadingBook(file)}
+							{#if file.bylineText}
+								<div class="card-author">{file.bylineText}</div>
+							{/if}
+							<div class="card-continue-cta">{t('epub.bookshelf.continueReadingCta')}</div>
+						{:else}
+							{#if file.author}
+								<div class="card-author">{file.author}</div>
+							{/if}
+							{#if file.translator}
+								<div class="card-author card-translator">
+									{t('epub.bookshelf.translator', { name: file.translator })}
+								</div>
+							{/if}
+							{#if file.publisher}
+								<div class="card-author card-publisher">{file.publisher}</div>
+							{/if}
 						{/if}
-						{#if file.tagValues.length > 0}
-							<div class="book-meta-chips">
-								{#each file.tagValues as tagValue}
-									<div class={`book-meta-chip is-${tagValue.tone}`}>{tagValue.value}</div>
-								{/each}
-							</div>
+						{#if file.statsLine && !isContinueReadingBook(file)}
+							<div class="book-meta-footer">{file.statsLine}</div>
 						{/if}
 						{#if canShowBookshelfProgress}
 							<div class="card-progress">

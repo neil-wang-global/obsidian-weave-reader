@@ -3,16 +3,27 @@
 	import { tr } from '../../utils/i18n';
 	import type { TocItem } from '../../services/epub';
 	import { flattenTocItems } from '../../utils/epub-toc-reading-position';
+	import EpubLoadingState from './EpubLoadingState.svelte';
 
 	interface Props {
 		items: TocItem[];
+		loading?: boolean;
+		loadFailed?: boolean;
 		activeHref?: string | null;
 		lastReadHref?: string | null;
 		onNavigate: (href: string) => void;
 		onAddToIncrementalReading?: (item: TocItem, event?: MouseEvent) => void | Promise<void>;
 	}
 
-	let { items, activeHref = null, lastReadHref = null, onNavigate, onAddToIncrementalReading }: Props = $props();
+	let {
+		items,
+		loading = false,
+		loadFailed = false,
+		activeHref = null,
+		lastReadHref = null,
+		onNavigate,
+		onAddToIncrementalReading,
+	}: Props = $props();
 	let t = $derived($tr);
 
 	type FlatTocItem = TocItem & { depth: number };
@@ -62,7 +73,11 @@
 </script>
 
 <div class="epub-toc-panel">
-	{#if flatItems.length === 0}
+	{#if loading}
+		<EpubLoadingState message={t('epub.toc.loading')} surface />
+	{:else if loadFailed}
+		<div class="epub-placeholder">{t('epub.toc.loadFailed')}</div>
+	{:else if flatItems.length === 0}
 		<div class="epub-placeholder">{t('epub.toc.empty')}</div>
 	{:else}
 		<div class="epub-toc-list" aria-label={t('epub.toc.ariaLabel')}>
@@ -175,7 +190,7 @@
 	}
 
 	.toc-title {
-		flex: 1;
+		flex: 1 1 auto;
 		min-width: 0;
 		font-size: 13px;
 		line-height: 1.55;
@@ -188,8 +203,9 @@
 		align-items: center;
 		justify-content: flex-end;
 		gap: 6px;
-		margin-left: 10px;
-		min-width: 5.5rem;
+		margin-left: auto;
+		padding-left: 10px;
+		white-space: nowrap;
 	}
 
 	.toc-page {

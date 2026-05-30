@@ -15,6 +15,7 @@ export interface EpubRuntimeConfig {
 		bookshelfDataChanged: string;
 		bookshelfRefreshRequest: string;
 		bookshelfDisplaySettingsChanged: string;
+		bookDisplayTitleChanged: string;
 		excerptSettingsChanged: string;
 		highlightSyncRequested: string;
 		navigate: string;
@@ -41,6 +42,9 @@ const bookshelfRefreshRequestEvent = isStandalone
 const bookshelfDisplaySettingsChangedEvent = isStandalone
 	? "WeaveEpubStandalone:epub-bookshelf-display-settings-changed"
 	: "Weave:epub-bookshelf-display-settings-changed";
+const bookDisplayTitleChangedEvent = isStandalone
+	? "WeaveEpubStandalone:epub-book-display-title-changed"
+	: "Weave:epub-book-display-title-changed";
 const excerptSettingsChangedEvent = isStandalone
 	? "WeaveEpubStandalone:epub-excerpt-settings-changed"
 	: "Weave:epub-excerpt-settings-changed";
@@ -67,6 +71,7 @@ export const EPUB_RUNTIME: EpubRuntimeConfig = {
 		bookshelfDataChanged: bookshelfDataChangedEvent,
 		bookshelfRefreshRequest: bookshelfRefreshRequestEvent,
 		bookshelfDisplaySettingsChanged: bookshelfDisplaySettingsChangedEvent,
+		bookDisplayTitleChanged: bookDisplayTitleChangedEvent,
 		excerptSettingsChanged: excerptSettingsChangedEvent,
 		highlightSyncRequested: highlightSyncRequestedEvent,
 		navigate: isStandalone ? "WeaveEpubStandalone:epub-navigate" : "Weave:epub-navigate",

@@ -1,12 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import type { App } from 'obsidian';
 	import { tr } from '../../utils/i18n';
 	import { logger } from '../../utils/logger';
 	import { parseSearchQuery, type DateRange, type SearchQuery } from '../../utils/search-parser';
 	import type { EpubBook, EpubDisplayHighlight, EpubHighlightViewSnapshotService, EpubReaderEngine } from '../../services/epub';
+	import { getEpubAnnotationIndexService } from '../../services/epub';
 	import type { EpubAnnotationService } from '../../services/epub';
 	import type { EpubBacklinkHighlightService } from '../../services/epub/EpubBacklinkHighlightService';
 	import EpubAnnotationCard from './EpubAnnotationCard.svelte';
+	import EpubLoadingState from './EpubLoadingState.svelte';
 
 	interface HighlightSearchMeta {
 		availableTags: string[];
@@ -19,6 +22,7 @@
 	}
 
 	interface Props {
+		app: App;
 		book: EpubBook | null;
 		readerService?: EpubReaderEngine | null;
 		annotationService: EpubAnnotationService;
@@ -42,6 +46,7 @@
 	}
 
 	let {
+		app,
 		book,
 		readerService = null,
 		annotationService,
@@ -65,7 +70,8 @@
 	let t = $derived($tr);
 
 	let highlights = $state<EpubDisplayHighlight[]>([]);
-	let loading = $state(false);
+	let preparing = $state(false);
+	let syncing = $state(false);
 	let annotationLoadToken = 0;
 	let panelDisposed = false;
 	let lastLoadContextKey = '';
@@ -342,6 +348,7 @@
 		if (!snapshotService) {
 			return;
 		}
+		syncing = true;
 		try {
 			const freshSnapshot = await snapshotService.revalidateSnapshot({
 				bookId: expectedBook.id,
@@ -366,26 +373,54 @@
 			}
 		} catch (error) {
 			logger.error('[NotesPanel] Failed to refresh annotations:', error);
+		} finally {
+			if (!isStaleAnnotationsLoad(loadToken, expectedBook.id, expectedFilePath)) {
+				syncing = false;
+			}
 		}
+	}
+
+	function buildSnapshotContext(
+		currentBook: NonNullable<typeof book>,
+		expectedFilePath: string | undefined
+	) {
+		return {
+			bookId: currentBook.id,
+			filePath: expectedFilePath ?? '',
+			showStrikethroughHighlights,
+		};
+	}
+
+	async function resolveDisplaySnapshot(
+		currentBook: NonNullable<typeof book>,
+		expectedFilePath: string | undefined
+	) {
+		const context = buildSnapshotContext(currentBook, expectedFilePath);
+		const memorySnapshot = snapshotService?.getCachedSnapshot(context) || null;
+		if (memorySnapshot) {
+			return memorySnapshot;
+		}
+		if (!snapshotService) {
+			return null;
+		}
+		return (await snapshotService.hydrateFromDisk(context)) || null;
 	}
 
 	async function loadAnnotations() {
 		const currentBook = book;
 		if (!currentBook) {
 			highlights = [];
-			loading = false;
+			preparing = false;
+			syncing = false;
 			return;
 		}
 		const expectedFilePath = filePath;
 		const loadToken = ++annotationLoadToken;
-		const cachedSnapshot = snapshotService?.getCachedSnapshot({
-			bookId: currentBook.id,
-			filePath: expectedFilePath ?? '',
-			showStrikethroughHighlights,
-		}) || null;
+		const snapshotContext = buildSnapshotContext(currentBook, expectedFilePath);
+		const cachedSnapshot = await resolveDisplaySnapshot(currentBook, expectedFilePath);
 		if (cachedSnapshot) {
 			applySnapshot(cachedSnapshot.highlights);
-			loading = false;
+			preparing = false;
 			void refreshAnnotationsInBackground(
 				loadToken,
 				currentBook,
@@ -394,13 +429,61 @@
 			);
 			return;
 		}
-		loading = true;
+
+		const annotationIndex = getEpubAnnotationIndexService(app);
+		const readiness = annotationIndex.getReadiness(snapshotContext);
+		if (readiness === 'preparing') {
+			preparing = true;
+			syncing = false;
+			await annotationIndex.waitForReady(snapshotContext);
+			if (isStaleAnnotationsLoad(loadToken, currentBook.id, expectedFilePath)) {
+				return;
+			}
+			const warmedSnapshot = await resolveDisplaySnapshot(currentBook, expectedFilePath);
+			if (warmedSnapshot) {
+				applySnapshot(warmedSnapshot.highlights);
+				preparing = false;
+				void refreshAnnotationsInBackground(
+					loadToken,
+					currentBook,
+					expectedFilePath,
+					showStrikethroughHighlights
+				);
+				return;
+			}
+		}
+
+		preparing = true;
+		syncing = false;
 		try {
-			const freshSnapshot = snapshotService
+			await annotationIndex.prefetchBook({
+				...snapshotContext,
+				annotationService,
+				backlinkService,
+				readerService,
+				highlightRevision,
+				priority: 'immediate',
+			});
+			if (isStaleAnnotationsLoad(loadToken, currentBook.id, expectedFilePath)) {
+				return;
+			}
+			const freshSnapshot = await resolveDisplaySnapshot(currentBook, expectedFilePath);
+			if (freshSnapshot) {
+				applySnapshot(freshSnapshot.highlights);
+				if (!freshSnapshot.pageLabelsResolved && snapshotService) {
+					void hydratePageLabelsInBackground(
+						loadToken,
+						currentBook,
+						expectedFilePath,
+						showStrikethroughHighlights
+					);
+				}
+				return;
+			}
+
+			const revalidatedSnapshot = snapshotService
 				? await snapshotService.revalidateSnapshot({
-					bookId: currentBook.id,
-					filePath: expectedFilePath ?? '',
-					showStrikethroughHighlights,
+					...snapshotContext,
 					annotationService,
 					backlinkService,
 					readerService,
@@ -410,9 +493,9 @@
 			if (isStaleAnnotationsLoad(loadToken, currentBook.id, expectedFilePath)) {
 				return;
 			}
-			if (freshSnapshot) {
-				applySnapshot(freshSnapshot.highlights);
-				if (!freshSnapshot.pageLabelsResolved && snapshotService) {
+			if (revalidatedSnapshot) {
+				applySnapshot(revalidatedSnapshot.highlights);
+				if (!revalidatedSnapshot.pageLabelsResolved && snapshotService) {
 					void hydratePageLabelsInBackground(
 						loadToken,
 						currentBook,
@@ -429,7 +512,7 @@
 			highlights = [];
 		} finally {
 			if (!isStaleAnnotationsLoad(loadToken, currentBook.id, expectedFilePath)) {
-				loading = false;
+				preparing = false;
 			}
 		}
 	}
@@ -445,7 +528,8 @@
 		} else {
 			annotationLoadToken += 1;
 			highlights = [];
-			loading = false;
+			preparing = false;
+			syncing = false;
 			lastLoadContextKey = '';
 		}
 	});
@@ -459,8 +543,8 @@
 </script>
 
 <div class="epub-notes-panel">
-	{#if loading}
-		<div class="epub-placeholder">{t('epub.notes.loading')}</div>
+	{#if preparing}
+		<EpubLoadingState message={t('epub.notes.preparing')} surface />
 	{:else if filteredHighlights.length === 0}
 		<div class="epub-placeholder">
 			{#if highlights.length === 0}
@@ -470,6 +554,9 @@
 			{/if}
 		</div>
 	{:else}
+		{#if syncing}
+			<div class="epub-notes-sync-hint" aria-live="polite">{t('epub.notes.syncing')}</div>
+		{/if}
 		{#if filteredHighlights.length > 0}
 			<section class="notes-section">
 				<div class="notes-section-list">
@@ -493,6 +580,13 @@
 </div>
 
 <style>
+	.epub-notes-sync-hint {
+		flex: 0 0 auto;
+		padding: 4px 12px 0;
+		font-size: var(--font-ui-smaller);
+		color: var(--text-muted);
+	}
+
 	.epub-notes-panel {
 		display: flex;
 		flex-direction: column;

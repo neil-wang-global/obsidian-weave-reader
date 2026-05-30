@@ -6,6 +6,7 @@ import type {
 } from "../../services/epub/EpubStorageService";
 import { getBookExtensionFromPath } from "../../services/epub/book-format";
 import { isPathAlreadyOnBookshelfForApp } from "../../services/epub/epub-vault-path";
+import { i18n } from "../../utils/i18n";
 
 type ImportStatusFilter = "pending" | "added";
 
@@ -17,7 +18,6 @@ interface EpubBookshelfImportModalOptions {
 }
 
 export class EpubBookshelfImportModal extends Modal {
-	private readonly app: App;
 	private readonly entries: EpubScanIndexEntry[];
 	private readonly membershipPaths: string[];
 	private readonly onConfirm: (paths: string[]) => Promise<void> | void;
@@ -34,11 +34,10 @@ export class EpubBookshelfImportModal extends Modal {
 
 	constructor(app: App, options: EpubBookshelfImportModalOptions) {
 		super(app);
-		this.app = app;
 		this.entries = [...options.entries].sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
 		this.membershipPaths = options.membership.map((entry) => entry.path);
 		this.onConfirm = options.onConfirm;
-		this.title = options.title ?? "扫描库中书籍和漫画";
+		this.title = options.title ?? i18n.t("epub.bookshelf.vaultScanTitle");
 	}
 
 	override onOpen(): void {
@@ -71,7 +70,7 @@ export class EpubBookshelfImportModal extends Modal {
 
 		this.searchInputEl = searchWrap.createEl("input", {
 			type: "text",
-			placeholder: "按书名或路径搜索",
+			placeholder: i18n.t("epub.bookshelf.importModal.searchPlaceholder"),
 			cls: "weave-epub-import-search-input",
 		});
 		this.searchInputEl.value = this.query;
@@ -90,8 +89,8 @@ export class EpubBookshelfImportModal extends Modal {
 			cls: "weave-epub-import-filter-btn-icon",
 		});
 		setIcon(pendingIcon, "inbox");
-		this.filterPendingButton.setAttr("aria-label", "未导入");
-		this.filterPendingButton.setAttr("title", "未导入");
+		this.filterPendingButton.setAttr("aria-label", i18n.t("epub.bookshelf.importModal.filterPending"));
+		this.filterPendingButton.setAttr("title", i18n.t("epub.bookshelf.importModal.filterPending"));
 		this.filterPendingButton.addEventListener("click", () => this.setStatusFilter("pending"));
 
 		this.filterAddedButton = filterGroup.createEl("button", {
@@ -102,8 +101,8 @@ export class EpubBookshelfImportModal extends Modal {
 			cls: "weave-epub-import-filter-btn-icon",
 		});
 		setIcon(addedIcon, "check-circle");
-		this.filterAddedButton.setAttr("aria-label", "已导入");
-		this.filterAddedButton.setAttr("title", "已导入");
+		this.filterAddedButton.setAttr("aria-label", i18n.t("epub.bookshelf.importModal.filterAdded"));
+		this.filterAddedButton.setAttr("title", i18n.t("epub.bookshelf.importModal.filterAdded"));
 		this.filterAddedButton.addEventListener("click", () => this.setStatusFilter("added"));
 		this.updateFilterButtons();
 
@@ -112,10 +111,12 @@ export class EpubBookshelfImportModal extends Modal {
 		this.renderList();
 
 		const actionRow = contentEl.createDiv({ cls: "weave-epub-import-actions" });
-		new ButtonComponent(actionRow).setButtonText("取消").onClick(() => this.close());
+		new ButtonComponent(actionRow)
+			.setButtonText(i18n.t("epub.bookshelf.importModal.cancel"))
+			.onClick(() => this.close());
 		this.confirmButton = new ButtonComponent(actionRow)
 			.setCta()
-			.setButtonText("加入我的书架")
+			.setButtonText(i18n.t("epub.bookshelf.importModal.confirm"))
 			.onClick(async () => {
 				const paths = Array.from(this.selectedPaths);
 				if (paths.length === 0) {
@@ -174,7 +175,11 @@ export class EpubBookshelfImportModal extends Modal {
 		}
 		const count = this.selectedPaths.size;
 		this.confirmButton
-			.setButtonText(count > 0 ? `加入我的书架 (${count})` : "加入我的书架")
+			.setButtonText(
+				count > 0
+					? i18n.t("epub.bookshelf.importModal.confirmWithCount", { count })
+					: i18n.t("epub.bookshelf.importModal.confirm")
+			)
 			.setDisabled(count === 0);
 	}
 
@@ -187,7 +192,13 @@ export class EpubBookshelfImportModal extends Modal {
 		const pendingCount = this.getPendingCount();
 		const addedCount = this.getAddedCount();
 		this.summaryEl.setText(
-			`扫描共 ${this.entries.length} 本 · 未导入 ${pendingCount} 本 · 已导入 ${addedCount} 本 · 当前显示 ${visibleEntries.length} 本 · 已选 ${this.selectedPaths.size} 本`
+			i18n.t("epub.bookshelf.importModal.summary", {
+				total: this.entries.length,
+				pending: pendingCount,
+				added: addedCount,
+				visible: visibleEntries.length,
+				selected: this.selectedPaths.size,
+			})
 		);
 		this.updateConfirmButton();
 
@@ -240,7 +251,9 @@ export class EpubBookshelfImportModal extends Modal {
 			});
 			titleLine.createSpan({
 				cls: `weave-epub-import-status ${alreadyAdded ? "is-added" : "is-pending"}`,
-				text: alreadyAdded ? "已加入" : "待加入",
+				text: alreadyAdded
+					? i18n.t("epub.bookshelf.importModal.statusAdded")
+					: i18n.t("epub.bookshelf.importModal.statusPending"),
 			});
 
 			if (!alreadyAdded) {
@@ -251,11 +264,11 @@ export class EpubBookshelfImportModal extends Modal {
 
 	private getEmptyMessage(): string {
 		if (this.query) {
-			return "没有匹配的书籍或漫画";
+			return i18n.t("epub.bookshelf.importModal.emptySearch");
 		}
 		return this.statusFilter === "pending"
-			? "当前没有可加入的书籍或漫画"
-			: "当前没有已在书架中的书籍或漫画";
+			? i18n.t("epub.bookshelf.importModal.emptyPending")
+			: i18n.t("epub.bookshelf.importModal.emptyAdded");
 	}
 
 	private getEntryDisplayName(entry: EpubScanIndexEntry): string {

@@ -1,5 +1,6 @@
 import { EpubLinkService } from "../EpubLinkService";
 import type { BacklinkHighlight } from "../EpubBacklinkHighlightService";
+import { getReaderHighlightIdentityKey } from "./highlight-identity";
 
 type IndexListener = (revision: number) => void;
 
@@ -21,18 +22,11 @@ export class HighlightIndex {
 	}
 
 	getSnapshot(): BacklinkHighlight[] {
-		const merged = new Map<string, BacklinkHighlight>();
+		const results: BacklinkHighlight[] = [];
 		for (const highlights of this.byCfi.values()) {
-			for (const highlight of highlights) {
-				const key = EpubLinkService.normalizeCfi(highlight.cfiRange);
-				if (!key) {
-					continue;
-				}
-				const prior = merged.get(key);
-				merged.set(key, prior ? { ...prior, ...highlight } : { ...highlight });
-			}
+			results.push(...highlights);
 		}
-		return Array.from(merged.values());
+		return results;
 	}
 
 	getByCfi(cfiRange: string): BacklinkHighlight[] {
@@ -75,8 +69,9 @@ export class HighlightIndex {
 		const sourceKey = String(highlight.sourceFile || "").trim();
 		if (sourceKey) {
 			const existing = this.bySourcePath.get(sourceKey) || [];
+			const highlightIdentity = getReaderHighlightIdentityKey(highlight);
 			const index = existing.findIndex(
-				(entry) => EpubLinkService.normalizeCfi(entry.cfiRange) === cfiKey
+				(entry) => getReaderHighlightIdentityKey(entry) === highlightIdentity
 			);
 			if (index >= 0) {
 				existing[index] = { ...existing[index], ...highlight };

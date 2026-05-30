@@ -1,0 +1,335 @@
+{
+  "basics": [
+    {
+      "title": "Open and restore",
+      "paragraphs": [
+        "Put a book file into your Obsidian vault and click it to open. The reader automatically saves and restores reading progress, typography preferences, and the current reading state.",
+        "Currently supported formats are .epub, .mobi, .azw3, .fb2, .fbz, .txt, and .cbz. In practice, EPUB, FB2/FBZ, and TXT are better for structured export, while CBZ is more image-oriented."
+      ]
+    },
+    {
+      "title": "Sidebar and bookshelf",
+      "paragraphs": [
+        "The reader supports both a local sidebar and a global bookshelf view so you can switch between books, the table of contents, and annotations inside the same note-taking workspace."
+      ],
+      "listGroups": [
+        {
+          "items": [
+            "TOC: jump quickly by chapter.",
+            "Notes: review synced highlights, comments, and related content for the current book.",
+            "Bookmarks: manage bookmarks for the current page.",
+            "My Bookshelf: browse book files in the vault and return from the bookshelf subview to the current book sidebar."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Reading modes and layout",
+      "listGroups": [
+        {
+          "heading": "Reading flow",
+          "items": [
+            "Paged mode: best for linear reading and keyboard page turns.",
+            "Scrolled mode: best for longer passages, footnote round-trips, and quickly searching nearby context."
+          ]
+        },
+        {
+          "heading": "Page layout",
+          "items": [
+            "Single page: the default layout for most situations.",
+            "Double column: closer to the feel of an open book and automatically switches to a wider display."
+          ]
+        },
+        {
+          "heading": "Width mode",
+          "items": [
+            "standard: standard reading width for long-form immersive reading.",
+            "full: a wider layout that still keeps comfortable margins on larger screens.",
+            "edge: a true edge-to-edge mode that uses as much host width as possible."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Display settings and helpers",
+      "paragraphs": [
+        "Reader settings cover more than width. They also include typography, footnotes, and top information display so you can tune the experience by book type."
+      ],
+      "listGroups": [
+        {
+          "items": [
+            "The typography panel adjusts line height, letter spacing, and page margins, and can restore defaults.",
+            "Scrolled mode can independently toggle the right-side page buttons.",
+            "Top stickers support auto, inline, and right-rail layouts.",
+            "Footnote marker clicks can switch between showing a footnote popover and jumping directly to the footnote."
+          ]
+        }
+      ]
+    }
+  ],
+  "highlight": [
+    {
+      "title": "Annotation styles",
+      "paragraphs": [
+        "Selecting text opens the toolbar and supports color highlights plus multiple inline annotation styles. Color, style, and location data are all saved and restored together."
+      ],
+      "colors": [
+        {
+          "tone": "yellow",
+          "label": "Yellow",
+          "description": "general marking"
+        },
+        {
+          "tone": "green",
+          "label": "Green",
+          "description": "key content"
+        },
+        {
+          "tone": "blue",
+          "label": "Blue",
+          "description": "thinking notes"
+        },
+        {
+          "tone": "red",
+          "label": "Red",
+          "description": "questions and doubts"
+        },
+        {
+          "tone": "purple",
+          "label": "Purple",
+          "description": "extended associations"
+        }
+      ],
+      "listGroups": [
+        {
+          "heading": "Styles",
+          "items": [
+            "Highlight: best for standard excerpts.",
+            "Underline: keeps the page background while emphasizing key sentences.",
+            "Strikethrough: useful for content to ignore, revise, or conceal.",
+            "Wavy underline: useful for problems, uncertainties, or passages that need another pass."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Comment bubbles and footnote popovers",
+      "paragraphs": [
+        "Comment bubbles in the text are additional cues. They do not replace or weaken the highlight, underline, strikethrough, or wavy underline itself.",
+        "As long as the excerpt contains a `---div---` separator, the reader shows a comment bubble beside the highlight. You can edit it from the bubble or from the toolbar comment action.",
+        "Footnote marker clicks can be configured to show a popover preview or jump directly to the footnote location."
+      ]
+    },
+    {
+      "title": "Restore and sync",
+      "listGroups": [
+        {
+          "items": [
+            "Highlights, styles, and comments automatically reappear when you reopen the same book.",
+            "Data sources consistently support Markdown, Canvas, and card data instead of relying on a separate black-box database.",
+            "Source links are the authoritative record for restoring and locating excerpts. As long as the link remains valid, you can freely rewrite the excerpt body.",
+            "When a note file changes, the reader reloads the related highlights so the book view and note view stay in sync."
+          ]
+        }
+      ]
+    }
+  ],
+  "workflow": [
+    {
+      "title": "Auto mode and the selection toolbar",
+      "paragraphs": [
+        "Auto mode decides the default output path after selecting text: off leans toward copying, while on leans toward writing directly into your current workflow."
+      ],
+      "listGroups": [
+        {
+          "items": [
+            "Auto mode off: copy to the clipboard for temporary quoting.",
+            "Auto mode on: better for writing directly into the current workflow and also participates in Canvas-linked flows.",
+            "The selection toolbar supports copy or insert, search, card creation, reading points, AI actions, and more."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Excerpt format and source links",
+      "paragraphs": [
+        "The reader tries to attach precise location data to excerpts so you can jump back from notes to the source passage.",
+        "If an excerpt includes a comment, putting it after the `---div---` separator is recommended so the comment bubble can appear in the text automatically."
+      ],
+      "code": "> [!EPUB|yellow] [[book.epub#^chapter-anchor|Chapter 1]]\n> Excerpt body\n> ---div---\n> Comment body"
+    },
+    {
+      "title": "Bookmarks and reading positions",
+      "listGroups": [
+        {
+          "items": [
+            "Current-page bookmark: leave a quick return point for the current page.",
+            "Last reading point: save the recent reading location you want to keep long term.",
+            "Reading reference point: record a main reading anchor so you can return after branching out.",
+            "Incremental reading resume point: work with incremental reading as the next entry point for processing."
+          ]
+        }
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "title": "Export to Markdown",
+      "paragraphs": [
+        "Use the reader view menu as the export entry point when you want to turn reading output into long-term vault notes."
+      ],
+      "listGroups": [
+        {
+          "items": [
+            "Export current chapter: convert the current chapter to Markdown and keep images as Obsidian-friendly attachments whenever possible.",
+            "Export book highlights: organize annotations and excerpts from the current book for later refinement."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Screenshots and Canvas integration",
+      "listGroups": [
+        {
+          "heading": "Screenshots",
+          "items": [
+            "In screenshot mode you can drag a capture area over the reading viewport.",
+            "Image mode: save as an image file and insert directly when auto mode is on.",
+            "Embed mode: extract text when possible and generate a location-aware reference; when auto mode is off it prefers copying the result."
+          ]
+        },
+        {
+          "heading": "Canvas",
+          "items": [
+            "You can create a new Canvas map for the current book or bind an existing Canvas.",
+            "After binding, you can open it, keep editing it, or disconnect it, which works well for chapter maps, question trees, and reading routes."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Common entry points and shortcuts",
+      "shortcuts": [
+        {
+          "keys": [
+            "←",
+            "→"
+          ],
+          "description": "When paged mode is active and the EPUB view is focused, move to the previous or next page (scrolled mode does not use arrow keys)."
+        },
+        {
+          "keys": [
+            "←",
+            "→",
+            "PageUp",
+            "PageDown"
+          ],
+          "description": "In paragraph reading mode, move within or across paragraphs when the paragraph panel is focused."
+        },
+        {
+          "keys": [
+            "Esc"
+          ],
+          "description": "Close the tutorial, or dismiss the currently focused reader overlay."
+        }
+      ],
+      "buttons": [
+        {
+          "icon": "list",
+          "label": "Sidebar",
+          "description": "Switch between TOC, notes, bookmarks, and bookshelf-related entry points."
+        },
+        {
+          "icon": "a-large-small",
+          "label": "Typography",
+          "description": "Adjust line height, letter spacing, page margins, and other reading parameters."
+        },
+        {
+          "icon": "arrow-up-down",
+          "label": "Reading flow",
+          "description": "Switch between paged and scrolled reading."
+        },
+        {
+          "icon": "scroll-text",
+          "label": "Page layout",
+          "description": "Switch between single-page and double-column layouts."
+        },
+        {
+          "icon": "bookmark",
+          "label": "Current bookmark",
+          "description": "Record the current page position."
+        },
+        {
+          "icon": "flag",
+          "label": "Reference point",
+          "description": "Save or update the reading reference anchor."
+        },
+        {
+          "icon": "layout-dashboard",
+          "label": "Canvas map",
+          "description": "Create, bind, or manage the reading map."
+        },
+        {
+          "icon": "camera",
+          "label": "Screenshot tool",
+          "description": "Enter the screenshot workflow."
+        },
+        {
+          "icon": "zap",
+          "label": "Auto mode",
+          "description": "Switch between copy-first and auto-insert output."
+        },
+        {
+          "icon": "circle-help",
+          "label": "Tutorial",
+          "description": "Open this tutorial again."
+        }
+      ]
+    }
+  ],
+  "credits": [
+    {
+      "title": "EPUB parsing and reading engine",
+      "paragraphs": [
+        "EPUB reading is now fully based on the foliate-js engine, while historical reading positions and existing data are migrated as compatibly as possible."
+      ]
+    },
+    {
+      "title": "Links and knowledge capture",
+      "paragraphs": [
+        "The precise EPUB link and jump-back workflow was inspired by the excellent ideas behind Obsidian PDF++ and combined with Obsidian backlinks and graph capabilities."
+      ]
+    },
+    {
+      "title": "Reading and Canvas integration",
+      "paragraphs": [
+        "The integration between the EPUB reader and Obsidian Canvas was inspired by MarginNote-style reading and mind-map workflows while continuing to evolve within Obsidian’s native file system."
+      ]
+    },
+    {
+      "title": "Paragraph mode inspiration",
+      "paragraphs": [
+        "The paragraph reading mode was inspired by the paragraph mode experience in the Readest reading app, then adapted to fit this reader’s location, excerpt, and footnote workflows."
+      ]
+    },
+    {
+      "title": "Toolbar interaction reference",
+      "paragraphs": [
+        "The text-selection toolbar interaction takes inspiration from the reading toolbar experience in WeRead."
+      ]
+    },
+    {
+      "title": "Dictionary plugin compatibility",
+      "paragraphs": [
+        "Thanks to the community-built Obsidian plugin `obsdian-fingertip-translation`. It originally brought in-editor word-lookup support to Obsidian Markdown editing and can now also work inside this EPUB reader after compatibility handling.",
+        "The reader itself does not bundle a dictionary. Dictionary explanations and related popovers are provided by that external plugin."
+      ],
+      "links": [
+        {
+          "label": "obsdian-fingertip-translation",
+          "url": "https://github.com/huangchen-byte/obsdian-fingertip-translation"
+        }
+      ]
+    }
+  ]
+}

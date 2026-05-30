@@ -245,8 +245,16 @@
 
 <style>
   .license-status-card {
+    --epub-settings-font-size-label: var(--font-ui-small, 0.95rem);
+    --epub-settings-font-size-desc: var(--font-ui-smaller, 0.85rem);
+    --epub-settings-gap-xs: 0.25rem;
+    --epub-settings-gap-sm: 0.35rem;
+    --epub-settings-gap-md: 0.5rem;
+    --epub-settings-gap-lg: 1rem;
+    --epub-settings-radius-sm: var(--radius-s, 6px);
+    --epub-settings-radius-md: var(--radius-m, 8px);
     border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-m, 8px);
+    border-radius: var(--epub-settings-radius-md);
     padding: 0;
     background: var(--background-primary-alt, var(--background-primary));
     overflow: hidden;
@@ -264,16 +272,16 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 1rem 1rem 0;
-    margin-bottom: 0.75rem;
+    padding: var(--epub-settings-gap-lg) var(--epub-settings-gap-lg) 0;
+    margin-bottom: calc(var(--epub-settings-gap-md) + var(--epub-settings-gap-xs));
   }
   
   .status-badge {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.25rem 0.625rem;
-    border-radius: var(--radius-s, 6px);
+    gap: var(--epub-settings-gap-md);
+    padding: var(--epub-settings-gap-xs) calc(var(--epub-settings-gap-md) + 0.125rem);
+    border-radius: var(--epub-settings-radius-sm);
     font-weight: 600;
     font-size: var(--font-ui-small);
     border: 1px solid var(--background-modifier-border);
@@ -300,9 +308,9 @@
   .license-type-badge {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.2rem 0.55rem;
-    border-radius: var(--radius-s, 6px);
+    gap: calc(var(--epub-settings-gap-sm) - 0.025rem);
+    padding: calc(var(--epub-settings-gap-xs) - 0.05rem) calc(var(--epub-settings-gap-md) + 0.05rem);
+    border-radius: var(--epub-settings-radius-sm);
     font-weight: 500;
     font-size: 0.75rem;
     border: 1px solid var(--background-modifier-border);
@@ -336,8 +344,8 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 1rem;
-    padding: 0.85rem 1rem;
+    gap: var(--epub-settings-gap-lg);
+    padding: calc(var(--epub-settings-gap-md) + var(--epub-settings-gap-sm)) var(--epub-settings-gap-lg);
     background: transparent;
     border-radius: 0;
     border-top: 1px solid var(--background-modifier-border);
@@ -350,7 +358,7 @@
   .detail-label {
     font-weight: 500;
     color: var(--text-muted);
-    font-size: 0.875rem;
+    font-size: var(--epub-settings-font-size-desc);
   }
 
   .action-button:disabled {
@@ -365,10 +373,10 @@
   }
 
   .license-source-note {
-    padding: 0.85rem 1rem 0;
+    padding: calc(var(--epub-settings-gap-md) + var(--epub-settings-gap-sm)) var(--epub-settings-gap-lg) 0;
     color: var(--text-muted);
-    line-height: 1.6;
-    font-size: 0.875rem;
+    line-height: 1.55;
+    font-size: var(--epub-settings-font-size-desc);
   }
   
   .license-type-display {
@@ -381,11 +389,11 @@
   
   .lifetime-badge {
     display: inline-block;
-    margin-left: 0.5rem;
-    padding: 0.125rem 0.5rem;
+    margin-left: var(--epub-settings-gap-md);
+    padding: 0.125rem var(--epub-settings-gap-md);
     background: linear-gradient(135deg, #10B981 0%, #059669 100%);
     color: white;
-    border-radius: 4px;
+    border-radius: var(--epub-settings-radius-sm);
     font-size: 0.625rem;
     font-weight: 700;
   }
@@ -407,8 +415,8 @@
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 0.75rem;
-    padding: 1rem;
+    gap: calc(var(--epub-settings-gap-md) + var(--epub-settings-gap-xs));
+    padding: var(--epub-settings-gap-lg);
     border-top: 1px solid var(--background-modifier-border);
   }
 
@@ -416,7 +424,7 @@
   .license-actions-right {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: calc(var(--epub-settings-gap-md) + var(--epub-settings-gap-xs));
   }
 
   .license-actions-left {
@@ -437,7 +445,7 @@
   button.action-button.secondary:active,
   button.action-button.secondary:focus,
   button.action-button.secondary:focus-visible {
-    padding: 0.3rem 0 !important;
+    padding: calc(var(--epub-settings-gap-xs) + 0.05rem) 0 !important;
     min-height: auto !important;
     height: auto !important;
     border: none !important;
@@ -448,7 +456,7 @@
     color: var(--text-muted) !important;
     cursor: pointer;
     transition: color 0.15s ease !important;
-    font-size: 0.875rem;
+    font-size: var(--epub-settings-font-size-desc);
     font-weight: 500;
     line-height: 1.4;
   }
@@ -464,9 +472,9 @@
   }
   
   .inactive-message {
-    padding: 0 1rem 1rem;
+    padding: 0 var(--epub-settings-gap-lg) var(--epub-settings-gap-lg);
     color: var(--text-muted);
-    line-height: 1.6;
+    line-height: 1.55;
   }
 
   .inactive-message p {

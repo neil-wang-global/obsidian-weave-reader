@@ -2,6 +2,7 @@ import { t } from "../../utils/i18n";
 import { generateCardUUID } from "../identifier/WeaveIDGenerator";
 import type { EpubBacklinkHighlightService } from "./EpubBacklinkHighlightService";
 import { EpubLinkService } from "./EpubLinkService";
+import { getReaderHighlightIdentityKey } from "./highlight/highlight-identity";
 import type { EpubStorageService } from "./EpubStorageService";
 import type { HighlightSourceLocator, ReaderHighlight } from "./reader-engine-types";
 import { resolveDisplayProgress } from "./book-progress";
@@ -308,11 +309,14 @@ export class EpubAnnotationService {
 		bookId: string,
 		filePath: string,
 		backlinkService: EpubBacklinkHighlightService,
-		options?: { additionalSourcePaths?: string[] }
+		options?: { additionalSourcePaths?: string[]; diskIncremental?: boolean }
 	): Promise<ReaderHighlight[]> {
 		const boundCanvasPath = await this.storageService.getCanvasBinding(bookId);
 		const hasAdditionalSourcePaths =
 			Array.isArray(options?.additionalSourcePaths) && options.additionalSourcePaths.length > 0;
+		const additionalSourcePaths = options?.additionalSourcePaths || [];
+		const useDiskIncremental =
+			options?.diskIncremental === true && additionalSourcePaths.length > 0;
 		const cacheKey = this.buildCollectedHighlightsCacheKey(bookId, filePath, boundCanvasPath);
 		if (!hasAdditionalSourcePaths) {
 			const cached = this.collectedHighlightsCache.get(cacheKey);
@@ -332,16 +336,22 @@ export class EpubAnnotationService {
 			// 现在统一以 md/canvas/卡片中的真实摘录为准，因此这里直接移除遗留缓存文件。
 			await this.clearLegacyHighlightCache(bookId);
 
-			const backlinkHighlights = await backlinkService.collectHighlights(
-				filePath,
-				boundCanvasPath,
-				hasAdditionalSourcePaths ? options : undefined
-			);
+			const backlinkHighlights = useDiskIncremental
+				? await backlinkService.refreshBookHighlightsIncremental(
+						filePath,
+						additionalSourcePaths,
+						boundCanvasPath
+				  )
+				: await backlinkService.collectHighlights(
+						filePath,
+						boundCanvasPath,
+						hasAdditionalSourcePaths ? options : undefined
+				  );
 			for (const bh of backlinkHighlights) {
-				const bhNorm = EpubLinkService.normalizeCfi(bh.cfiRange);
 				const incomingLocators = this.collectHighlightSourceLocators(bh);
+				const incomingIdentity = getReaderHighlightIdentityKey(bh);
 				const existing = allHighlights.find(
-					(h) => EpubLinkService.normalizeCfi(h.cfiRange) === bhNorm
+					(h) => getReaderHighlightIdentityKey(h) === incomingIdentity
 				);
 				if (existing) {
 					existing.sourceLocators = this.mergeHighlightSourceLocators(

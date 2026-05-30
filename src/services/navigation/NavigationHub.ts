@@ -5,8 +5,8 @@ import {
 } from "../../utils/epub-leaf-utils";
 import { openFileWithExistingLeaf } from "../../utils/workspace-navigation";
 import { logger } from "../../utils/logger";
-import { PREMIUM_FEATURES } from "../premium/PremiumFeatureGuard";
-import { ensureEpubFileAccess, ensureEpubPremiumFeature } from "../epub/epub-premium";
+import { ensureBookSourceLocationAccess, ensureEpubFileAccess } from "../epub/epub-premium";
+import { hasBookLocateTarget } from "./navigation-intent";
 import { resolveEpubVaultPath } from "../epub/epub-vault-path";
 import { getEpubStorageService } from "../epub/epub-storage-access";
 import { resolveEpubHost } from "../epub/epub-host";
@@ -106,14 +106,10 @@ export class NavigationHub {
 	}
 
 	private async navigateBook(intent: NavigationIntent): Promise<NavigationResult> {
-		const hasLocate = Boolean(
-			String(intent.locate?.cfi || "").trim() || String(intent.locate?.href || "").trim()
-		);
 		if (
-			hasLocate &&
-			!ensureEpubPremiumFeature(
+			hasBookLocateTarget(intent.locate) &&
+			!ensureBookSourceLocationAccess(
 				this.app,
-				PREMIUM_FEATURES.EPUB_SOURCE_LOCATION,
 				i18n.t("epub.reader.sourceLocationFeatureNotice")
 			)
 		) {

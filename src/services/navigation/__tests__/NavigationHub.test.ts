@@ -12,13 +12,13 @@ const {
 	openBookForSourceNavigationMock,
 	openEpubInPreferredLeafMock,
 	ensureEpubFileAccessMock,
-	ensureEpubPremiumFeatureMock,
+	ensureBookSourceLocationAccessMock,
 	resolveSourceFilePathMock,
 } = vi.hoisted(() => ({
 	openBookForSourceNavigationMock: vi.fn(),
 	openEpubInPreferredLeafMock: vi.fn(),
 	ensureEpubFileAccessMock: vi.fn(() => true),
-	ensureEpubPremiumFeatureMock: vi.fn(() => true),
+	ensureBookSourceLocationAccessMock: vi.fn(() => true),
 	resolveSourceFilePathMock: vi.fn(async () => "Books/demo.epub"),
 }));
 
@@ -29,7 +29,7 @@ vi.mock("../../../utils/epub-leaf-utils", () => ({
 
 vi.mock("../../epub/epub-premium", () => ({
 	ensureEpubFileAccess: ensureEpubFileAccessMock,
-	ensureEpubPremiumFeature: ensureEpubPremiumFeatureMock,
+	ensureBookSourceLocationAccess: ensureBookSourceLocationAccessMock,
 }));
 
 vi.mock("../../epub/epub-storage-access", () => ({
@@ -56,7 +56,7 @@ describe("NavigationHub", () => {
 		openEpubInPreferredLeafMock.mockReset();
 		openBookForSourceNavigationMock.mockResolvedValue({ id: "leaf-source" });
 		openEpubInPreferredLeafMock.mockResolvedValue({ id: "leaf-preferred" });
-		ensureEpubPremiumFeatureMock.mockReturnValue(true);
+		ensureBookSourceLocationAccessMock.mockReturnValue(true);
 		resolveSourceFilePathMock.mockResolvedValue("Books/demo.epub");
 	});
 
@@ -100,7 +100,7 @@ describe("NavigationHub", () => {
 	});
 
 	it("blocks located book navigation when premium source location is unavailable", async () => {
-		ensureEpubPremiumFeatureMock.mockReturnValueOnce(false);
+		ensureBookSourceLocationAccessMock.mockReturnValueOnce(false);
 		const hub = new NavigationHub(app);
 		const result = await hub.navigate({
 			kind: "book",
@@ -110,5 +110,32 @@ describe("NavigationHub", () => {
 
 		expect(result.success).toBe(false);
 		expect(openBookForSourceNavigationMock).not.toHaveBeenCalled();
+	});
+
+	it("blocks located navigation for non-epub supported formats without a license", async () => {
+		ensureBookSourceLocationAccessMock.mockReturnValueOnce(false);
+		resolveSourceFilePathMock.mockResolvedValueOnce("Books/demo.cbz");
+		const hub = new NavigationHub(app);
+		const result = await hub.navigate({
+			kind: "book",
+			resourcePath: "Books/demo.cbz",
+			locate: { cfi: "epubcfi(/6/2)", text: "Page 3" },
+		});
+
+		expect(result.success).toBe(false);
+		expect(openBookForSourceNavigationMock).not.toHaveBeenCalled();
+	});
+
+	it("allows opening a book without a locate target when source location is unavailable", async () => {
+		ensureBookSourceLocationAccessMock.mockReturnValue(false);
+		const hub = new NavigationHub(app);
+		const result = await hub.navigate({
+			kind: "book",
+			resourcePath: "Books/demo.mobi",
+			policy: { preferredLeaf: true, focus: true },
+		});
+
+		expect(result.success).toBe(true);
+		expect(openEpubInPreferredLeafMock).toHaveBeenCalled();
 	});
 });

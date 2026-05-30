@@ -48,7 +48,6 @@ import {
 	type PaceAnchorSnapshot,
 	type SectionReadingSlice,
 } from "./reading-pace";
-import type { View as FoliateViewElement } from "foliate-js/view.js";
 import { i18n } from "../../utils/i18n";
 import { logger } from "../../utils/logger";
 import { UnifiedThemeManager } from "../../utils/theme-detection";
@@ -64,6 +63,11 @@ import {
 } from "./foliate-runtime-patches";
 import { FootnotePreviewController, FootnotePreviewResolver } from "./footnote-preview";
 import { FoliateSessionGuard } from "./FoliateSessionGuard";
+import {
+	getReaderHighlightIdentityKey,
+	normalizeHighlightQuoteText,
+} from "./highlight/highlight-identity";
+import { EpubLinkService } from "./EpubLinkService";
 import { setSvgInteractionAttributes } from "./svg-interaction";
 
 function logFootnoteDiag(message: string): void {
@@ -92,6 +96,16 @@ type FoliateRenderer = HTMLElement & {
 	setStyles?: (styles: string | [string, string]) => void;
 	render?: () => void;
 	getContents?: () => Array<{ index?: number; doc?: Document | null }>;
+};
+
+type FoliateViewElement = HTMLElement & {
+	open: (...args: unknown[]) => Promise<unknown> | unknown;
+	close: () => void;
+	addAnnotation: (...args: unknown[]) => Promise<unknown> | unknown;
+	deleteAnnotation: (...args: unknown[]) => Promise<unknown> | unknown;
+	addEventListener: HTMLElement["addEventListener"];
+	removeEventListener: HTMLElement["removeEventListener"];
+	[key: string]: any;
 };
 
 type BridgedHostSelectionPayload = {
@@ -294,6 +308,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private temporarilyRevealedConcealmentTimers = new Map<string, ReturnType<typeof setTimeout>>();
 	private documentFootnoteCleanups = new Map<Document, () => void>();
 	private documentSelectionCleanups = new Map<Document, () => void>();
+	private documentHighlightClickCleanups = new Map<Document, () => void>();
 	private documentWheelCleanups = new Map<Document, () => void>();
 	private documentStyleElements = new WeakMap<Document, HTMLStyleElement>();
 	private loadedDocumentSectionIndexes = new WeakMap<Document, number>();
@@ -1299,14 +1314,12 @@ export class FoliateReaderService implements EpubReaderEngine {
 		const deduped = new Map<string, ReaderHighlight>();
 		this.highlightDataMap.clear();
 		for (const highlight of highlights) {
-			const canonical =
-				(await this.parser.canonicalizeLocation(highlight.cfiRange, highlight.text)) ||
-				highlight.cfiRange;
+			const anchorCfi = await this.resolveHighlightAnchorCfi(highlight);
 			const normalizedHighlight = this.normalizeHighlightSources({
 				...highlight,
-				cfiRange: canonical,
+				cfiRange: anchorCfi,
 			});
-			const key = this.normalizeLocationKey(normalizedHighlight.cfiRange);
+			const key = getReaderHighlightIdentityKey(normalizedHighlight);
 			const existing = deduped.get(key);
 			deduped.set(
 				key,
@@ -1315,7 +1328,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 		this.savedHighlights = Array.from(deduped.values());
 		for (const highlight of this.savedHighlights) {
-			this.highlightDataMap.set(this.normalizeLocationKey(highlight.cfiRange), highlight);
+			this.highlightDataMap.set(getReaderHighlightIdentityKey(highlight), highlight);
 		}
 		await this.refreshHighlights();
 	}
@@ -1329,11 +1342,11 @@ export class FoliateReaderService implements EpubReaderEngine {
 	}
 
 	temporarilyRevealConcealedText(cfiRange: string, durationMs = 3000): void {
-		const key = this.normalizeLocationKey(cfiRange);
-		const highlight = this.highlightDataMap.get(key);
-		if (!highlight || highlight.presentation !== "conceal") {
+		const highlight = this.findStoredHighlightByCfi(cfiRange, "conceal");
+		if (!highlight) {
 			return;
 		}
+		const key = getReaderHighlightIdentityKey(highlight);
 		const existingTimer = this.temporarilyRevealedConcealmentTimers.get(key);
 		if (existingTimer) {
 			clearTimeout(existingTimer);
@@ -1349,22 +1362,35 @@ export class FoliateReaderService implements EpubReaderEngine {
 	}
 
 	removeHighlight(cfiRange: string): void {
-		const key = this.normalizeLocationKey(cfiRange);
-		this.highlightDataMap.delete(key);
-		this.temporaryHighlightDataMap.delete(key);
+		const cfiKey = this.normalizeLocationKey(cfiRange);
+		const keysToRemove = new Set<string>();
+		for (const [key, highlight] of this.highlightDataMap.entries()) {
+			if (this.normalizeLocationKey(highlight.cfiRange) === cfiKey) {
+				keysToRemove.add(key);
+			}
+		}
+		for (const [key, highlight] of this.temporaryHighlightDataMap.entries()) {
+			if (this.normalizeLocationKey(highlight.cfiRange) === cfiKey) {
+				keysToRemove.add(key);
+			}
+		}
+		for (const key of keysToRemove) {
+			this.highlightDataMap.delete(key);
+			this.temporaryHighlightDataMap.delete(key);
+			const timer = this.temporaryHighlightTimers.get(key);
+			if (timer) {
+				clearTimeout(timer);
+				this.temporaryHighlightTimers.delete(key);
+			}
+			const revealedTimer = this.temporarilyRevealedConcealmentTimers.get(key);
+			if (revealedTimer) {
+				clearTimeout(revealedTimer);
+				this.temporarilyRevealedConcealmentTimers.delete(key);
+			}
+		}
 		this.savedHighlights = this.savedHighlights.filter(
-			(item) => this.normalizeLocationKey(item.cfiRange) !== key
+			(item) => this.normalizeLocationKey(item.cfiRange) !== cfiKey
 		);
-		const timer = this.temporaryHighlightTimers.get(key);
-		if (timer) {
-			clearTimeout(timer);
-			this.temporaryHighlightTimers.delete(key);
-		}
-		const revealedTimer = this.temporarilyRevealedConcealmentTimers.get(key);
-		if (revealedTimer) {
-			clearTimeout(revealedTimer);
-			this.temporarilyRevealedConcealmentTimers.delete(key);
-		}
 		this.invalidateParagraphPresentation();
 		void this.syncAnnotationsWithView();
 	}
@@ -1397,7 +1423,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 		this.schedulePaginatedLayoutRecovery();
 		const positionOperationToken = this.sessionGuard.startPositionOperation();
-		void this.syncCurrentPositionFromTarget(target, undefined, positionOperationToken);
+		void this.syncCurrentPositionFromTarget(target, undefined, positionOperationToken).finally(() => {
+			void this.refreshHighlights();
+		});
 	};
 
 	private handleLoadEvent = (event: Event): void => {
@@ -1416,6 +1444,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.maybeInvalidateParagraphCacheForSection(index, doc);
 		this.normalizeDocument(doc);
 		this.attachSelectionListeners(doc);
+		this.attachHighlightClickListeners(doc);
 		this.attachWheelListeners(doc);
 		this.renderedAnnotations.clear();
 		this.schedulePaginatedLayoutRecovery();
@@ -1483,8 +1512,11 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return;
 		}
 
-		const key = this.normalizeLocationKey(value);
-		const highlight = this.highlightDataMap.get(key) || this.temporaryHighlightDataMap.get(key);
+		const highlight = this.findHighlightForAnnotationValue(
+			value,
+			detail?.range || null,
+			detail?.index
+		);
 		if (!highlight) {
 			return;
 		}
@@ -1492,37 +1524,61 @@ export class FoliateReaderService implements EpubReaderEngine {
 		const frame =
 			this.getVisibleFramesWithIndex().find((item) => item.index === detail.index) ||
 			this.getVisibleFramesWithIndex()[0];
-		if (this.hasActiveReaderSelection(frame?.document)) {
+
+		// Foliate hit-tests annotation overlays on the same click that selects text in the
+		// iframe (common for TXT). Clear that selection so the excerpt toolbar can open.
+		if (detail?.range) {
+			this.clearSelections();
+		} else if (this.hasActiveReaderSelection(frame?.document)) {
 			return;
 		}
+
 		const containerRect = this.renderContainer?.getBoundingClientRect();
-		const rect =
+		let rect =
+			frame && detail.range ? this.createViewportRect(frame, detail.range) : null;
+		let rects =
 			frame && detail.range
-				? this.createViewportRect(frame, detail.range) || {
-						top: 0,
-						left: 0,
-						bottom: containerRect?.height || 0,
-						right: containerRect?.width || 0,
-						width: containerRect?.width || 0,
-						height: containerRect?.height || 0,
-				  }
-				: {
-						top: 0,
-						left: 0,
-						bottom: containerRect?.height || 0,
-						right: containerRect?.width || 0,
-						width: containerRect?.width || 0,
-						height: containerRect?.height || 0,
-				  };
+				? this.createViewportRectList(frame, detail.range) || undefined
+				: undefined;
+
+		if (!rect && frame?.document) {
+			const geometry = this.getCurrentHighlightViewportGeometry(
+				highlight.cfiRange,
+				highlight.text
+			);
+			rect = geometry?.rect || null;
+			rects = geometry?.rects;
+		}
+
+		if (!rect && frame?.document) {
+			const resolvedRange = this.parser.resolveRangeInLoadedSection(
+				highlight.cfiRange,
+				frame.document,
+				frame.index,
+				highlight.text
+			);
+			if (resolvedRange) {
+				rect = this.createViewportRect(frame, resolvedRange);
+				rects = this.createViewportRectList(frame, resolvedRange) || undefined;
+			}
+		}
+
+		if (!rect) {
+			rect = {
+				top: 0,
+				left: 0,
+				bottom: containerRect?.height || 0,
+				right: containerRect?.width || 0,
+				width: containerRect?.width || 0,
+				height: containerRect?.height || 0,
+			};
+		}
 
 		const info = this.buildHighlightClickInfo(
 			highlight,
 			{
 				rect,
-				rects:
-					frame && detail.range
-						? this.createViewportRectList(frame, detail.range) || undefined
-						: undefined,
+				rects,
 			},
 			"highlight"
 		);
@@ -2390,11 +2446,35 @@ export class FoliateReaderService implements EpubReaderEngine {
 			if (href) {
 				return href;
 			}
+			const sectionBaseIndex = this.getSectionIndexFromSectionBaseCfi(normalized);
+			if (typeof sectionBaseIndex === "number") {
+				const sectionHref = this.parser.getSectionHrefByIndex(sectionBaseIndex);
+				if (sectionHref) {
+					return sectionHref;
+				}
+			}
 		}
 		return (
 			this.currentChapterHref ||
 			this.parser.getSectionHrefByIndex(this.currentPosition.chapterIndex || 0)
 		);
+	}
+
+	/** Map spine-only EPUB CFIs such as `epubcfi(/6/14)` to a section index. */
+	private getSectionIndexFromSectionBaseCfi(target: string): number | null {
+		if (!this.isSectionBaseCfiTarget(target)) {
+			return null;
+		}
+		const wrapped = target.startsWith("epubcfi(") ? target : `epubcfi(${target})`;
+		const match = /^epubcfi\(\/6\/(\d+)\)$/.exec(wrapped);
+		if (!match) {
+			return null;
+		}
+		const spinePart = Number(match[1]);
+		if (!Number.isFinite(spinePart) || spinePart < 2) {
+			return null;
+		}
+		return Math.max(0, Math.floor(spinePart / 2) - 1);
 	}
 
 	private shouldFallbackFromNavigationError(target: string, error: unknown): boolean {
@@ -3291,7 +3371,11 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 		return range.commonAncestorContainer instanceof Element
 			? range.commonAncestorContainer
-			: range.startContainer.parentElement || range.startContainer;
+			: range.startContainer.parentElement ||
+					range.commonAncestorContainer.parentElement ||
+					range.startContainer.ownerDocument?.body ||
+					range.startContainer.ownerDocument?.documentElement ||
+					(range.commonAncestorContainer.ownerDocument?.documentElement as Element);
 	}
 
 	private collectParagraphTextSegmentsInRange(
@@ -4297,13 +4381,13 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private getAllParagraphModeHighlights(): ReaderHighlight[] {
 		const merged = new Map<string, ReaderHighlight>();
 		for (const highlight of this.savedHighlights) {
-			merged.set(this.normalizeLocationKey(highlight.cfiRange), highlight);
+			merged.set(getReaderHighlightIdentityKey(highlight), highlight);
 		}
 		for (const highlight of this.highlightDataMap.values()) {
-			merged.set(this.normalizeLocationKey(highlight.cfiRange), highlight);
+			merged.set(getReaderHighlightIdentityKey(highlight), highlight);
 		}
 		for (const highlight of this.temporaryHighlightDataMap.values()) {
-			merged.set(this.normalizeLocationKey(highlight.cfiRange), highlight);
+			merged.set(getReaderHighlightIdentityKey(highlight), highlight);
 		}
 		return Array.from(merged.values());
 	}
@@ -4594,6 +4678,211 @@ export class FoliateReaderService implements EpubReaderEngine {
 		return closestIndex;
 	}
 
+	private attachHighlightClickListeners(doc: Document): void {
+		if (this.documentHighlightClickCleanups.has(doc)) {
+			return;
+		}
+
+		const onClick = (event: MouseEvent) => {
+			this.handleFrameHighlightClick(event, doc);
+		};
+
+		doc.addEventListener("click", onClick, true);
+		doc.defaultView?.addEventListener("click", onClick, true);
+
+		const cleanup = () => {
+			doc.removeEventListener("click", onClick, true);
+			doc.defaultView?.removeEventListener("click", onClick, true);
+		};
+		this.documentHighlightClickCleanups.set(doc, cleanup);
+	}
+
+	private handleFrameHighlightClick(event: MouseEvent, doc: Document): void {
+		if (event.button !== 0 || event.defaultPrevented) {
+			return;
+		}
+
+		const frame = this.getVisibleFramesWithIndex().find((item) => item.document === doc);
+		if (!frame) {
+			return;
+		}
+
+		if (this.findFootnoteReference(event.target)) {
+			return;
+		}
+
+		const highlight = this.findHighlightAtPointer(event.clientX, event.clientY, frame);
+		if (!highlight) {
+			return;
+		}
+
+		const geometry = this.getCurrentHighlightViewportGeometry(highlight.cfiRange, highlight.text);
+		if (!geometry?.rect) {
+			return;
+		}
+
+		event.preventDefault();
+		event.stopPropagation();
+		this.clearSelections();
+		this.notifyHighlightClick(
+			this.buildHighlightClickInfo(highlight, geometry, "highlight")
+		);
+	}
+
+	private isClientPointInViewportRect(
+		clientX: number,
+		clientY: number,
+		rect: HighlightClickInfo["rect"]
+	): boolean {
+		return (
+			clientX >= rect.left &&
+			clientX <= rect.right &&
+			clientY >= rect.top &&
+			clientY <= rect.bottom
+		);
+	}
+
+	private isClientPointInHighlightGeometry(
+		clientX: number,
+		clientY: number,
+		geometry: { rect: HighlightClickInfo["rect"]; rects?: HighlightClickInfo["rect"][] }
+	): boolean {
+		if (this.isClientPointInViewportRect(clientX, clientY, geometry.rect)) {
+			return true;
+		}
+		for (const rect of geometry.rects || []) {
+			if (this.isClientPointInViewportRect(clientX, clientY, rect)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private collectHighlightsForSection(sectionIndex: number): ReaderHighlight[] {
+		const results: ReaderHighlight[] = [];
+		for (const highlight of [
+			...this.highlightDataMap.values(),
+			...this.temporaryHighlightDataMap.values(),
+		]) {
+			const highlightSection =
+				typeof highlight.chapterIndex === "number"
+					? highlight.chapterIndex
+					: this.parser.getSectionIndexForCfi(highlight.cfiRange);
+			if (highlightSection === sectionIndex) {
+				results.push(highlight);
+			}
+		}
+		return results;
+	}
+
+	private findHighlightAtPointer(
+		clientX: number,
+		clientY: number,
+		frame: VisibleFrameWithIndex
+	): ReaderHighlight | null {
+		const sectionHighlights = this.collectHighlightsForSection(frame.index);
+		for (let index = sectionHighlights.length - 1; index >= 0; index -= 1) {
+			const highlight = sectionHighlights[index];
+			const geometry = this.getCurrentHighlightViewportGeometry(
+				highlight.cfiRange,
+				highlight.text
+			);
+			if (geometry && this.isClientPointInHighlightGeometry(clientX, clientY, geometry)) {
+				return highlight;
+			}
+		}
+
+		return this.findHighlightAtDocumentPoint(clientX, clientY, frame);
+	}
+
+	private findHighlightAtDocumentPoint(
+		clientX: number,
+		clientY: number,
+		frame: VisibleFrameWithIndex
+	): ReaderHighlight | null {
+		const doc = frame.document;
+		const caretRange = this.createCaretRangeFromClientPoint(doc, clientX, clientY);
+		if (!caretRange) {
+			return null;
+		}
+
+		for (const highlight of this.collectHighlightsForSection(frame.index)) {
+			const highlightRange = this.parser.resolveRangeInLoadedSection(
+				highlight.cfiRange,
+				doc,
+				frame.index,
+				highlight.text
+			);
+			if (!highlightRange) {
+				continue;
+			}
+			if (this.pointerIsInsideHighlightRange(caretRange, highlightRange)) {
+				return highlight;
+			}
+		}
+		return null;
+	}
+
+	private pointerIsInsideHighlightRange(caretRange: Range, highlightRange: Range): boolean {
+		try {
+			return highlightRange.isPointInRange(
+				caretRange.startContainer,
+				caretRange.startOffset
+			);
+		} catch {
+			return (
+				highlightRange.compareBoundaryPoints(Range.START_TO_END, caretRange) <= 0 &&
+				highlightRange.compareBoundaryPoints(Range.END_TO_START, caretRange) >= 0
+			);
+		}
+	}
+
+	private createCaretRangeFromClientPoint(
+		doc: Document,
+		clientX: number,
+		clientY: number
+	): Range | null {
+		const view = doc.defaultView;
+		if (!view) {
+			return null;
+		}
+
+		const caretRangeFromPoint = (
+			doc as Document & {
+				caretRangeFromPoint?: (x: number, y: number) => Range | null;
+			}
+		).caretRangeFromPoint;
+		if (typeof caretRangeFromPoint === "function") {
+			return caretRangeFromPoint.call(doc, clientX, clientY);
+		}
+
+		const caretPositionFromPoint = (
+			doc as Document & {
+				caretPositionFromPoint?: (
+					x: number,
+					y: number
+				) => { offsetNode: Node; offset: number } | null;
+			}
+		).caretPositionFromPoint;
+		if (typeof caretPositionFromPoint !== "function") {
+			return null;
+		}
+
+		const position = caretPositionFromPoint.call(doc, clientX, clientY);
+		if (!position?.offsetNode) {
+			return null;
+		}
+
+		const range = doc.createRange();
+		try {
+			range.setStart(position.offsetNode, position.offset);
+			range.setEnd(position.offsetNode, position.offset);
+			return range;
+		} catch {
+			return null;
+		}
+	}
+
 	private attachSelectionListeners(doc: Document): void {
 		if (this.documentSelectionCleanups.has(doc)) {
 			return;
@@ -4786,9 +5075,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return this.renderContainer;
 		}
 
-		let node: HTMLElement | null = originElement;
+		let node: Element | null = originElement;
 		while (node) {
-			if (node.scrollHeight > node.clientHeight + 1) {
+			if (node instanceof HTMLElement && node.scrollHeight > node.clientHeight + 1) {
 				return node;
 			}
 			node = node.parentElement;
@@ -5366,7 +5655,10 @@ body .weave-foliate-concealment {
 			if (!visibleHighlight) {
 				continue;
 			}
-			const sectionIndex = this.parser.getSectionIndexForCfi(visibleHighlight.cfiRange);
+			const sectionIndex = await this.resolveHighlightSectionIndexForView(
+				visibleHighlight,
+				visibleFrames
+			);
 			if (sectionIndex === null || !visibleIndexes.has(sectionIndex)) {
 				continue;
 			}
@@ -5414,6 +5706,7 @@ body .weave-foliate-concealment {
 	private createAnnotation(highlight: ReaderHighlight, focusColor?: string): FoliateAnnotation {
 		const annotation: FoliateAnnotation = {
 			...highlight,
+			// Foliate resolves navigation and overlayer keys from `value`; must stay a valid CFI.
 			value: highlight.cfiRange,
 		};
 		if (focusColor) {
@@ -5453,8 +5746,7 @@ body .weave-foliate-concealment {
 	}
 
 	private getCurrentHighlightByCfi(cfiRange: string): ReaderHighlight | null {
-		const key = this.normalizeLocationKey(cfiRange);
-		return this.highlightDataMap.get(key) || this.temporaryHighlightDataMap.get(key) || null;
+		return this.findHighlightForAnnotationValue(cfiRange);
 	}
 
 	private createElementViewportRect(element: Element): HighlightClickInfo["rect"] | null {
@@ -5576,11 +5868,32 @@ body .weave-foliate-concealment {
 	}
 
 	private getCurrentHighlightViewportGeometry(
-		cfiRange: string
+		cfiRange: string,
+		textHint?: string
 	): { rect: HighlightClickInfo["rect"]; rects?: HighlightClickInfo["rect"][] } | null {
+		const highlight = this.getCurrentHighlightByCfi(cfiRange);
+		const resolvedTextHint = String(textHint || highlight?.text || "").trim();
+		const preferredChapter =
+			typeof highlight?.chapterIndex === "number" && Number.isFinite(highlight.chapterIndex)
+				? highlight.chapterIndex
+				: this.parser.getSectionIndexForCfi(cfiRange);
+
 		const frames = this.getVisibleFramesWithIndex();
-		for (const frame of frames) {
-			const range = this.parser.resolveRangeInLoadedSection(cfiRange, frame.document, frame.index);
+		const orderedFrames =
+			typeof preferredChapter === "number"
+				? [
+						...frames.filter((frame) => frame.index === preferredChapter),
+						...frames.filter((frame) => frame.index !== preferredChapter),
+					]
+				: frames;
+
+		for (const frame of orderedFrames) {
+			const range = this.parser.resolveRangeInLoadedSection(
+				cfiRange,
+				frame.document,
+				frame.index,
+				resolvedTextHint || undefined
+			);
 			if (!range) {
 				continue;
 			}
@@ -5594,6 +5907,49 @@ body .weave-foliate-concealment {
 			}
 		}
 		return null;
+	}
+
+	private async resolveHighlightSectionIndexForView(
+		highlight: ReaderHighlight,
+		visibleFrames: VisibleFrameWithIndex[]
+	): Promise<number | null> {
+		const textHint = String(highlight.text || "").trim();
+		const visibleIndexes = new Set(visibleFrames.map((frame) => frame.index));
+
+		const direct = this.parser.getSectionIndexForCfi(highlight.cfiRange);
+		if (direct !== null && visibleIndexes.has(direct)) {
+			return direct;
+		}
+
+		if (!textHint) {
+			return direct !== null && visibleIndexes.has(direct) ? direct : null;
+		}
+
+		const preferredChapter =
+			typeof highlight.chapterIndex === "number" && Number.isFinite(highlight.chapterIndex)
+				? highlight.chapterIndex
+				: direct;
+		const orderedFrames =
+			typeof preferredChapter === "number"
+				? [
+						...visibleFrames.filter((frame) => frame.index === preferredChapter),
+						...visibleFrames.filter((frame) => frame.index !== preferredChapter),
+					]
+				: visibleFrames;
+
+		for (const frame of orderedFrames) {
+			const range = this.parser.resolveRangeInLoadedSection(
+				highlight.cfiRange,
+				frame.document,
+				frame.index,
+				textHint
+			);
+			if (range) {
+				return frame.index;
+			}
+		}
+
+		return direct !== null && visibleIndexes.has(direct) ? direct : null;
 	}
 
 	private createRenderedAnnotation(
@@ -5646,15 +6002,88 @@ body .weave-foliate-concealment {
 		draw: (draw: (rects: unknown[], options?: unknown) => SVGElement, options?: unknown) => void
 	): Promise<void> {
 		if (this.shouldRenderAnnotationAsConceal(annotation)) {
-			const key = this.normalizeLocationKey(annotation.cfiRange);
+			const key = getReaderHighlightIdentityKey(annotation);
 			if (!this.temporarilyRevealedConcealmentTimers.has(key)) {
-				draw((rects) => this.createConcealmentOverlay(rects));
+				draw((rects) =>
+					this.createConcealmentOverlay(
+						this.resolveAnnotationDrawRects(annotation, rects)
+					)
+				);
 				return;
 			}
 		}
 
 		const overlayer = await this.getOverlayerModule();
-		draw((rects) => this.createCompositeAnnotationOverlay(annotation, rects, overlayer));
+		draw((rects) =>
+			this.createCompositeAnnotationOverlay(
+				annotation,
+				this.resolveAnnotationDrawRects(annotation, rects),
+				overlayer
+			)
+		);
+	}
+
+	private hasUsableOverlayRects(rects: unknown[]): boolean {
+		if (!Array.isArray(rects) || rects.length === 0) {
+			return false;
+		}
+		return rects.some((rect) => {
+			const candidate = rect as { width?: number; height?: number };
+			return Number(candidate.width) > 0 || Number(candidate.height) > 0;
+		});
+	}
+
+	private resolveAnnotationDrawRects(
+		annotation: FoliateAnnotation,
+		suppliedRects: unknown[]
+	): unknown[] {
+		if (this.hasUsableOverlayRects(suppliedRects)) {
+			return suppliedRects;
+		}
+		return this.resolveHighlightOverlayRects(annotation);
+	}
+
+	private resolveHighlightOverlayRects(highlight: {
+		cfiRange: string;
+		text?: string;
+		chapterIndex?: number;
+	}): Array<{ left: number; top: number; width: number; height: number }> {
+		const textHint = String(highlight.text || "").trim();
+		if (!textHint) {
+			return [];
+		}
+
+		const preferredChapter =
+			typeof highlight.chapterIndex === "number" && Number.isFinite(highlight.chapterIndex)
+				? highlight.chapterIndex
+				: this.parser.getSectionIndexForCfi(highlight.cfiRange);
+
+		const frames = this.getVisibleFramesWithIndex();
+		const orderedFrames =
+			typeof preferredChapter === "number"
+				? [
+						...frames.filter((frame) => frame.index === preferredChapter),
+						...frames.filter((frame) => frame.index !== preferredChapter),
+					]
+				: frames;
+
+		for (const frame of orderedFrames) {
+			const range = this.parser.resolveRangeInLoadedSection(
+				highlight.cfiRange,
+				frame.document,
+				frame.index,
+				textHint
+			);
+			if (!range) {
+				continue;
+			}
+			const rects = this.extractRangeClientRects(range);
+			if (rects.length > 0) {
+				return rects;
+			}
+		}
+
+		return [];
 	}
 
 	private getOverlayerModule(): Promise<typeof import("foliate-js/overlayer.js")> {
@@ -6216,7 +6645,7 @@ body .weave-foliate-concealment {
 			...highlight,
 			cfiRange: canonical,
 		});
-		const key = this.normalizeLocationKey(normalizedHighlight.cfiRange);
+		const key = getReaderHighlightIdentityKey(normalizedHighlight);
 
 		const existingTimer = this.temporaryHighlightTimers.get(key);
 		if (existingTimer) {
@@ -6246,7 +6675,7 @@ body .weave-foliate-concealment {
 
 		const deduped = new Map<string, ReaderHighlight>();
 		for (const item of this.savedHighlights) {
-			deduped.set(this.normalizeLocationKey(item.cfiRange), item);
+			deduped.set(getReaderHighlightIdentityKey(item), item);
 		}
 		const existingHighlight = deduped.get(key);
 		const mergedHighlight = existingHighlight
@@ -6259,7 +6688,8 @@ body .weave-foliate-concealment {
 	}
 
 	private removeTemporaryHighlight(cfiRange: string): void {
-		const key = this.normalizeLocationKey(cfiRange);
+		const highlight = this.findStoredHighlightByCfi(cfiRange, "temporary");
+		const key = highlight ? getReaderHighlightIdentityKey(highlight) : this.normalizeLocationKey(cfiRange);
 		const existingTimer = this.temporaryHighlightTimers.get(key);
 		if (existingTimer) {
 			clearTimeout(existingTimer);
@@ -6274,7 +6704,7 @@ body .weave-foliate-concealment {
 		const deduped = new Map<string, ReaderHighlight>();
 		for (const highlight of highlights) {
 			const normalized = this.normalizeHighlightSources(highlight);
-			const key = this.normalizeLocationKey(normalized.cfiRange);
+			const key = getReaderHighlightIdentityKey(normalized);
 			const existing = deduped.get(key);
 			deduped.set(key, existing ? this.mergeHighlights(existing, normalized) : normalized);
 		}
@@ -6402,6 +6832,168 @@ body .weave-foliate-concealment {
 		};
 	}
 
+	private async resolveHighlightAnchorCfi(highlight: ReaderHighlight): Promise<string> {
+		const textHint = String(highlight.text || "").trim();
+		const originalCfi = String(highlight.cfiRange || "").trim();
+
+		if (textHint && originalCfi) {
+			const originalIndex =
+				typeof highlight.chapterIndex === "number"
+					? highlight.chapterIndex
+					: this.parser.getSectionIndexForCfi(originalCfi);
+			if (originalIndex !== null) {
+				const originalDoc = await this.parser.getRawDocumentByIndex(originalIndex);
+				if (originalDoc) {
+					const originalRange = this.parser.resolveRangeInLoadedSection(
+						originalCfi,
+						originalDoc,
+						originalIndex,
+						textHint
+					);
+					if (originalRange && originalRange.toString().trim().length > 0) {
+						try {
+							return this.parser.createCfiFromRange(originalIndex, originalRange);
+						} catch {
+							// Fall through to canonicalization.
+						}
+					}
+				}
+			}
+		}
+
+		const canonical =
+			(await this.parser.canonicalizeLocation(originalCfi, textHint || undefined)) || originalCfi;
+
+		if (!textHint) {
+			return canonical;
+		}
+
+		const sectionIndex =
+			typeof highlight.chapterIndex === "number"
+				? highlight.chapterIndex
+				: (this.parser.getSectionIndexForCfi(canonical) ??
+					this.parser.getSectionIndexForCfi(highlight.cfiRange));
+
+		if (sectionIndex === null) {
+			return canonical;
+		}
+
+		const resolveInDocument = (document: Document, index: number): string | null => {
+			const range = this.parser.resolveRangeInLoadedSection(
+				highlight.cfiRange,
+				document,
+				index,
+				textHint
+			);
+			if (!range) {
+				return null;
+			}
+			try {
+				return this.parser.createCfiFromRange(index, range);
+			} catch {
+				return null;
+			}
+		};
+
+		const virtualDoc = await this.parser.getRawDocumentByIndex(sectionIndex);
+		if (virtualDoc) {
+			const precise = resolveInDocument(virtualDoc, sectionIndex);
+			if (precise) {
+				return precise;
+			}
+		}
+
+		for (const frame of this.getVisibleFramesWithIndex()) {
+			if (frame.index !== sectionIndex) {
+				continue;
+			}
+			const precise = resolveInDocument(frame.document, frame.index);
+			if (precise) {
+				return precise;
+			}
+		}
+
+		return canonical;
+	}
+
+	private findHighlightForAnnotationValue(
+		value: string,
+		clickRange?: Range | null,
+		sectionIndex?: number
+	): ReaderHighlight | null {
+		const trimmed = String(value || "").trim();
+		if (!trimmed) {
+			return null;
+		}
+
+		const identityHit =
+			this.highlightDataMap.get(trimmed) || this.temporaryHighlightDataMap.get(trimmed);
+		if (identityHit) {
+			return identityHit;
+		}
+
+		const cfiKey = this.normalizeLocationKey(trimmed);
+		const normalizedValue = EpubLinkService.normalizeCfi(trimmed);
+		const matches: ReaderHighlight[] = [];
+		const maps = [this.highlightDataMap, this.temporaryHighlightDataMap];
+		for (const map of maps) {
+			for (const highlight of map.values()) {
+				if (
+					this.normalizeLocationKey(highlight.cfiRange) === cfiKey ||
+					EpubLinkService.normalizeCfi(highlight.cfiRange) === normalizedValue
+				) {
+					matches.push(highlight);
+				}
+			}
+		}
+
+		if (matches.length === 0) {
+			return null;
+		}
+		if (matches.length === 1) {
+			return matches[0];
+		}
+
+		const clickedText = clickRange?.toString().trim() || "";
+		if (clickedText) {
+			const normalizedClick = normalizeHighlightQuoteText(clickedText);
+			const byText = matches.find(
+				(highlight) => normalizeHighlightQuoteText(highlight.text) === normalizedClick
+			);
+			if (byText) {
+				return byText;
+			}
+		}
+
+		if (typeof sectionIndex === "number") {
+			const bySection = matches.find((highlight) => highlight.chapterIndex === sectionIndex);
+			if (bySection) {
+				return bySection;
+			}
+		}
+
+		return matches[0];
+	}
+
+	private findStoredHighlightByCfi(
+		cfiRange: string,
+		presentation?: ReaderHighlight["presentation"] | "temporary"
+	): ReaderHighlight | null {
+		const highlight = this.findHighlightForAnnotationValue(cfiRange);
+		if (!highlight) {
+			return null;
+		}
+		if (presentation === "conceal" && highlight.presentation !== "conceal") {
+			return null;
+		}
+		if (presentation === "temporary" && !this.temporaryHighlightDataMap.has(
+			getReaderHighlightIdentityKey(highlight)
+		)) {
+			return null;
+		}
+		return highlight;
+	}
+
 	private normalizeLocationKey(value: string): string {
 		return this.normalizeLocationString(value).toLowerCase();
 	}
@@ -6507,6 +7099,10 @@ body .weave-foliate-concealment {
 			cleanup();
 		}
 		this.documentSelectionCleanups.clear();
+		for (const cleanup of this.documentHighlightClickCleanups.values()) {
+			cleanup();
+		}
+		this.documentHighlightClickCleanups.clear();
 		for (const cleanup of this.documentWheelCleanups.values()) {
 			cleanup();
 		}
@@ -6822,7 +7418,7 @@ body .weave-foliate-concealment {
 	}
 
 	private getAnnotationRenderSignature(annotation: FoliateAnnotation): string {
-		const key = this.normalizeLocationKey(annotation.cfiRange);
+		const key = getReaderHighlightIdentityKey(annotation);
 		const isTemporarilyRevealed =
 			this.shouldRenderAnnotationAsConceal(annotation) &&
 			this.temporarilyRevealedConcealmentTimers.has(key);

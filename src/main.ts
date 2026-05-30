@@ -419,7 +419,11 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			return;
 		}
 
-		registerEpubWorkspaceViews(this, "[Standalone EPUB]", "独立 EPUB 插件");
+		registerEpubWorkspaceViews(
+			this,
+			"[Standalone EPUB]",
+			i18n.t("epub.commands.standalonePluginLabel")
+		);
 		this.workspaceViewsRegistered = true;
 	}
 
@@ -453,7 +457,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			}
 		} else {
 			menu.addItem((item) => {
-				item.setTitle("暂无可用的自定义 AI 拆分功能");
+				item.setTitle(i18n.t("epub.commands.aiSplitUnavailable"));
 				item.setIcon("info");
 				item.setDisabled(true);
 			});
@@ -461,7 +465,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 
 		menu.addSeparator();
 		menu.addItem((item) => {
-			item.setTitle("AI拆分配置");
+			item.setTitle(i18n.t("epub.commands.aiSplitConfig"));
 			item.setIcon("settings");
 			item.onClick(() => {
 				if (!this.tryOpenAISplitConfigModalFromMainPlugin()) {
@@ -545,6 +549,23 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		registerEpubMarkdownPostProcessor(this, this.app);
 		registerEpubProtocolHandler(this, this.app, "[Standalone EPUB Protocol]");
 		this.registerBookshelfVaultRefreshBridge();
+		const {
+			bootstrapEpubAnnotationIndex,
+			scheduleEpubAnnotationIndexWarmup,
+		} = await import("./services/epub/epub-annotation-index");
+		this.registerEvent(
+			this.app.workspace.on("layout-ready", () => {
+				bootstrapEpubAnnotationIndex(this.app);
+			})
+		);
+		scheduleEpubAnnotationIndexWarmup(this.app);
+		this.registerDomEvent(
+			window,
+			EPUB_RUNTIME.events.bookshelfDataChanged as keyof WindowEventMap,
+			() => {
+				scheduleEpubAnnotationIndexWarmup(this.app, 8_000);
+			}
+		);
 		this.registerEvent(this.app.workspace.on("layout-change", () => {
 			syncI18nWithObsidianLanguage();
 		}));

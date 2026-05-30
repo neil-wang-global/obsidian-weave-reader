@@ -28,6 +28,12 @@ describe('extractEpubSourcePath', () => {
 		const content = 'we_source: [EPUB来源](obsidian://weave-epub?vault=Vault&file=Books%2Fdemo.epub&cfi=epubcfi(/6/2)&text=Hello)';
 		expect(extractEpubSourcePath(content)).toBe('Books/demo.epub');
 	});
+
+	it('supports TXT book wikilinks', () => {
+		const content =
+			'we_source: [[Books/novel.txt#weave-cfi=epubcfi(/6/2)&text=Hello|novel]]';
+		expect(extractEpubSourcePath(content)).toBe('Books/novel.txt');
+	});
 });
 
 describe('source-path-matcher multi-source behavior', () => {

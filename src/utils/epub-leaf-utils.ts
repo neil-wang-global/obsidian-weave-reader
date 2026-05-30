@@ -243,7 +243,7 @@ export async function openBookForSourceNavigation(
 			try {
 				app.workspace.setActiveLeaf(leaf, { focus });
 			} catch {
-				app.workspace.setActiveLeaf(leaf, focus);
+				app.workspace.setActiveLeaf(leaf, { focus } as any);
 			}
 		}
 	} catch {

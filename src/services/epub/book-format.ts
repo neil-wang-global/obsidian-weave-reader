@@ -1,18 +1,30 @@
 import { TAbstractFile, TFile, normalizePath } from "obsidian";
+import { i18n } from "../../utils/i18n";
+import {
+	SUPPORTED_BOOK_EXTENSIONS,
+	type SupportedBookExtension,
+} from "./supported-book-extensions";
 
-export const SUPPORTED_BOOK_EXTENSIONS = [
-	"epub",
-	"mobi",
-	"azw3",
-	"fb2",
-	"fbz",
-	"cbz",
-	"txt",
-] as const;
-
-export type SupportedBookExtension = typeof SUPPORTED_BOOK_EXTENSIONS[number];
+export { SUPPORTED_BOOK_EXTENSIONS, type SupportedBookExtension };
 
 const SUPPORTED_BOOK_EXTENSION_SET = new Set<string>(SUPPORTED_BOOK_EXTENSIONS);
+
+export function isSupportedBookWikilinkMarkup(markup: string): boolean {
+	const normalized = String(markup || "").trim();
+	if (!normalized.startsWith("[[") || !normalized.endsWith("]]")) {
+		return false;
+	}
+	const inner = normalized.slice(2, -2);
+	const hashIndex = inner.indexOf("#");
+	if (hashIndex < 0) {
+		return false;
+	}
+	const filePath = inner.slice(0, hashIndex).split("|")[0]?.trim() || "";
+	if (!isSupportedBookPath(filePath)) {
+		return false;
+	}
+	return hasSupportedBookLocatorSubpath(inner.slice(hashIndex));
+}
 
 export function normalizeBookExtension(value: string): string {
 	return String(value || "")
@@ -53,7 +65,7 @@ export function getBookFormatDisplayLabel(extensionOrPath: string): string {
 		case "txt":
 			return "TXT";
 		default:
-			return normalized ? normalized.toUpperCase() : "未知格式";
+			return normalized ? normalized.toUpperCase() : i18n.t("epub.common.unknownFormat");
 	}
 }
 
@@ -61,12 +73,30 @@ export function isSupportedBookExtension(value: string): value is SupportedBookE
 	return SUPPORTED_BOOK_EXTENSION_SET.has(normalizeBookExtension(value));
 }
 
+/** Book formats available without Premium license (EPUB + TXT). */
+export function isFreeBookFormat(filePathOrExtension: string): boolean {
+	const extension = isSupportedBookPath(filePathOrExtension)
+		? getBookExtensionFromPath(filePathOrExtension)
+		: normalizeBookExtension(filePathOrExtension);
+	return extension === "epub" || extension === "txt";
+}
+
 export function isSupportedBookPath(filePath: string): boolean {
 	return isSupportedBookExtension(getBookExtensionFromPath(filePath));
 }
 
 export function isSupportedBookFile(file: TAbstractFile | null | undefined): file is TFile {
-	return file instanceof TFile && isSupportedBookPath(file.path);
+	if (!file) {
+		return false;
+	}
+
+	if (file instanceof TFile) {
+		return isSupportedBookPath(file.path);
+	}
+
+	// Fallback for test doubles / cross-realm file objects that still expose a valid vault path.
+	const fallbackPath = (file as { path?: unknown }).path;
+	return typeof fallbackPath === "string" && isSupportedBookPath(fallbackPath);
 }
 
 export function stripSupportedBookExtension(value: string): string {

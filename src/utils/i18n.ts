@@ -1,56 +1,29 @@
 import { getLanguage } from "obsidian";
 import { logger } from "../utils/logger";
 import { vaultStorage } from "../utils/vault-local-storage";
-import { translations, translationOverrides } from "./i18n/resources";
+import {
+	mergeTranslationTrees,
+	translations,
+	translationOverrides,
+} from "./i18n/resources";
+import { flattenTranslationLeafKeys } from "./i18n/flat-locale";
 import type { I18nConfig, SupportedLanguage, TranslationKey } from "./i18n/types";
 import { derived, get, writable } from "svelte/store";
 
 export type { I18nConfig, SupportedLanguage, TranslationKey } from "./i18n/types";
-
-function isTranslationBranch(value: string | TranslationKey | undefined): value is TranslationKey {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function mergeTranslationTrees(base: TranslationKey, override?: TranslationKey): TranslationKey {
-	if (!override) {
-		return { ...base };
-	}
-
-	const merged: TranslationKey = { ...base };
-
-	for (const [key, overrideValue] of Object.entries(override)) {
-		const baseValue = merged[key];
-
-		if (isTranslationBranch(baseValue) && isTranslationBranch(overrideValue)) {
-			merged[key] = mergeTranslationTrees(baseValue, overrideValue);
-			continue;
-		}
-
-		merged[key] = overrideValue;
-	}
-
-	return merged;
-}
+export { flattenTranslationLeafKeys } from "./i18n/flat-locale";
 
 export const translationCatalog: Record<SupportedLanguage, TranslationKey> = {
 	"zh-CN": mergeTranslationTrees(translations["zh-CN"], translationOverrides["zh-CN"]),
 	"en-US": mergeTranslationTrees(translations["en-US"], translationOverrides["en-US"]),
+	"ja-JP": mergeTranslationTrees(translations["ja-JP"], translationOverrides["ja-JP"]),
+	"ko-KR": mergeTranslationTrees(translations["ko-KR"], translationOverrides["ko-KR"]),
 };
-
-export function flattenTranslationLeafKeys(tree: TranslationKey, prefix = ""): string[] {
-	return Object.entries(tree).flatMap(([key, value]) => {
-		const nextKey = prefix ? `${prefix}.${key}` : key;
-		if (typeof value === "string") {
-			return [nextKey];
-		}
-		return flattenTranslationLeafKeys(value, nextKey);
-	});
-}
 
 const defaultConfig: I18nConfig = {
 	defaultLanguage: "zh-CN",
-	fallbackLanguage: "zh-CN",
-	supportedLanguages: ["zh-CN", "en-US"],
+	fallbackLanguage: "en-US",
+	supportedLanguages: ["zh-CN", "en-US", "ja-JP", "ko-KR"],
 };
 
 const translationKeyAliases: Record<string, string> = {};
@@ -115,6 +88,14 @@ function normalizeObsidianLanguage(input: string | null | undefined): SupportedL
 
 	if (normalized === "zh" || normalized.startsWith("zh-")) {
 		return "zh-CN";
+	}
+
+	if (normalized === "ja" || normalized.startsWith("ja-")) {
+		return "ja-JP";
+	}
+
+	if (normalized === "ko" || normalized.startsWith("ko-")) {
+		return "ko-KR";
 	}
 
 	return "en-US";

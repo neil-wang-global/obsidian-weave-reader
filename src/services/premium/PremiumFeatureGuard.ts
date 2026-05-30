@@ -7,6 +7,7 @@ import { writable, get, type Writable } from "svelte/store";
 import { EPUB_CORE_FEATURE_ID_SET } from "../../config/epub-feature-tier";
 import { EPUB_RUNTIME } from "../epub/epub-runtime";
 import { licenseManager } from "../../utils/licenseManager";
+import { i18n } from "../../utils/i18n";
 import type { EffectiveLicenseState, LicenseInfo, LicensedProduct } from "../../types/license";
 import { LICENSED_PRODUCTS, resolveEffectiveLicenseState } from "../../utils/license-state";
 
@@ -15,7 +16,6 @@ import { LICENSED_PRODUCTS, resolveEffectiveLicenseState } from "../../utils/lic
  */
 export const PREMIUM_FEATURES = {
 	EPUB_NON_EPUB_FORMATS: "epub-non-epub-formats",
-	EPUB_READING_PROGRESS: "epub-reading-progress",
 	EPUB_READING_REFERENCE: "epub-reading-reference",
 	EPUB_PARAGRAPH_MODE: "epub-paragraph-mode",
 	EPUB_EXCERPT_NOTES: "epub-excerpt-notes",
@@ -33,72 +33,21 @@ export function appendPremiumLockedEntrySuffix(baseTitle: string): string {
 	return `${baseTitle}${PREMIUM_LOCKED_ENTRY_SUFFIX}`;
 }
 
-/**
- * 功能元数据
- */
-export const FEATURE_METADATA: Record<
-	string,
-	{
-		name: string;
-		description: string;
-		icon?: string;
-	}
-> = {
-	[PREMIUM_FEATURES.EPUB_NON_EPUB_FORMATS]: {
-		name: "非 EPUB 格式阅读",
-		description: "解锁 MOBI、AZW3、FB2、FBZ、TXT、CBZ 等格式阅读能力",
-		icon: "library",
-	},
-	[PREMIUM_FEATURES.EPUB_READING_PROGRESS]: {
-		name: "阅读进度与书签",
-		description: "书签目录、当前页书签、阅读位置保存恢复与连续阅读自动保存",
-		icon: "history",
-	},
-	[PREMIUM_FEATURES.EPUB_READING_REFERENCE]: {
-		name: "参考阅读点与顶部贴纸",
-		description: "手动记录参考阅读位置、顶部贴纸展示与相关阅读节奏控制",
-		icon: "flag",
-	},
-	[PREMIUM_FEATURES.EPUB_PARAGRAPH_MODE]: {
-		name: "段落阅读模式",
-		description: "进入沉浸式单段阅读界面，支持段落聚焦、分屏翻段与段内阅读节奏控制",
-		icon: "pilcrow",
-	},
-	[PREMIUM_FEATURES.EPUB_EXCERPT_NOTES]: {
-		name: "摘录与批注",
-		description: "高亮、批注、摘录导出、摘录时间戳与截图摘录等基础能力",
-		icon: "highlighter",
-	},
-	[PREMIUM_FEATURES.EPUB_STYLED_EXCERPTS]: {
-		name: "摘录样式增强",
-		description: "解锁下划线、删除线、波浪线等高级摘录样式及其相关显示控制",
-		icon: "underline",
-	},
-	[PREMIUM_FEATURES.EPUB_SOURCE_LOCATION]: {
-		name: "双向链接定位",
-		description: "从 EPUB 摘录回跳到 Markdown、Canvas 或卡片来源位置",
-		icon: "map-pinned",
-	},
-	[PREMIUM_FEATURES.EPUB_CANVAS_EXCERPTS]: {
-		name: "脑图摘录联动",
-		description: "自动关联 Canvas 脑图摘录，并在阅读器中管理绑定的脑图",
-		icon: "layout-dashboard",
-	},
-	[PREMIUM_FEATURES.EPUB_FOOTNOTE_PREVIEW]: {
-		name: "脚注浮窗预览",
-		description: "点击脚注序号时直接显示悬浮预览内容",
-		icon: "message-square",
-	},
-	[PREMIUM_FEATURES.EPUB_CHAPTER_EXPORT]: {
-		name: "章节导出 Markdown",
-		description: "将当前章节快速导出为 Markdown 文件",
-		icon: "file-output",
-	},
+/** Premium feature icons only — labels come from i18n (`epub.premium.premiumFeatures.*`). */
+export const FEATURE_METADATA: Record<string, { icon?: string }> = {
+	[PREMIUM_FEATURES.EPUB_NON_EPUB_FORMATS]: { icon: "library" },
+	[PREMIUM_FEATURES.EPUB_READING_REFERENCE]: { icon: "flag" },
+	[PREMIUM_FEATURES.EPUB_PARAGRAPH_MODE]: { icon: "pilcrow" },
+	[PREMIUM_FEATURES.EPUB_EXCERPT_NOTES]: { icon: "highlighter" },
+	[PREMIUM_FEATURES.EPUB_STYLED_EXCERPTS]: { icon: "underline" },
+	[PREMIUM_FEATURES.EPUB_SOURCE_LOCATION]: { icon: "map-pinned" },
+	[PREMIUM_FEATURES.EPUB_CANVAS_EXCERPTS]: { icon: "layout-dashboard" },
+	[PREMIUM_FEATURES.EPUB_FOOTNOTE_PREVIEW]: { icon: "message-square" },
+	[PREMIUM_FEATURES.EPUB_CHAPTER_EXPORT]: { icon: "file-output" },
 };
 
 export const PREMIUM_BENEFIT_FEATURE_ORDER = [
 	PREMIUM_FEATURES.EPUB_NON_EPUB_FORMATS,
-	PREMIUM_FEATURES.EPUB_READING_PROGRESS,
 	PREMIUM_FEATURES.EPUB_SOURCE_LOCATION,
 	PREMIUM_FEATURES.EPUB_PARAGRAPH_MODE,
 ] as const;
@@ -325,7 +274,7 @@ export class PremiumFeatureGuard {
 		}
 
 		if (featureIds.some((featureId) => this.isLimitedTimeFeatureOpen(featureId, context))) {
-			return `${baseTitle} (限时开放)`;
+			return `${baseTitle}${i18n.t("epub.premium.limitedTimeOpenSuffix")}`;
 		}
 
 		return this.canUseAnyFeature(featureIds, context)
@@ -343,7 +292,7 @@ export class PremiumFeatureGuard {
 		}
 
 		if (this.isLimitedTimeFeatureOpen(featureId, context)) {
-			return `${baseTitle} (限时开放)`;
+			return `${baseTitle}${i18n.t("epub.premium.limitedTimeOpenSuffix")}`;
 		}
 
 		return this.canUseFeature(featureId, context)

@@ -4,7 +4,13 @@
 
 import type { TFile } from "obsidian";
 import type { Card } from "../data/epub-bridge-types";
-import type { ParsedCard } from "./newCardParsingTypes";
+
+type ParsedCard = {
+	front?: string;
+	back?: string;
+	tags?: string[];
+	[key: string]: unknown;
+};
 
 // ===== AI服务提供商 =====
 export type AIProvider =

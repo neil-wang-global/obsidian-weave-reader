@@ -93,6 +93,7 @@ export interface EpubPluginUiMemory {
 }
 
 const LEGACY_BOOKSHELF_SEARCH_QUERY_STORAGE_KEY = "weave-epub-bookshelf-search-query";
+const UNIFIED_LOCAL_DATA_PARSE_RETRY_DELAY_MS = 60;
 
 interface EpubStoredBookDescriptor {
 	id: string;
@@ -284,7 +285,7 @@ export class EpubStorageService {
 						...current,
 						descriptor: this.toStoredBookDescriptor(book),
 					};
-					delete nextRecord.state;
+					nextRecord.state = undefined;
 					nextRecords[bookId] = nextRecord;
 				}
 
@@ -1017,11 +1018,45 @@ export class EpubStorageService {
 				await this.removeStoredCompatibilityFile(sourcePath);
 			}
 		} catch (error) {
-			logger.warn("[EpubStorageService] Failed to parse epub local state file:", error);
-			this.setCachedUnifiedLocalReaderData(this.createEmptyLocalReaderData());
+			logger.warn("[EpubStorageService] Failed to parse epub local state file, retrying:", error);
+			const recovered = await this.readUnifiedLocalReaderDataWithRetry(sourcePath);
+			if (recovered) {
+				this.setCachedUnifiedLocalReaderData(recovered);
+			} else {
+				logger.warn(
+					"[EpubStorageService] Failed to recover epub local state file; falling back to empty snapshot for this session."
+				);
+				this.setCachedUnifiedLocalReaderData(this.createEmptyLocalReaderData());
+			}
 		}
 
 		return this.cloneLocalReaderData(this.getCachedUnifiedLocalReaderData() ?? this.createEmptyLocalReaderData());
+	}
+
+	private async readUnifiedLocalReaderDataWithRetry(
+		sourcePath: string
+	): Promise<EpubReaderLocalDataFile | null> {
+		const adapter = this.app.vault.adapter;
+		for (let attempt = 0; attempt < 2; attempt += 1) {
+			if (attempt > 0) {
+				await new Promise((resolve) => setTimeout(resolve, UNIFIED_LOCAL_DATA_PARSE_RETRY_DELAY_MS));
+			}
+			try {
+				const content = await adapter.read(sourcePath);
+				const normalized = this.normalizeLocalReaderData(JSON.parse(content));
+				if (Array.isArray(normalized.scanIndex)) {
+					const cachedScanIndex = await this.readCachedScanIndex();
+					if (cachedScanIndex === null) {
+						await this.writeCachedScanIndex(normalized.scanIndex);
+					}
+					normalized.scanIndex = undefined;
+				}
+				return normalized;
+			} catch {
+				// Retry once for transient partial-write reads during startup.
+			}
+		}
+		return null;
 	}
 
 	private async hasUnifiedLocalDataFile(): Promise<boolean> {
@@ -1043,11 +1078,43 @@ export class EpubStorageService {
 			version: 1,
 			updatedAt: Date.now(),
 		});
+		const adapter = this.app.vault.adapter as typeof this.app.vault.adapter & {
+			rename?: (oldPath: string, newPath: string) => Promise<void>;
+		};
+		const targetPath = this.getUnifiedLocalDataPath();
+		const tempPath = `${targetPath}.tmp`;
+		const serialized = JSON.stringify(normalizedData);
+
+		if (typeof adapter.rename === "function") {
+			await adapter.write(tempPath, serialized);
+			try {
+				await adapter.rename(tempPath, targetPath);
+			} catch (error) {
+				if (!this.isDestinationFileAlreadyExistsError(error)) {
+					throw error;
+				}
+				// Some adapters reject overwrite-on-rename; safely fall back to direct write.
+				await adapter.write(targetPath, serialized);
+				if (typeof adapter.remove === "function") {
+					try {
+						await adapter.remove(tempPath);
+					} catch {
+						// noop
+					}
+				}
+			}
+		} else {
+			await adapter.write(targetPath, serialized);
+		}
 		this.setCachedUnifiedLocalReaderData(normalizedData);
-		await this.app.vault.adapter.write(
-			this.getUnifiedLocalDataPath(),
-			JSON.stringify(normalizedData)
-		);
+	}
+
+	private isDestinationFileAlreadyExistsError(error: unknown): boolean {
+		const message =
+			typeof error === "object" && error && "message" in error
+				? String((error as { message?: unknown }).message || "")
+				: String(error || "");
+		return /destination file already exists/i.test(message);
 	}
 
 	private async updateUnifiedLocalReaderData(
@@ -1998,7 +2065,7 @@ export class EpubStorageService {
 				return;
 			}
 			const nextRecord = { ...current };
-			delete nextRecord.state;
+			nextRecord.state = undefined;
 			if (this.hasRetainedLocalBookData(nextRecord)) {
 				localData.books = localData.books || {};
 				localData.books[bookId] = nextRecord;
@@ -2807,10 +2874,46 @@ export class EpubStorageService {
 
 	async findBookByFilePath(filePath: string): Promise<EpubBook | null> {
 		const normalizedFilePath = normalizePath(filePath || "");
-		return this.findBookInCollectionByFilePath(
-			await this.loadBooks({ hydrateStates: false }),
-			normalizedFilePath
-		);
+		const books = await this.loadBooks({ hydrateStates: false });
+		const book = this.findBookInCollectionByFilePath(books, normalizedFilePath);
+		if (!book?.id) {
+			return null;
+		}
+		await this.hydrateBookState(book.id);
+		return book;
+	}
+
+	async updateBookDisplayTitle(book: EpubBook): Promise<EpubBook> {
+		await this.ensureAutomaticDataMigrations();
+		const nextTitle = String(book.metadata?.title || "").trim();
+		if (!nextTitle) {
+			throw new Error("Book title is required");
+		}
+
+		const normalizedMetadata = this.normalizeBookMetadata({
+			...book.metadata,
+			title: nextTitle,
+		});
+		if (!normalizedMetadata) {
+			throw new Error("Book metadata is invalid");
+		}
+
+		const nextBook: EpubBook = {
+			...book,
+			metadata: normalizedMetadata,
+		};
+
+		const paragraphPosition = await this.loadParagraphModeReadingPosition(nextBook.id);
+		if (paragraphPosition) {
+			await this.saveParagraphModeReadingPosition({
+				...paragraphPosition,
+				bookTitle: nextTitle,
+			});
+		}
+
+		await this.saveBook(nextBook, { ensureOnBookshelf: true });
+		await this.getBookmarkService().syncBookDisplayMetadata(nextBook);
+		return nextBook;
 	}
 
 	async findBookBySourceId(sourceId: string): Promise<EpubBook | null> {
@@ -3031,10 +3134,8 @@ export class EpubStorageService {
 				name:
 					file instanceof TFile
 						? file.basename
-						: remappedPath
-								.split("/")
-								.pop()
-								?.replace(/\.epub$/i, "") || entry.name,
+						: stripSupportedBookExtension(remappedPath.split("/").pop() || remappedPath) ||
+							entry.name,
 				folder:
 					file instanceof TFile
 						? file.parent?.path || "/"

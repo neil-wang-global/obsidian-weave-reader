@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Platform, TFile } from "obsidian";
+import { getReaderHighlightIdentityKey } from "../highlight/highlight-identity";
 import { FoliateReaderService } from "../FoliateReaderService";
 import {
 	normalizeDesktopFoliateSandboxValue,
@@ -597,6 +598,19 @@ describe("FoliateReaderService", () => {
 		}
 	});
 
+	it("resolves section-base spine cfis to section hrefs when parser cfi lookup is unavailable", async () => {
+		const service = new FoliateReaderService(createMockApp(await createSampleEpubBuffer()) as any);
+		try {
+			await service.loadEpub("Books/foliate-sample.epub", "foliate-book");
+			vi.spyOn((service as any).parser, "getSectionHrefForCfi").mockReturnValue(null);
+			expect((service as any).getSectionIndexFromSectionBaseCfi("epubcfi(/6/14)")).toBe(6);
+			const fallback = (service as any).getSectionHrefFallbackTarget("epubcfi(/6/2)");
+			expect(fallback).toBe("OPS/text/chapter1.xhtml");
+		} finally {
+			service.destroy();
+		}
+	});
+
 	it("renders into a container without crashing when a foliate-view element is available", async () => {
 		const service = new FoliateReaderService(createMockApp(await createSampleEpubBuffer()) as any);
 		try {
@@ -643,7 +657,7 @@ describe("FoliateReaderService", () => {
 		try {
 			await service.loadEpub("Books/foliate-sample.epub", "foliate-book");
 			openSpy = vi
-				.spyOn(FakeFoliateViewElement.prototype, "open")
+				.spyOn(FakeFoliateViewElement.prototype as any, "open")
 				.mockRejectedValueOnce(openError);
 			const container = document.createElement("div");
 			document.body.appendChild(container);
@@ -1423,7 +1437,7 @@ describe("FoliateReaderService", () => {
 				text: "Selection text for testing",
 				presentation: "conceal" as const,
 			};
-			const key = (service as any).normalizeLocationKey(highlight.cfiRange);
+			const key = getReaderHighlightIdentityKey(highlight);
 			const view = {
 				addAnnotation: vi.fn(async () => undefined),
 				deleteAnnotation: vi.fn(async () => undefined),
@@ -1464,7 +1478,7 @@ describe("FoliateReaderService", () => {
 				text: "Selection text for testing",
 				presentation: "highlight" as const,
 			};
-			const key = (service as any).normalizeLocationKey(initialHighlight.cfiRange);
+			const key = getReaderHighlightIdentityKey(initialHighlight);
 			const view = {
 				addAnnotation: vi.fn(async () => undefined),
 				deleteAnnotation: vi.fn(async () => undefined),
@@ -1510,7 +1524,7 @@ describe("FoliateReaderService", () => {
 				text: "Selection text for testing",
 				presentation: "highlight" as const,
 			};
-			const key = (service as any).normalizeLocationKey(persistentHighlight.cfiRange);
+			const key = getReaderHighlightIdentityKey(persistentHighlight);
 			vi.spyOn((service as any).parser, "canonicalizeLocation").mockResolvedValue(
 				persistentHighlight.cfiRange
 			);
@@ -1558,7 +1572,7 @@ describe("FoliateReaderService", () => {
 				],
 				presentation: "highlight" as const,
 			};
-			const key = (service as any).normalizeLocationKey(highlight.cfiRange);
+			const key = getReaderHighlightIdentityKey(highlight);
 			const callback = vi.fn();
 			const container = document.createElement("div");
 			Object.defineProperty(container, "getBoundingClientRect", {
@@ -1590,6 +1604,152 @@ describe("FoliateReaderService", () => {
 		}
 	});
 
+	it("opens the excerpt toolbar when clicking highlighted text in the frame document", async () => {
+		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
+		try {
+			const frameDoc = document.implementation.createHTMLDocument("novel");
+			const paragraph = frameDoc.createElement("p");
+			paragraph.textContent = "不能要太高悬赏";
+			frameDoc.body.appendChild(paragraph);
+
+			const highlight = {
+				cfiRange: "epubcfi(/6/26!/4/2/1,/1:0,/1:7)",
+				color: "yellow",
+				text: "不能要太高悬赏",
+				chapterIndex: 12,
+				excerptId: "excerpt-a",
+				presentation: "highlight" as const,
+			};
+			const key = getReaderHighlightIdentityKey(highlight);
+			const callback = vi.fn();
+			const iframe = document.createElement("iframe");
+			document.body.appendChild(iframe);
+			const iframeRect = { left: 40, top: 80, width: 400, height: 600 };
+			iframe.getBoundingClientRect = () => ({
+				...iframeRect,
+				right: iframeRect.left + iframeRect.width,
+				bottom: iframeRect.top + iframeRect.height,
+				x: iframeRect.left,
+				y: iframeRect.top,
+				toJSON: () => ({}),
+			});
+			Object.defineProperty(frameDoc, "defaultView", {
+				configurable: true,
+				value: {
+					frameElement: iframe,
+					getSelection: () => ({
+						isCollapsed: true,
+						rangeCount: 0,
+						toString: () => "",
+						removeAllRanges: vi.fn(),
+					}),
+				},
+			});
+
+			(service as any).highlightDataMap.set(key, highlight);
+			(service as any).highlightClickCallbacks.add(callback);
+			vi.spyOn((service as any).parser, "getSectionIndexForCfi").mockReturnValue(12);
+			vi.spyOn((service as any).parser, "resolveRangeInLoadedSection").mockImplementation(
+				((...args: any[]) => {
+					const [_cfi, document, index, textHint] = args as [string, Document, number, string?];
+					if (index !== 12 || !textHint) {
+						return null;
+					}
+					const range = document.createRange();
+					range.selectNodeContents(paragraph);
+					return range;
+				}) as any
+			);
+			vi.spyOn(service as any, "getVisibleFramesWithIndex").mockReturnValue([
+				{
+					index: 12,
+					document: frameDoc,
+					frameElement: iframe,
+					frame: {},
+				},
+			]);
+
+			vi.spyOn(service as any, "getCurrentHighlightViewportGeometry").mockReturnValue({
+				rect: {
+					top: 110,
+					left: 100,
+					bottom: 150,
+					right: 260,
+					width: 160,
+					height: 40,
+				},
+			});
+
+			(service as any).handleFrameHighlightClick(
+				{
+					button: 0,
+					clientX: 120,
+					clientY: 130,
+					preventDefault: vi.fn(),
+					stopPropagation: vi.fn(),
+					defaultPrevented: false,
+				} as unknown as MouseEvent,
+				frameDoc
+			);
+
+			expect(callback).toHaveBeenCalledTimes(1);
+			expect(callback.mock.calls[0]?.[0]?.cfiRange).toBe(highlight.cfiRange);
+			document.body.removeChild(iframe);
+		} finally {
+			service.destroy();
+		}
+	});
+
+	it("opens the highlight toolbar on annotation overlay clicks even when the iframe selection is active", async () => {
+		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
+		try {
+			const highlight = {
+				cfiRange: "epubcfi(/6/2!/4/2,/1:0,/1:9)",
+				color: "yellow",
+				text: "Selection text for testing",
+				excerptId: "excerpt-a",
+				presentation: "highlight" as const,
+			};
+			const key = getReaderHighlightIdentityKey(highlight);
+			const callback = vi.fn();
+			const frameDoc = document.implementation.createHTMLDocument("frame");
+			const paragraph = frameDoc.createElement("p");
+			paragraph.textContent = "Selection text for testing";
+			frameDoc.body.appendChild(paragraph);
+			const range = frameDoc.createRange();
+			range.selectNodeContents(paragraph);
+			Object.defineProperty(frameDoc, "defaultView", {
+				value: {
+					getSelection: () => ({
+						isCollapsed: false,
+						rangeCount: 1,
+						toString: () => "Selection text for testing",
+						removeAllRanges: vi.fn(),
+					}),
+				},
+			});
+			(service as any).highlightDataMap.set(key, highlight);
+			(service as any).highlightClickCallbacks.add(callback);
+			vi.spyOn(service as any, "getVisibleFramesWithIndex").mockReturnValue([
+				{ index: 0, document: frameDoc, frameElement: null, frame: {} },
+			]);
+
+			(service as any).handleShowAnnotationEvent({
+				currentTarget: (service as any).foliateView,
+				detail: {
+					value: highlight.cfiRange,
+					index: 0,
+					range,
+				},
+			} as CustomEvent);
+
+			expect(callback).toHaveBeenCalledTimes(1);
+			expect(callback.mock.calls[0]?.[0]?.cfiRange).toBe(highlight.cfiRange);
+		} finally {
+			service.destroy();
+		}
+	});
+
 	it("ignores show-annotation highlight clicks while a real text selection is active", async () => {
 		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
 		try {
@@ -1599,7 +1759,7 @@ describe("FoliateReaderService", () => {
 				text: "Selection text for testing",
 				presentation: "highlight" as const,
 			};
-			const key = (service as any).normalizeLocationKey(highlight.cfiRange);
+			const key = getReaderHighlightIdentityKey(highlight);
 			const callback = vi.fn();
 			const frameDoc = document.implementation.createHTMLDocument("frame");
 			Object.defineProperty(frameDoc, "defaultView", {
@@ -2864,28 +3024,42 @@ describe("FoliateReaderService", () => {
 
 	it("strips Foliate desktop iframe allow-scripts from sandbox values while keeping mobile unchanged", async () => {
 		await withPlatformIsMobile(false, async () => {
+			const foliateFilterFrame = document.createElement("iframe");
+			foliateFilterFrame.setAttribute("part", "filter");
 			expect(normalizeDesktopFoliateSandboxValue(
 				"sandbox",
 				"allow-same-origin allow-scripts",
-				"at Frame (node_modules/foliate-js/paginator.js:234:1)"
+				"at Frame (src/components/OtherFrame.ts:10:1)",
+				foliateFilterFrame
+			)).toBe("allow-same-origin");
+			expect(normalizeDesktopFoliateSandboxValue(
+				"sandbox",
+				"allow-same-origin allow-scripts",
+				"at Frame (node_modules/foliate-js/paginator.js:234:1)",
+				null
 			)).toBe("allow-same-origin");
 			expect(normalizeDesktopFoliateSandboxValue(
 				"sandbox",
 				"allow-scripts allow-same-origin",
-				"at Frame (node_modules/foliate-js/fixed-layout.js:87:1)"
+				"at Frame (node_modules/foliate-js/fixed-layout.js:87:1)",
+				null
 			)).toBe("allow-same-origin");
 			expect(normalizeDesktopFoliateSandboxValue(
 				"sandbox",
 				"allow-same-origin allow-scripts",
-				"at Frame (src/components/OtherFrame.ts:10:1)"
+				"at Frame (src/components/OtherFrame.ts:10:1)",
+				null
 			)).toBeNull();
 		});
 
 		await withPlatformIsMobile(true, async () => {
+			const foliateFilterFrame = document.createElement("iframe");
+			foliateFilterFrame.setAttribute("part", "filter");
 			expect(normalizeDesktopFoliateSandboxValue(
 				"sandbox",
 				"allow-same-origin allow-scripts",
-				"at Frame (node_modules/foliate-js/paginator.js:234:1)"
+				"at Frame (node_modules/foliate-js/paginator.js:234:1)",
+				foliateFilterFrame
 			)).toBeNull();
 		});
 	});

@@ -39,6 +39,41 @@ export function joinListedVaultPath(folderPath: string, listedPath: string): str
 	return normalizePath(`${normalizedFolder}/${normalizedListed}`);
 }
 
+/**
+ * Resolve `../` / `./` link paths against the vault path of a source note.
+ */
+export function resolveRelativeVaultPath(sourcePath: string, linkPath: string): string {
+	const normalizedLink = normalizePath(String(linkPath || "").trim());
+	if (!normalizedLink) {
+		return "";
+	}
+	if (!/(^|\/)\.\.(\/|$)|(^|\/)\.(\/|$)/.test(normalizedLink)) {
+		return normalizedLink;
+	}
+
+	const sourceDir = normalizePath(String(sourcePath || "").trim())
+		.split("/")
+		.filter(Boolean);
+	if (sourceDir.length > 0) {
+		sourceDir.pop();
+	}
+
+	const stack = [...sourceDir];
+	for (const segment of normalizedLink.split("/")) {
+		if (!segment || segment === ".") {
+			continue;
+		}
+		if (segment === "..") {
+			if (stack.length > 0) {
+				stack.pop();
+			}
+			continue;
+		}
+		stack.push(segment);
+	}
+	return stack.join("/");
+}
+
 function buildVaultBookPathCandidates(filePath: string): string[] {
 	const normalizedPath = normalizePath(String(filePath || "").trim());
 	if (!normalizedPath) {
@@ -136,20 +171,52 @@ export function resolveEpubVaultPath(
 		return null;
 	}
 
-	const resolvedBook = resolveSupportedBookFile(app, normalizedLink);
+	const contextPath = normalizePath(String(sourcePath || "").trim());
+	let candidatePath = normalizedLink;
+	if (contextPath && /(^|\/)\.\.(\/|$)|(^|\/)\.(\/|$)/.test(normalizedLink)) {
+		candidatePath = resolveRelativeVaultPath(contextPath, normalizedLink);
+		const resolvedRelative = resolveSupportedBookFile(app, candidatePath);
+		if (resolvedRelative) {
+			return resolvedRelative.path;
+		}
+	}
+
+	const resolvedBook = resolveSupportedBookFile(app, candidatePath);
 	if (resolvedBook) {
 		return resolvedBook.path;
 	}
 
-	const contextPath = normalizePath(String(sourcePath || "").trim());
 	if (typeof app.metadataCache?.getFirstLinkpathDest === "function") {
 		const resolved = app.metadataCache.getFirstLinkpathDest(normalizedLink, contextPath);
 		if (resolved instanceof TFile && isSupportedBookPath(resolved.path)) {
 			return resolved.path;
 		}
+		if (candidatePath !== normalizedLink) {
+			const resolvedCandidate = app.metadataCache.getFirstLinkpathDest(candidatePath, contextPath);
+			if (resolvedCandidate instanceof TFile && isSupportedBookPath(resolvedCandidate.path)) {
+				return resolvedCandidate.path;
+			}
+		}
 	}
 
 	return null;
+}
+
+/** Canonical vault path for comparing whether two stored paths refer to the same book. */
+export function resolveComparableBookVaultPath(
+	app: App,
+	filePath: string,
+	sourcePath = ""
+): string {
+	const normalizedPath = normalizePath(String(filePath || "").trim());
+	if (!normalizedPath) {
+		return "";
+	}
+	return (
+		resolveEpubVaultPath(app, normalizedPath, sourcePath) ||
+		resolveSupportedBookFilePath(app, normalizedPath) ||
+		normalizedPath
+	);
 }
 
 export function isPathAlreadyOnBookshelfForApp(

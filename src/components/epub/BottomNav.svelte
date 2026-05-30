@@ -2,6 +2,7 @@
 	import { setIcon } from 'obsidian';
 	import { onMount, tick } from 'svelte';
 	import { tr } from '../../utils/i18n';
+	import EpubLoadingState from './EpubLoadingState.svelte';
 
 	interface Props {
 		onPrev: () => void;
@@ -219,7 +220,7 @@
 					<span class="epub-nav-status-label">{t('epub.bottomNav.pageStatus', { current: currentPage, total: totalPages })}</span>
 				{/if}
 			{:else}
-				<span class="epub-nav-status-label">{t('epub.bottomNav.locating')}</span>
+				<EpubLoadingState variant="compact" message={t('epub.bottomNav.locating')} />
 			{/if}
 			{#if vertical && hasStatusDetail()}
 				<span class="epub-nav-status-vertical-detail" title={statusDetail}>{statusDetail}</span>
@@ -428,6 +429,18 @@
 
 	.epub-nav-status-label {
 		line-height: 1.2;
+	}
+
+	.epub-nav-status :global(.epub-loading-state--compact) {
+		justify-content: center;
+		min-width: 0;
+	}
+
+	.epub-nav-status :global(.epub-loading-state--compact .epub-loading-state__message) {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: min(180px, 42vw);
 	}
 
 	.epub-nav-status-custom {

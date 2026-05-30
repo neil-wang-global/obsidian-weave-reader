@@ -1,5 +1,6 @@
 import { Modal, type App, setIcon } from "obsidian";
 import type { BookMetadata, ReadingStats } from "../../services/epub";
+import { i18n } from "../../utils/i18n";
 
 type EpubBookInfoNoteStats = {
 	totalHighlights: number;
@@ -42,7 +43,7 @@ function formatNumber(value: number | undefined): string {
 	if (!Number.isFinite(value)) {
 		return "";
 	}
-	return new Intl.NumberFormat("zh-CN").format(value as number);
+	return new Intl.NumberFormat(i18n.getCurrentLanguage()).format(value as number);
 }
 
 function formatFileSize(bytes: number): string {
@@ -65,7 +66,7 @@ function formatDateTime(timestamp: number | undefined): string {
 	if (!Number.isFinite(timestamp) || !timestamp || timestamp <= 0) {
 		return "";
 	}
-	return new Date(timestamp).toLocaleString("zh-CN", { hour12: false });
+	return new Date(timestamp).toLocaleString(i18n.getCurrentLanguage(), { hour12: false });
 }
 
 function formatPublishDate(value: string | undefined): string {
@@ -94,12 +95,12 @@ function formatDuration(durationMs: number | undefined): string {
 	const hours = Math.floor(totalMinutes / 60);
 	const minutes = totalMinutes % 60;
 	if (hours <= 0) {
-		return `${minutes} 分钟`;
+		return i18n.t("epub.bookshelf.bookInfoModal.durationMinutes", { minutes });
 	}
 	if (minutes <= 0) {
-		return `${hours} 小时`;
+		return i18n.t("epub.bookshelf.bookInfoModal.durationHours", { hours });
 	}
-	return `${hours} 小时 ${minutes} 分钟`;
+	return i18n.t("epub.bookshelf.bookInfoModal.durationHoursMinutes", { hours, minutes });
 }
 
 function normalizeProgress(progress: number): number {
@@ -123,7 +124,7 @@ export class EpubBookInfoModal extends Modal {
 
 	onOpen(): void {
 		this.modalEl.addClass("weave-epub-book-info-modal");
-		this.titleEl.setText("书籍完整信息");
+		this.titleEl.setText(i18n.t("epub.bookshelf.bookInfoModal.title"));
 		this.contentEl.empty();
 		this.buildLayout();
 	}
@@ -143,7 +144,10 @@ export class EpubBookInfoModal extends Modal {
 		const hero = container.createDiv({ cls: "weave-epub-book-info-hero" });
 		hero.createDiv({
 			cls: "weave-epub-book-info-title",
-			text: this.options.metadata.title || this.options.fileName || "未命名书籍",
+			text:
+				this.options.metadata.title ||
+				this.options.fileName ||
+				i18n.t("epub.bookshelf.bookInfoModal.untitledBook"),
 		});
 		const heroBody = hero.createDiv({ cls: "weave-epub-book-info-hero-body" });
 		const coverUrl = normalizeText(this.options.metadata.coverImage);
@@ -171,7 +175,9 @@ export class EpubBookInfoModal extends Modal {
 		const bylineParts = [
 			normalizeText(this.options.metadata.author),
 			normalizeText(this.options.metadata.translator)
-				? `译者：${normalizeText(this.options.metadata.translator)}`
+				? i18n.t("epub.bookshelf.bookInfoModal.translatorByline", {
+						name: normalizeText(this.options.metadata.translator),
+					})
 				: "",
 		].filter(Boolean);
 		if (bylineParts.length > 0) {
@@ -188,12 +194,12 @@ export class EpubBookInfoModal extends Modal {
 		const fileFields = this.buildFileFields();
 		this.renderNoteStatsSection(sections);
 		if (readingFields.length > 0) {
-			this.renderFieldSection(sections, "阅读信息", readingFields);
+			this.renderFieldSection(sections, i18n.t("epub.bookshelf.bookInfoModal.sectionReading"), readingFields);
 		}
-		this.renderListSection(sections, "文件信息", fileFields);
+		this.renderListSection(sections, i18n.t("epub.bookshelf.bookInfoModal.sectionFile"), fileFields);
 		const description = normalizeText(this.options.metadata.description);
 		if (description) {
-			this.renderTextSection(sections, "内容简介", description);
+			this.renderTextSection(sections, i18n.t("epub.bookshelf.bookInfoModal.sectionDescription"), description);
 		}
 	}
 
@@ -202,47 +208,96 @@ export class EpubBookInfoModal extends Modal {
 		const isbn = normalizeText(metadata.isbn);
 		const identifier = normalizeText(metadata.identifier);
 		return [
-			{ label: "作者", value: normalizeText(metadata.author) },
-			{ label: "译者", value: normalizeText(metadata.translator) },
-			{ label: "出版社", value: normalizeText(metadata.publisher) },
-			{ label: "出版年", value: formatPublishDate(metadata.publishDate) },
+			{ label: i18n.t("epub.bookshelf.bookInfoModal.author"), value: normalizeText(metadata.author) },
+			{
+				label: i18n.t("epub.bookshelf.bookInfoModal.translator"),
+				value: normalizeText(metadata.translator),
+			},
+			{
+				label: i18n.t("epub.bookshelf.bookInfoModal.publisher"),
+				value: normalizeText(metadata.publisher),
+			},
+			{
+				label: i18n.t("epub.bookshelf.bookInfoModal.publishYear"),
+				value: formatPublishDate(metadata.publishDate),
+			},
 			{ label: "ISBN", value: isbn, mono: true },
-			{ label: "标识符", value: identifier && identifier !== isbn ? identifier : "", mono: true },
-			{ label: "系列", value: normalizeText(metadata.series) },
 			{
-				label: "章节数",
-				value: metadata.chapterCount > 0 ? `${formatNumber(metadata.chapterCount)} 章` : "",
+				label: i18n.t("epub.bookshelf.bookInfoModal.identifier"),
+				value: identifier && identifier !== isbn ? identifier : "",
+				mono: true,
+			},
+			{ label: i18n.t("epub.bookshelf.bookInfoModal.series"), value: normalizeText(metadata.series) },
+			{
+				label: i18n.t("epub.bookshelf.bookInfoModal.chapterCount"),
+				value:
+					metadata.chapterCount > 0
+						? i18n.t("epub.bookshelf.bookInfoModal.chapterCountValue", {
+								count: formatNumber(metadata.chapterCount),
+							})
+						: "",
 			},
 			{
-				label: "字数",
-				value: metadata.wordCount ? `${formatNumber(metadata.wordCount)} 字` : "",
+				label: i18n.t("epub.bookshelf.bookInfoModal.wordCount"),
+				value: metadata.wordCount
+					? i18n.t("epub.bookshelf.bookInfoModal.wordCountValue", {
+							count: formatNumber(metadata.wordCount),
+						})
+					: "",
 			},
-			{ label: "定价", value: normalizeText(metadata.price) },
+			{ label: i18n.t("epub.bookshelf.bookInfoModal.price"), value: normalizeText(metadata.price) },
 			{
-				label: "主题",
+				label: i18n.t("epub.bookshelf.bookInfoModal.subjects"),
 				value: Array.isArray(metadata.subjects) ? metadata.subjects.filter(Boolean).join(" / ") : "",
 				multiline: true,
 			},
-			{ label: "版权", value: normalizeText(metadata.rights), multiline: true },
+			{
+				label: i18n.t("epub.bookshelf.bookInfoModal.rights"),
+				value: normalizeText(metadata.rights),
+				multiline: true,
+			},
 		].filter((field) => field.value);
 	}
 
 	private buildReadingFields(): BookInfoField[] {
 		const stats = this.options.readingStats;
 		const fields: BookInfoField[] = [
-			{ label: "阅读进度", value: `${normalizeProgress(this.options.progress)}%` },
-			{ label: "最近阅读", value: formatDateTime(stats?.lastReadTime) },
-			{ label: "累计阅读", value: formatDuration(stats?.totalReadTime) },
-			{ label: "首次记录", value: formatDateTime(stats?.createdTime) },
-			{ label: "读完时间", value: formatDateTime(stats?.completedTime) },
+			{
+				label: i18n.t("epub.bookshelf.bookInfoModal.readingProgress"),
+				value: `${normalizeProgress(this.options.progress)}%`,
+			},
+			{
+				label: i18n.t("epub.bookshelf.bookInfoModal.lastRead"),
+				value: formatDateTime(stats?.lastReadTime),
+			},
+			{
+				label: i18n.t("epub.bookshelf.bookInfoModal.totalReadTime"),
+				value: formatDuration(stats?.totalReadTime),
+			},
+			{
+				label: i18n.t("epub.bookshelf.bookInfoModal.firstRecorded"),
+				value: formatDateTime(stats?.createdTime),
+			},
+			{
+				label: i18n.t("epub.bookshelf.bookInfoModal.completedAt"),
+				value: formatDateTime(stats?.completedTime),
+			},
 		];
 		return fields.filter((field) => field.value);
 	}
 
 	private buildFileFields(): BookInfoListField[] {
 		return [
-			{ label: "文件大小", value: formatFileSize(this.options.fileSize) },
-			{ label: "存放路径", value: this.options.filePath, multiline: true, mono: true },
+			{
+				label: i18n.t("epub.bookshelf.bookInfoModal.fileSize"),
+				value: formatFileSize(this.options.fileSize),
+			},
+			{
+				label: i18n.t("epub.bookshelf.bookInfoModal.filePath"),
+				value: this.options.filePath,
+				multiline: true,
+				mono: true,
+			},
 		].filter((field) => field.value);
 	}
 
@@ -252,9 +307,18 @@ export class EpubBookInfoModal extends Modal {
 			return [];
 		}
 		return [
-			{ label: "摘录总数", value: formatNumber(stats.totalHighlights) || "0" },
-			{ label: "含批注摘录", value: formatNumber(stats.commentCount) || "0" },
-			{ label: "来源文件", value: formatNumber(stats.sourceFileCount) || "0" },
+			{
+				label: i18n.t("epub.bookshelf.bookInfoModal.excerptTotal"),
+				value: formatNumber(stats.totalHighlights) || "0",
+			},
+			{
+				label: i18n.t("epub.bookshelf.bookInfoModal.excerptWithComments"),
+				value: formatNumber(stats.commentCount) || "0",
+			},
+			{
+				label: i18n.t("epub.bookshelf.bookInfoModal.sourceFiles"),
+				value: formatNumber(stats.sourceFileCount) || "0",
+			},
 		];
 	}
 
@@ -264,11 +328,14 @@ export class EpubBookInfoModal extends Modal {
 			return;
 		}
 		const section = container.createDiv({ cls: "weave-epub-book-info-section" });
-		section.createDiv({ cls: "weave-epub-book-info-section-title", text: "笔记统计" });
+		section.createDiv({
+			cls: "weave-epub-book-info-section-title",
+			text: i18n.t("epub.bookshelf.bookInfoModal.sectionNoteStats"),
+		});
 		if (!stats.available) {
 			section.createDiv({
 				cls: "weave-epub-book-info-note",
-				text: "当前暂时无法完成笔记统计。",
+				text: i18n.t("epub.bookshelf.bookInfoModal.noteStatsUnavailable"),
 			});
 			return;
 		}

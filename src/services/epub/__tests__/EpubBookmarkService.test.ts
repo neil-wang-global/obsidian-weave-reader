@@ -65,6 +65,44 @@ describe("EpubBookmarkService", () => {
 		getCompatiblePlugin.mockReset();
 	});
 
+	it("buildEpubBookmarkFileName uses data_ prefix without book ids", async () => {
+		const { buildEpubBookmarkFileName, buildEpubBookmarkFileNameCandidates } = await import(
+			"../EpubBookmarkService"
+		);
+
+		expect(buildEpubBookmarkFileName("百年孤独")).toBe("data_百年孤独.md");
+		expect(
+			buildEpubBookmarkFileNameCandidates({ title: "百年孤独", author: "马尔克斯" }).slice(0, 4)
+		).toEqual([
+			"data_百年孤独.md",
+			"data_百年孤独 - 马尔克斯.md",
+			"data_百年孤独 2.md",
+			"data_百年孤独 3.md",
+		]);
+	});
+
+	it("buildEpubBookmarkStableKey shortens fingerprints and lists legacy filename suffixes", async () => {
+		const {
+			buildEpubBookmarkStableKey,
+			buildLegacyEpubBookmarkStableKeySuffixes,
+		} = await import("../EpubBookmarkService");
+
+		expect(
+			buildEpubBookmarkStableKey({
+				sourceFingerprint: "353ab0d0ca49b9a2d636e1b64e0e43cbbd42ed1869f5e9de2b84afb5",
+			})
+		).toBe("epubsrc-353ab0d0ca49");
+
+		expect(
+			buildLegacyEpubBookmarkStableKeySuffixes({
+				sourceFingerprint: "353ab0d0ca49b9a2d636e1b64e0e43cbbd42ed1869f5e9de2b84afb5",
+				canonicalStableKey: "epubsrc-353ab0d0ca49",
+			})
+		).toEqual([
+			"--353ab0d0ca49b9a2d636e1b64e0e43cbbd42ed1869f5e9de2b84afb5.md",
+		]);
+	});
+
 	it("prefers the current runtime plugin settings when resolving bookmark folder", async () => {
 		const { EpubBookmarkService } = await import("../EpubBookmarkService");
 		const app = {
@@ -108,8 +146,10 @@ describe("EpubBookmarkService", () => {
 		expect(new EpubBookmarkService(app).getBookmarkFolder()).toBe(DEFAULT_EPUB_BOOKMARK_FOLDER);
 	});
 
-	it("builds bookmark stableKey from sourceFingerprint before sourceId", async () => {
-		const { EpubBookmarkService } = await import("../EpubBookmarkService");
+	it("builds a short bookmark stableKey from sourceFingerprint before sourceId", async () => {
+		const { EpubBookmarkService, buildEpubBookmarkStableKey } = await import(
+			"../EpubBookmarkService"
+		);
 		const service = new EpubBookmarkService({ plugins: { getPlugin: vi.fn(() => null) } } as any);
 
 		const stableKey = (service as any).buildStableKey({
@@ -120,8 +160,14 @@ describe("EpubBookmarkService", () => {
 			metadata: { title: "Demo" },
 		});
 
-		expect(stableKey).toContain("4a9ad58db18a2176c9c0f16335a0a7502a4f3a7eaab3af39");
+		expect(stableKey).toBe(
+			buildEpubBookmarkStableKey({
+				sourceFingerprint: "4a9ad58db18a2176c9c0f16335a0a7502a4f3a7eaab3af39",
+			})
+		);
+		expect(stableKey).toBe("epubsrc-4a9ad58db18a");
 		expect(stableKey).not.toContain("epubsrc-volatile");
+		expect(stableKey.length).toBeLessThan(24);
 	});
 
 	it("migrates legacy bookmark files onto the canonical stableKey path", async () => {
@@ -183,17 +229,8 @@ describe("EpubBookmarkService", () => {
 			},
 			"weave/epub-bookmarks/Demo--epubsrc-legacy.md"
 		);
-		const expectedStableKey = (service as any).buildStableKey({
-			id: "epub-book-canonical",
-			filePath: "Books/demo.epub",
-			sourceId: "epubsrc-4a9ad58db18a2176c9c0f163",
-			sourceFingerprint: "4a9ad58db18a2176c9c0f16335a0a7502a4f3a7eaab3af39",
-			metadata: {
-				title: "Demo",
-				author: "Author",
-			},
-		});
-		const expectedPath = `weave/epub-bookmarks/Demo--${expectedStableKey}.md`;
+		const expectedStableKey = "epubsrc-4a9ad58db18a";
+		const expectedPath = "weave/epub-bookmarks/data_Demo.md";
 
 		expect(result).toBe(expectedPath);
 		expect(writeBookmarkFile).toHaveBeenCalledWith(
@@ -250,7 +287,7 @@ describe("EpubBookmarkService", () => {
 				},
 				"weave/epub-bookmarks/Demo--legacy.md"
 			)
-		).resolves.toBe("weave/epub-bookmarks/Demo--fp-demo-123.md");
+		).resolves.toBe("weave/epub-bookmarks/data_Demo.md");
 
 		expect(writeBookmarkFile).toHaveBeenCalled();
 		expect(app.vault.adapter.remove).toHaveBeenCalledWith("weave/epub-bookmarks/Demo--legacy.md");
@@ -273,16 +310,17 @@ describe("EpubBookmarkService", () => {
 			},
 		} as any;
 		const service = new EpubBookmarkService(app);
-		vi.spyOn(service as any, "resolveBookmarkFilePath").mockResolvedValue(
-			"weave/epub-bookmarks/Demo--fp-demo-123.md"
+		vi.spyOn(service as any, "ensureCanonicalBookmarkFilePath").mockResolvedValue(
+			"weave/epub-bookmarks/data_Demo.md"
 		);
 		vi.spyOn(service as any, "readBookmarkFileByPath").mockResolvedValue(null);
 		vi.spyOn(service as any, "writeBookmarkFile").mockImplementation(
-			async (_path: string, frontmatter: { readingState?: unknown }) => {
+			(async (...args: any[]) => {
+				const [, frontmatter] = args as [string, { readingState?: unknown }];
 				written.push(
 					(service as any).renderBookmarkFileContent(frontmatter)
 				);
-			}
+			}) as any
 		);
 		const book = {
 			id: "epub-demo",
@@ -311,5 +349,84 @@ describe("EpubBookmarkService", () => {
 		expect(content).toContain(EPUB_BOOKMARK_AUTO_MAINTAINED_CALLOUT);
 		expect(content).toContain("> [!warning]");
 		expect(content).toContain("阅读状态摘要");
+	});
+
+	it("falls back to adapter.write when vault.modify hits ENOENT for a stale TFile index", async () => {
+		const { EpubBookmarkService } = await import("../EpubBookmarkService");
+		const adapterWrite = vi.fn(async () => undefined);
+		const app = {
+			vault: {
+				adapter: {
+					exists: vi.fn(async () => true),
+					write: adapterWrite,
+					mkdir: vi.fn(async () => undefined),
+				},
+				getAbstractFileByPath: vi.fn(() => ({ path: "weave/epub-bookmarks/Demo--fp-demo-123.md" })),
+				modify: vi.fn(async () => {
+					const error = new Error("ENOENT: no such file or directory") as Error & { code?: string };
+					error.code = "ENOENT";
+					throw error;
+				}),
+				create: vi.fn(async () => {
+					throw new Error("create should not run when adapter.write succeeds");
+				}),
+			},
+		} as any;
+		const service = new EpubBookmarkService(app);
+		await (service as any).writeBookmarkFile("weave/epub-bookmarks/Demo--fp-demo-123.md", {
+			format: "weave-epub-bookmarks/v1",
+			weave_epub_bookmark_file: true,
+			stableKey: "fp-demo-123",
+			bookId: "epub-demo",
+			bookPath: "Books/demo.epub",
+			bookTitle: "Demo",
+			updatedAt: 1,
+			bookmarks: [],
+		});
+
+		expect(adapterWrite).toHaveBeenCalledWith(
+			"weave/epub-bookmarks/Demo--fp-demo-123.md",
+			expect.stringContaining("weave_epub_bookmark_file: true")
+		);
+		expect(app.vault.create).not.toHaveBeenCalled();
+	});
+
+	it("keeps bookmark filenames stable and resolves existing files by stableKey suffix", async () => {
+		const { EpubBookmarkService, normalizeBookmarkTitleForFileName } = await import(
+			"../EpubBookmarkService"
+		);
+		expect(normalizeBookmarkTitleForFileName("史蒂夫•乔布斯传")).toBe("史蒂夫-乔布斯传");
+		const service = new EpubBookmarkService({
+			vault: {
+				adapter: { exists: vi.fn(async () => false) },
+				getFiles: vi.fn(() => [
+					{
+						path: "weave/epub-bookmarks/史蒂夫•乔布斯传(Steve Jobs_A Biography)--fp-demo-123.md",
+						name: "史蒂夫•乔布斯传(Steve Jobs_A Biography)--fp-demo-123.md",
+						extension: "md",
+						stat: { mtime: 100 },
+					},
+				]),
+			},
+			plugins: { getPlugin: vi.fn(() => null) },
+		} as any);
+		vi.spyOn(service as any, "readBookmarkFileByPath").mockResolvedValue({
+			format: "weave-epub-bookmarks/v1",
+			weave_epub_bookmark_file: true,
+			stableKey: "fp-demo-123",
+			bookId: "epub-demo",
+			bookPath: "Books/demo.epub",
+			bookTitle: "Demo",
+			updatedAt: 1,
+			bookmarks: [],
+		});
+
+		await expect(
+			(service as any).findExistingBookmarkFilePath({
+				id: "epub-demo",
+				sourceFingerprint: "fp-demo-123",
+				metadata: { title: "史蒂夫•乔布斯传(Steve Jobs:A Biography)" },
+			})
+		).resolves.toBe("weave/epub-bookmarks/史蒂夫•乔布斯传(Steve Jobs_A Biography)--fp-demo-123.md");
 	});
 });

@@ -1,4 +1,5 @@
 import { type App, type Editor, MarkdownView, Notice, type WorkspaceLeaf } from "obsidian";
+import { i18n } from "../../utils/i18n";
 import {
 	openFileWithExistingLeaf,
 	openLinkWithExistingLeaf,
@@ -189,7 +190,7 @@ export class SourceNavigationService {
 					return;
 				}
 
-				new Notice("已打开源文档，但未精确定位到溯源内容");
+				new Notice(i18n.t("epub.reader.sourceOpenedWithoutLocate"));
 			} catch (_e) {
 				/* ignore */
 			}

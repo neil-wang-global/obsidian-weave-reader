@@ -56,7 +56,7 @@ function buildLicenseSyncFingerprint(plugin: LicenseSyncCapablePlugin): string {
 		local: codes(state.localLicenses),
 		inherited: codes(state.inheritedLicenses),
 		premium: state.isPremiumActive,
-		weaveInstalled: Boolean(plugin.app?.plugins?.getPlugin?.(WEAVE_MAIN_PLUGIN_ID)),
+		weaveInstalled: Boolean((plugin.app as any)?.plugins?.getPlugin?.(WEAVE_MAIN_PLUGIN_ID)),
 	});
 }
 
@@ -121,9 +121,13 @@ export function registerLicenseSyncBridge(
 	};
 
 	plugin.registerEvent(
-		plugin.app.workspace.on(WEAVE_LICENSE_CHANGED_WORKSPACE_EVENT, handleLicenseChanged)
+		plugin.app.workspace.on(WEAVE_LICENSE_CHANGED_WORKSPACE_EVENT as any, handleLicenseChanged)
 	);
-	plugin.registerDomEvent(window, WEAVE_LICENSE_CHANGED_WINDOW_EVENT, handleLicenseChanged);
+	plugin.registerDomEvent(
+		window,
+		WEAVE_LICENSE_CHANGED_WINDOW_EVENT as keyof WindowEventMap,
+		handleLicenseChanged
+	);
 	plugin.registerDomEvent(window, "focus", handlePassiveSync);
 	plugin.registerDomEvent(document, "visibilitychange", () => {
 		if (!document.hidden) {

@@ -650,10 +650,20 @@
 
 <style>
   .enhanced-activation-form {
+    /* Shared settings spacing + typography tokens */
+    --epub-settings-font-size-label: var(--font-ui-small, 0.95rem);
+    --epub-settings-font-size-desc: var(--font-ui-smaller, 0.85rem);
+    --epub-settings-gap-xs: 0.25rem;
+    --epub-settings-gap-sm: 0.35rem;
+    --epub-settings-gap-md: 0.5rem;
+    --epub-settings-gap-lg: 1rem;
+    --epub-settings-gap-xl: 1.5rem;
+    --epub-settings-radius-sm: var(--radius-s, 6px);
+    --epub-settings-radius-md: var(--radius-m, 8px);
     width: 100%;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--epub-settings-gap-lg);
     min-width: 0;
     container-type: inline-size;
     --activation-inline-label-width: clamp(6rem, 10vw, 8rem);
@@ -665,8 +675,8 @@
   /* 独立模式样式（有容器装饰） */
   .enhanced-activation-form.standalone {
     max-width: 700px;
-    margin: 0 auto 1.5rem auto;
-    padding: 1.5rem;
+    margin: 0 auto var(--epub-settings-gap-xl) auto;
+    padding: var(--epub-settings-gap-xl);
     background: var(--background-primary-alt, var(--background-primary));
     border-radius: var(--radius-m, 12px);
     border: 1px solid var(--background-modifier-border);
@@ -676,15 +686,15 @@
   .form-header {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: var(--epub-settings-gap-sm);
   }
 
   .enhanced-activation-form.standalone .form-header {
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--epub-settings-gap-md);
   }
 
   .form-title {
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--epub-settings-gap-md) 0;
     font-size: 1.5rem;
     font-weight: 600;
     color: var(--text-normal);
@@ -693,8 +703,8 @@
   .form-description {
     margin: 0;
     color: var(--text-muted);
-    font-size: 0.9rem;
-    line-height: 1.5;
+    font-size: var(--epub-settings-font-size-desc);
+    line-height: 1.55;
   }
 
   /* 已激活状态 */
@@ -706,35 +716,35 @@
   }
 
   .success-content {
-    padding: 1rem;
+    padding: var(--epub-settings-gap-lg);
   }
 
   .success-content h4 {
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 var(--epub-settings-gap-md) 0;
     color: var(--text-normal);
-    font-size: 1.1rem;
+    font-size: var(--epub-settings-font-size-label);
   }
 
   .success-details {
-    margin: 0.25rem 0;
+    margin: var(--epub-settings-gap-xs) 0;
     color: var(--text-muted);
-    font-size: 0.9rem;
-    line-height: 1.5;
+    font-size: var(--epub-settings-font-size-desc);
+    line-height: 1.55;
   }
 
   /* 激活码查看区域样式 */
   .activation-code-section {
     background: transparent;
     border-radius: var(--radius-s, 8px);
-    padding: 1rem;
-    margin-top: 1rem;
+    padding: var(--epub-settings-gap-lg);
+    margin-top: var(--epub-settings-gap-lg);
     border: 1px solid var(--background-modifier-border);
   }
 
   /* 移除激活区域 */
   .deactivation-section {
-    margin-top: 1.5rem;
-    padding-top: 1rem;
+    margin-top: var(--epub-settings-gap-xl);
+    padding-top: var(--epub-settings-gap-lg);
     border-top: 1px solid var(--background-modifier-border);
   }
 
@@ -766,29 +776,29 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--epub-settings-gap-md);
   }
 
   .code-label {
     font-weight: 500;
     color: var(--text-muted);
-    font-size: 0.875rem;
+    font-size: var(--epub-settings-font-size-desc);
   }
 
   .code-actions {
     display: flex;
-    gap: 0.25rem;
+    gap: var(--epub-settings-gap-xs);
   }
 
   .action-button {
-    padding: 0.25rem 0.5rem;
+    padding: var(--epub-settings-gap-xs) var(--epub-settings-gap-md);
     border: 1px solid var(--background-modifier-border);
     border-radius: var(--button-radius, 4px);
     background: var(--background-primary);
     color: var(--text-normal);
     cursor: pointer;
     transition: background-color 0.15s ease, border-color 0.15s ease;
-    font-size: 0.875rem;
+    font-size: var(--epub-settings-font-size-desc);
   }
 
   .action-button:hover {
@@ -799,7 +809,7 @@
     background: var(--background-primary);
     border: 1px solid var(--background-modifier-border);
     border-radius: var(--radius-s, 6px);
-    padding: 0.75rem;
+    padding: calc(var(--epub-settings-gap-md) + var(--epub-settings-gap-xs));
   }
 
   .activation-code-text {
@@ -828,15 +838,15 @@
   }
 
   .activation-field-section + .activation-field-section {
-    margin-top: 1rem;
-    padding-top: 1rem;
+    margin-top: var(--epub-settings-gap-lg);
+    padding-top: var(--epub-settings-gap-lg);
   }
 
   /* 输入区域 */
   .activation-field-section {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--epub-settings-gap-md);
     min-width: 0;
     width: 100%;
     align-items: stretch;
@@ -850,8 +860,8 @@
       minmax(0, var(--activation-inline-control-width));
     align-items: center;
     justify-content: space-between;
-    column-gap: 0.85rem;
-    row-gap: 0.45rem;
+    column-gap: calc(var(--epub-settings-gap-md) + var(--epub-settings-gap-sm));
+    row-gap: calc(var(--epub-settings-gap-sm) + 0.1rem);
     width: 100%;
   }
 
@@ -859,7 +869,7 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 0.25rem;
+    gap: var(--epub-settings-gap-xs);
     font-weight: 500;
     color: var(--text-normal);
     width: 100%;
@@ -892,13 +902,13 @@
 
   .activation-textarea {
     flex: 1;
-    padding: 0.75rem;
+    padding: calc(var(--epub-settings-gap-md) + var(--epub-settings-gap-xs));
     border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-s, 6px);
+    border-radius: var(--epub-settings-radius-sm);
     background: var(--background-primary);
     color: var(--text-normal);
     font-family: var(--font-monospace);
-    font-size: 0.85rem;
+    font-size: var(--epub-settings-font-size-desc);
     line-height: 1.4;
     resize: vertical;
     min-height: 100px;
@@ -934,13 +944,13 @@
     position: absolute;
     right: 0.5rem;
     bottom: 0.5rem;
-    padding: 0.25rem 0.5rem;
+    padding: var(--epub-settings-gap-xs) var(--epub-settings-gap-md);
     border: 1px solid var(--background-modifier-border);
     background: var(--background-secondary);
     color: var(--text-muted);
-    border-radius: var(--button-radius, 4px);
+    border-radius: var(--button-radius, var(--epub-settings-radius-sm));
     cursor: pointer;
-    font-size: 0.75rem;
+    font-size: var(--font-ui-smaller, 0.75rem);
     transition: background-color 0.2s ease, color 0.2s ease;
   }
 
@@ -952,12 +962,12 @@
   /* 邮箱输入框 */
   .activation-email-input {
     width: 100%;
-    padding: 0.75rem;
+    padding: calc(var(--epub-settings-gap-md) + var(--epub-settings-gap-xs));
     border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-s, 6px);
+    border-radius: var(--epub-settings-radius-sm);
     background: var(--background-primary);
     color: var(--text-normal);
-    font-size: 0.9rem;
+    font-size: var(--epub-settings-font-size-desc);
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
 
@@ -978,12 +988,12 @@
   /* 操作按钮 */
   .activation-form-actions {
     display: flex;
-    gap: 1rem;
+    gap: var(--epub-settings-gap-lg);
     justify-content: flex-end;
     align-items: center;
     flex-wrap: wrap;
-    margin-top: 1rem;
-    padding-top: 1rem;
+    margin-top: var(--epub-settings-gap-lg);
+    padding-top: var(--epub-settings-gap-lg);
     width: 100%;
     text-align: left;
   }
@@ -996,12 +1006,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    padding: 0.45rem 0.85rem;
+    gap: var(--epub-settings-gap-md);
+    padding: calc(var(--epub-settings-gap-sm) + 0.1rem) calc(var(--epub-settings-gap-md) + var(--epub-settings-gap-sm));
     background: transparent !important;
     color: var(--text-accent) !important;
     border: none !important;
-    border-radius: 8px !important;
+    border-radius: var(--radius-m, 8px) !important;
     font-weight: 500;
     cursor: pointer;
     transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
@@ -1030,11 +1040,11 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0.45rem 0.85rem;
+    padding: calc(var(--epub-settings-gap-sm) + 0.1rem) calc(var(--epub-settings-gap-md) + var(--epub-settings-gap-sm));
     background: transparent !important;
     color: var(--text-muted) !important;
     border: none !important;
-    border-radius: 8px !important;
+    border-radius: var(--radius-m, 8px) !important;
     cursor: pointer;
     transition: background-color 0.15s ease, color 0.15s ease;
     box-shadow: none !important;
@@ -1063,15 +1073,15 @@
 
   /* 帮助区域 */
   .help-section {
-    padding: 1.5rem;
+    padding: var(--epub-settings-gap-xl);
     background: var(--background-primary-alt, var(--background-secondary));
-    border-radius: var(--radius-m, 8px);
+    border-radius: var(--epub-settings-radius-md);
     border: 1px solid var(--background-modifier-border);
   }
 
   .help-content h4 {
-    margin: 1rem 0 0.5rem 0;
-    font-size: 1rem;
+    margin: var(--epub-settings-gap-lg) 0 var(--epub-settings-gap-md) 0;
+    font-size: var(--epub-settings-font-size-label);
     font-weight: 600;
     color: var(--text-normal);
   }
@@ -1081,20 +1091,20 @@
   }
 
   .help-content ul {
-    margin: 0.5rem 0 1rem 0;
-    padding-left: 1.5rem;
+    margin: var(--epub-settings-gap-md) 0 var(--epub-settings-gap-lg) 0;
+    padding-left: var(--epub-settings-gap-xl);
   }
 
   .help-content li {
-    margin: 0.25rem 0;
+    margin: var(--epub-settings-gap-xs) 0;
     color: var(--text-muted);
-    font-size: 0.9rem;
+    font-size: var(--epub-settings-font-size-desc);
   }
 
   .help-content p {
-    margin: 0.5rem 0;
+    margin: var(--epub-settings-gap-md) 0;
     color: var(--text-muted);
-    font-size: 0.9rem;
+    font-size: var(--epub-settings-font-size-desc);
     line-height: 1.4;
   }
 
@@ -1113,7 +1123,7 @@
       flex-direction: column;
       align-items: stretch;
       justify-content: flex-start;
-      gap: 0.45rem;
+      gap: calc(var(--epub-settings-gap-sm) + 0.1rem);
     }
 
     .activation-inline-control {
@@ -1128,7 +1138,7 @@
       flex-direction: column;
       align-items: stretch;
       justify-content: flex-start;
-      gap: 0.45rem;
+      gap: calc(var(--epub-settings-gap-sm) + 0.1rem);
     }
 
     .activation-field-label--inline {
@@ -1143,66 +1153,66 @@
 
   /* 错误区域 */
   .error-section {
-    padding: 1rem;
+    padding: var(--epub-settings-gap-lg);
     background: color-mix(in oklab, var(--background-primary), var(--color-red) 10%);
     border: 1px solid color-mix(in oklab, var(--background-modifier-border), var(--color-red) 20%);
-    border-radius: var(--radius-s, 6px);
+    border-radius: var(--epub-settings-radius-sm);
   }
 
   .error-header {
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--epub-settings-gap-md);
   }
 
   .error-title {
     font-weight: 600;
-    font-size: 1rem;
+    font-size: var(--epub-settings-font-size-label);
     color: var(--color-red);
   }
 
   .error-message {
     color: var(--text-normal);
-    margin-bottom: 0.5rem;
-    line-height: 1.5;
+    margin-bottom: var(--epub-settings-gap-md);
+    line-height: 1.55;
   }
 
   .remaining-attempts {
-    margin-top: 0.5rem;
-    padding: 0.5rem;
+    margin-top: var(--epub-settings-gap-md);
+    padding: var(--epub-settings-gap-md);
     background: color-mix(in oklab, var(--background-secondary), var(--color-orange) 12%);
-    border-radius: var(--radius-s, 4px);
+    border-radius: var(--epub-settings-radius-sm);
     color: var(--color-orange);
     font-weight: 500;
-    font-size: 0.9rem;
+    font-size: var(--epub-settings-font-size-desc);
   }
 
   /* 成功区域 */
   .success-section {
-    padding: 1rem;
+    padding: var(--epub-settings-gap-lg);
     background: color-mix(in oklab, var(--background-primary), var(--color-green) 10%);
     border: 1px solid color-mix(in oklab, var(--background-modifier-border), var(--color-green) 20%);
-    border-radius: var(--radius-s, 6px);
+    border-radius: var(--epub-settings-radius-sm);
   }
 
   .success-header {
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--epub-settings-gap-md);
   }
 
   .success-title {
     font-weight: 600;
-    font-size: 1rem;
+    font-size: var(--epub-settings-font-size-label);
     color: var(--color-green);
   }
 
   .success-message {
     color: var(--text-normal);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--epub-settings-gap-md);
   }
 
   /* 响应式设计 */
   @media (max-width: 768px) {
     .enhanced-activation-form.standalone {
-      margin: 0 0 1rem 0;
-      padding: 1.5rem;
+      margin: 0 0 var(--epub-settings-gap-lg) 0;
+      padding: var(--epub-settings-gap-xl);
     }
 
     .form-title {

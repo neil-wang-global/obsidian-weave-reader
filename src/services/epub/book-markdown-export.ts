@@ -9,6 +9,7 @@ import { sanitizeExportFileName } from "../../utils/sanitize-export-filename";
 import { openFileWithExistingLeaf } from "../../utils/workspace-navigation";
 import { createContentWithMetadata } from "../../utils/yaml-utils";
 import { isSupportedBookFile } from "./book-format";
+import { i18n } from "../../utils/i18n";
 
 export interface BookMarkdownExportAsset {
 	placeholder: string;
@@ -227,7 +228,7 @@ async function finalizeMarkdownExport(
 		normalizedContent.endsWith("\n") ? normalizedContent : `${normalizedContent}\n`
 	);
 	await openFileWithExistingLeaf(app, createdFile, { openInNewTab: true, focus: true });
-	new Notice(`已导出 Markdown：${createdFile.basename}`, 3000);
+	new Notice(i18n.t("epub.reader.markdownExported", { fileName: createdFile.basename }), 3000);
 	return createdFile;
 }
 

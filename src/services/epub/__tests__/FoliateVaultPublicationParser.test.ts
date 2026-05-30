@@ -200,4 +200,40 @@ describe("FoliateVaultPublicationParser", () => {
       parser.dispose();
     }
   });
+
+  it("loads generic MOBI sections through section.load so locator DOM matches the reader", async () => {
+    const parser = new FoliateVaultPublicationParser({} as any);
+    const parserAny = parser as any;
+    const createDocument = vi.fn(async () => {
+      const doc = document.implementation.createHTMLDocument("draft");
+      doc.body.innerHTML = "<p>draft-only</p>";
+      return doc;
+    });
+    const readerMarkup =
+      '<html><head><style>blockquote{margin:0}</style></head><body><p id="reader">reader-aligned</p></body></html>';
+    const load = vi.fn(async () => "blob:reader-aligned-section");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      text: async () => readerMarkup,
+    } as Response);
+    parserAny.currentBook = {
+      sections: [{ id: 0, load, createDocument }],
+    };
+    parserAny.sectionDescriptors = [{ index: 0, href: "0", title: "Chapter 1" }];
+
+    try {
+      const doc = await parserAny.getRawDocumentFromGenericSection(0);
+
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(fetchSpy).toHaveBeenCalledWith("blob:reader-aligned-section");
+      expect(createDocument).not.toHaveBeenCalled();
+      expect(doc?.querySelector("#reader")?.textContent).toBe("reader-aligned");
+
+      const cached = await parserAny.getRawDocumentFromGenericSection(0);
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(cached).toBe(doc);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
 });

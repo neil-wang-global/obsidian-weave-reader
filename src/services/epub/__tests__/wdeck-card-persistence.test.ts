@@ -24,8 +24,13 @@ describe("wdeck-card-persistence", () => {
 			},
 			"weave/memory/deck-files/demo_01.wdeck"
 		);
+		const preparedWithMeta = prepared as typeof prepared & {
+			customFields?: { wdeck?: { sourcePath?: string } };
+		};
 
 		expect(prepared.sourceFile).toBe("Books/demo.epub");
-		expect(prepared.customFields?.wdeck?.sourcePath).toBe("weave/memory/deck-files/demo_01.wdeck");
+		expect(preparedWithMeta.customFields?.wdeck?.sourcePath).toBe(
+			"weave/memory/deck-files/demo_01.wdeck"
+		);
 	});
 });

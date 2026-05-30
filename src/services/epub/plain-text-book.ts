@@ -1,3 +1,6 @@
+import * as EpubCfi from "./vendor/epubcfi";
+import { i18n } from "../../utils/i18n";
+
 type PlainTextBookSection = {
 	id: string;
 	title: string;
@@ -19,6 +22,7 @@ type PlainTextTocItem = {
 export type PlainTextFoliateBook = {
 	sections: Array<{
 		id: string;
+		cfi: string;
 		linear: string;
 		size: number;
 		load: () => Promise<string>;
@@ -27,6 +31,7 @@ export type PlainTextFoliateBook = {
 	toc: PlainTextTocItem[];
 	metadata: Record<string, unknown>;
 	rendition: { layout?: string };
+	resolveCFI: (cfi: string) => { index: number; anchor: (doc: Document) => unknown } | null;
 	resolveHref: (href: string) => { index: number; anchor: (doc: Document) => unknown } | null;
 	splitTOCHref: (href: string) => [number, string | null];
 	getTOCFragment: (doc: Document, fragment: string | null) => Node | null;
@@ -72,14 +77,17 @@ export function makePlainTextBook(options: {
 		href: section.id,
 	}));
 
+	const bookSections = sections.map((section, index) => ({
+		id: section.id,
+		cfi: EpubCfi.fake.fromIndex(index),
+		linear: "yes",
+		size: section.size,
+		load: () => loadSection(section),
+		createDocument: () => createSectionDocument(section),
+	}));
+
 	return {
-		sections: sections.map((section) => ({
-			id: section.id,
-			linear: "yes",
-			size: section.size,
-			load: () => loadSection(section),
-			createDocument: () => createSectionDocument(section),
-		})),
+		sections: bookSections,
 		toc,
 		metadata: {
 			title: options.fileName.replace(/\.[^.]+$/, ""),
@@ -87,6 +95,7 @@ export function makePlainTextBook(options: {
 			language: "zh-CN",
 		},
 		rendition: {},
+		resolveCFI: (cfi: string) => resolvePlainTextCfiTarget(cfi, bookSections.length),
 		resolveHref: (href: string) => resolveHref(href, sections),
 		splitTOCHref: (href: string) => {
 			const [sectionId, fragment] = String(href || "").split("#");
@@ -107,6 +116,41 @@ export function makePlainTextBook(options: {
 			urls.clear();
 		},
 	};
+}
+
+function wrapPlainTextCfi(value: string): string {
+	const normalized = String(value || "").trim();
+	if (!normalized) {
+		return "";
+	}
+	return EpubCfi.isCFI.test(normalized) ? normalized : `epubcfi(${normalized})`;
+}
+
+function resolvePlainTextCfiTarget(
+	cfi: string,
+	sectionCount: number
+): { index: number; anchor: (doc: Document) => unknown } | null {
+	try {
+		const wrapped = wrapPlainTextCfi(cfi);
+		if (!wrapped) {
+			return null;
+		}
+		const parsed = EpubCfi.parse(wrapped) as EpubCfi.ParsedCfi;
+		const parentPath = Array.isArray((parsed as EpubCfi.ParsedCfiRange).parent)
+			? [...(parsed as EpubCfi.ParsedCfiRange).parent]
+			: [...(parsed as EpubCfi.ParsedCfiPath)];
+		const sectionPart = parentPath.shift();
+		const index = EpubCfi.fake.toIndex(sectionPart);
+		if (typeof index !== "number" || index < 0 || index >= sectionCount) {
+			return null;
+		}
+		return {
+			index,
+			anchor: (doc: Document) => EpubCfi.toRange(doc, parsed),
+		};
+	} catch {
+		return null;
+	}
 }
 
 function resolveHref(
@@ -131,14 +175,22 @@ function resolveHref(
 	};
 }
 
+function defaultPlainTextSectionTitle(): string {
+	return i18n.t("epub.plainText.defaultSectionTitle");
+}
+
+function numberedPlainTextSectionTitle(index: number): string {
+	return i18n.t("epub.plainText.numberedSectionTitle", { index });
+}
+
 function buildSections(text: string): Array<{ title: string; text: string }> {
 	if (!text.trim()) {
-		return [{ title: "正文", text: "" }];
+		return [{ title: defaultPlainTextSectionTitle(), text: "" }];
 	}
 
 	const lines = text.split("\n");
 	const sections: Array<{ title: string; text: string }> = [];
-	let currentTitle = "正文";
+	let currentTitle = defaultPlainTextSectionTitle();
 	let currentLines: string[] = [];
 
 	const pushCurrentSection = () => {
@@ -167,7 +219,7 @@ function buildSections(text: string): Array<{ title: string; text: string }> {
 		currentLines.push(line);
 		if (currentLines.join("\n").length >= TARGET_SECTION_SIZE) {
 			pushCurrentSection();
-			currentTitle = `正文 ${sections.length + 1}`;
+			currentTitle = numberedPlainTextSectionTitle(sections.length + 1);
 		}
 	}
 
@@ -194,7 +246,7 @@ function mergeTinySections(
 		}
 		merged.push(current);
 	}
-	return merged.length > 0 ? merged : [{ title: "正文", text: "" }];
+	return merged.length > 0 ? merged : [{ title: defaultPlainTextSectionTitle(), text: "" }];
 }
 
 function isHeadingLine(line: string): boolean {
