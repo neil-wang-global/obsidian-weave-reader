@@ -8,7 +8,7 @@ const FORBIDDEN_TRACKED_PATH_RULES = [
 	{
 		name: "development docs",
 		patterns: [
-			/^docs\//,
+			/^docs\/(?!user\/).+/,
 			/^版本更新文档\//,
 			/^开发规则\.zh-CN\.md$/,
 			/^REFERENCE_COUNT_IMPLEMENTATION\.md$/,

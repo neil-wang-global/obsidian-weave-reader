@@ -177,7 +177,6 @@ flowchart LR
    - `main.js`
    - `manifest.json`
    - `styles.css`
-   - `versions.json`（建议一并复制）
 2. 复制到 `.obsidian/plugins/weave-epub-reader/`
 3. 重启 Obsidian，在 **设置 → 社区插件** 中启用 **Weave EPUB Reader**
 
@@ -197,6 +196,7 @@ flowchart LR
 ## 隐私与网络
 
 - 阅读、渲染、摘录与回链等**默认在本地完成**，不会主动上传 Vault 内容。
+- 书架、回链与来源定位等功能会在本地枚举 Vault 文件路径；复制摘录或激活码时会访问剪贴板。详见 [PRIVACY.md](./PRIVACY.md)。
 - **高级支持激活**可能访问许可证服务（激活码、邮箱、设备指纹摘要等），详见 [PRIVACY.md](./PRIVACY.md)。
 - **AI 功能**会调用你自行配置的第三方服务。
 
@@ -413,7 +413,6 @@ Authoritative breakdown: [feature comparison (zh-CN)](./docs/user/zh-CN/00-featu
    - `main.js`
    - `manifest.json`
    - `styles.css`
-   - `versions.json` (recommended)
 2. Copy into `.obsidian/plugins/weave-epub-reader/`
 3. Restart Obsidian and enable **Weave EPUB Reader** under **Settings → Community plugins**
 
@@ -433,6 +432,7 @@ Authoritative breakdown: [feature comparison (zh-CN)](./docs/user/zh-CN/00-featu
 ## Privacy and network
 
 - Reading, rendering, excerpting, and backlinks are **local by default**; vault content is not uploaded proactively.
+- Bookshelf, backlink, and source-locate features enumerate vault file paths locally; copying excerpts or activation codes uses the clipboard. See [PRIVACY.md](./PRIVACY.md).
 - **Premium support activation** may contact the license service (activation code, email, device fingerprint summary, etc.). See [PRIVACY.md](./PRIVACY.md).
 - **AI features** call the third-party services you configure.
 

@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish or republish (e.g. 0.6.17)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -18,6 +24,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.tag) || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -29,13 +37,19 @@ jobs:
         run: npm ci
 
       - name: Verify public repo safety
+        if: github.event_name != 'workflow_dispatch'
         run: npm run verify:public-repo
 
       - name: Read release version
         id: version
         shell: bash
         run: |
-          TAG_VERSION="${GITHUB_REF#refs/tags/}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG_VERSION="${{ github.event.inputs.tag }}"
+          else
+            TAG_VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+
           MANIFEST_VERSION=$(node -p "require('./manifest.json').version")
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
 
@@ -61,7 +75,11 @@ jobs:
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           NOTES_FILE=".github/release-notes/${TAG}.md"
-          if [ -f "$NOTES_FILE" ]; then
+          NOTES_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/.github/release-notes/${TAG}.md"
+
+          if curl -fsSL "$NOTES_URL" -o /tmp/release-notes.md; then
+            echo "Loaded release notes from main branch"
+          elif [ -f "$NOTES_FILE" ]; then
             cp "$NOTES_FILE" /tmp/release-notes.md
           else
             {
@@ -70,6 +88,12 @@ jobs:
               echo "Automated release for the Obsidian community plugin directory."
             } > /tmp/release-notes.md
           fi
+
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "Release notes file is empty for ${TAG}"
+            exit 1
+          fi
+
           echo "path=/tmp/release-notes.md" >> "$GITHUB_OUTPUT"
 
       - name: Build plugin
@@ -81,35 +105,35 @@ jobs:
       - name: Verify bundle has no dynamic script injection
         run: node scripts/verify-no-dynamic-script.cjs dist/main.js
 
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+      - name: Attest release assets
+        uses: actions/attest-build-provenance@v4
         with:
-          name: ${{ steps.version.outputs.tag }}
-          tag_name: ${{ steps.version.outputs.tag }}
-          draft: false
-          prerelease: false
-          generate_release_notes: false
-          body_path: ${{ steps.notes.outputs.path }}
-          files: |
+          subject-path: |
             dist/main.js
             dist/manifest.json
             dist/styles.css
-            dist/versions.json
 
-      - name: Ensure release title and notes
+      - name: Create or update GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          GITHUB_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           NOTES_FILE="${{ steps.notes.outputs.path }}"
-          if [ -n "$NOTES_FILE" ] && [ -f "$NOTES_FILE" ]; then
+
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Updating existing release ${TAG}..."
+            gh release delete-asset "$TAG" versions.json -y 2>/dev/null || true
+            gh release upload "$TAG" dist/main.js dist/manifest.json dist/styles.css --clobber
             gh release edit "$TAG" --title "$TAG" --notes-file "$NOTES_FILE"
           else
-            gh release edit "$TAG" --title "$TAG"
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes-file "$NOTES_FILE" \
+              dist/main.js \
+              dist/manifest.json \
+              dist/styles.css
           fi
-          node scripts/set-github-release-title.cjs "$TAG"
 
       - name: Verify remote release metadata
         env:
@@ -148,16 +172,29 @@ jobs:
               process.exit(1);
             }
 
-            console.log(`Verified release title for ${tag}`);
+            const body = (release.body ?? "").trim();
+            if (!body) {
+              console.error(`Release description is empty for ${tag}`);
+              process.exit(1);
+            }
+
+            const assetNames = (release.assets ?? []).map((asset) => asset.name).sort();
+            const expectedAssets = ["main.js", "manifest.json", "styles.css"];
+            const unexpectedAssets = assetNames.filter((name) => !expectedAssets.includes(name));
+            if (unexpectedAssets.length > 0) {
+              console.error(`Unexpected release asset(s) for ${tag}: ${unexpectedAssets.join(", ")}`);
+              process.exit(1);
+            }
+
+            const missingAssets = expectedAssets.filter((name) => !assetNames.includes(name));
+            if (missingAssets.length > 0) {
+              console.error(`Missing release asset(s) for ${tag}: ${missingAssets.join(", ")}`);
+              process.exit(1);
+            }
+
+            console.log(`Verified release metadata for ${tag}`);
           })().catch((error) => {
             console.error(error);
             process.exit(1);
           });
           EOF
-
-      - name: Attest release assets
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: |
-            dist/main.js
-            dist/styles.css

@@ -3,14 +3,10 @@ const path = require("path");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const DIST_DIR = path.join(PROJECT_ROOT, "dist");
-const REQUIRED_RELEASE_FILES = [
-	"main.js",
-	"manifest.json",
-	"styles.css",
-	"versions.json",
-];
+const REQUIRED_DIST_FILES = ["main.js", "manifest.json", "styles.css", "versions.json"];
+const GITHUB_RELEASE_FILES = ["main.js", "manifest.json", "styles.css"];
 const TEXT_RELEASE_FILES = ["main.js", "manifest.json", "styles.css", "versions.json"];
-const ALLOWED_RELEASE_FILES = new Set(REQUIRED_RELEASE_FILES);
+const ALLOWED_DIST_FILES = new Set(REQUIRED_DIST_FILES);
 const FORBIDDEN_CONTENT_PATTERNS = [
 	{
 		name: "private key marker",
@@ -84,7 +80,7 @@ function verifyDistFileSet() {
 	}
 
 	const distFiles = listFilesRecursively(DIST_DIR);
-	const missingFiles = REQUIRED_RELEASE_FILES.filter(
+	const missingFiles = REQUIRED_DIST_FILES.filter(
 		(fileName) => !distFiles.includes(fileName)
 	);
 	if (missingFiles.length > 0) {
@@ -96,7 +92,7 @@ function verifyDistFileSet() {
 		fail(`release build must not contain sourcemap file(s): ${sourcemapFiles.join(", ")}`);
 	}
 
-	const unexpectedFiles = distFiles.filter((fileName) => !ALLOWED_RELEASE_FILES.has(fileName));
+	const unexpectedFiles = distFiles.filter((fileName) => !ALLOWED_DIST_FILES.has(fileName));
 	if (unexpectedFiles.length > 0) {
 		fail(`unexpected dist file(s): ${unexpectedFiles.join(", ")}`);
 	}
@@ -146,9 +142,19 @@ function verifyNoRuntimeNodeStreamRequires() {
 	}
 }
 
+function verifyGithubReleaseFileSet() {
+	const missingFiles = GITHUB_RELEASE_FILES.filter(
+		(fileName) => !fs.existsSync(path.join(DIST_DIR, fileName))
+	);
+	if (missingFiles.length > 0) {
+		fail(`missing GitHub release file(s): ${missingFiles.join(", ")}`);
+	}
+}
+
 function main() {
 	const expectedVersion = verifyRootVersionConsistency();
 	verifyDistFileSet();
+	verifyGithubReleaseFileSet();
 	verifyDistManifestVersion(expectedVersion);
 	verifySensitiveContent();
 	verifyNoDynamicScriptInjection();
