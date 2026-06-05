@@ -7552,8 +7552,8 @@ body .weave-foliate-concealment {
 				visibility: "hidden",
 				"pointer-events": "none",
 				inset: "0",
-				fontSize: valueExpression,
 			});
+			probe.style.fontSize = valueExpression;
 			styleSource.appendChild(probe);
 			const resolvedSize = getComputedStyle(probe).fontSize.trim();
 			probe.remove();
