@@ -1482,11 +1482,6 @@ export class EpubView extends ItemView {
 				return;
 			}
 			button.toggleClass("epub-view-action-hidden", !options.visible);
-			if (options.visible) {
-				button.style.removeProperty("display");
-			} else {
-				button.style.setProperty("display", "none");
-			}
 		}
 	}
 

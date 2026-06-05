@@ -2,7 +2,6 @@ const OBSIDIAN_LINT_TARGETS = [
   "src/main.ts",
   "src/views/Epub*.ts",
   "src/views/epub-view-host.ts",
-  "src/data/storage.ts",
   "src/services/epub",
   "src/services/media",
   "src/services/reference-deck",
