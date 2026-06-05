@@ -5,7 +5,7 @@
 <div align="center">
 
 ![Weave EPUB Reader](https://img.shields.io/badge/Obsidian-EPUB%20Reader-8a5cf6?style=for-the-badge)
-![Min Obsidian](https://img.shields.io/badge/Obsidian-1.7.0+-purple?style=for-the-badge)
+![Min Obsidian](https://img.shields.io/badge/Obsidian-1.8.7+-purple?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange?style=for-the-badge)
 
 </div>
@@ -31,7 +31,7 @@
 
 기능 구분은 [기본 체험과 프리미엄 지원](#기본-체험과-프리미엄-지원)을 참고하세요.
 
-최소 Obsidian 버전: **1.7.0**
+최소 Obsidian 버전: **1.8.7**
 
 ## 발췌 및 노트 워크플로
 

@@ -4,9 +4,11 @@
  */
 
 import type {
+	App,
 	Editor,
 	MarkdownSubView,
 	MarkdownView,
+	Notice,
 	TFile,
 	View,
 	WorkspaceLeaf,
@@ -223,6 +225,81 @@ export interface ExtendedVaultConfig {
 }
 
 /**
+ * Internal view registry shape (not fully exposed in public Obsidian typings).
+ */
+export interface ViewRegistryExtension {
+	typeByExtension?: Map<string, string> | (Record<string, string> & {
+		get?: (extension: string) => string | undefined;
+	});
+	viewByType?: Map<string, unknown> | (Record<string, unknown> & {
+		get?: (viewType: string) => unknown;
+	});
+	viewCreators?: Map<string, unknown> | Record<string, unknown>;
+	views?: Record<string, unknown>;
+}
+
+export interface AppWithViewRegistry {
+	viewRegistry?: ViewRegistryExtension;
+}
+
+export function readMapLikeRegistryValue<T>(
+	value:
+		| Map<string, T>
+		| (Record<string, T> & { get?: (key: string) => T | undefined })
+		| undefined,
+	key: string
+): T | null {
+	if (!value || !key) {
+		return null;
+	}
+	if (value instanceof Map) {
+		return value.get(key) ?? null;
+	}
+	if (typeof value.get === "function") {
+		return value.get(key) ?? null;
+	}
+	return value[key] ?? null;
+}
+
+export interface WorkspaceLeafWithGroup extends WorkspaceLeaf {
+	group?: string;
+}
+
+export interface CanvasViewLike extends View {
+	file?: TFile;
+	canvas?: {
+		selection?: Set<unknown>;
+		getData?: () => { nodes?: unknown[]; edges?: unknown[] } | null | undefined;
+	};
+}
+
+export interface VaultConfigLike {
+	getConfig?: (key: string) => unknown;
+	config?: Record<string, unknown>;
+}
+
+export interface NavigatorDeviceMemoryExtension {
+	deviceMemory?: number;
+}
+
+export interface NetworkInformationLike {
+	effectiveType?: string;
+	downlink?: number;
+}
+
+export interface NavigatorConnectionExtension {
+	connection?: NetworkInformationLike;
+}
+
+export interface WindowWithNodeRequire {
+	require?: (moduleId: string) => unknown;
+}
+
+export interface ObsidianGlobalApp {
+	appId?: string;
+}
+
+/**
  * App 扩展接口
  */
 export interface ExtendedApp {
@@ -257,8 +334,117 @@ export interface ExtendedApp {
 }
 
 /**
+ * Obsidian App legacy localStorage bridge (not in public typings).
+ */
+export interface AppWithLegacyLocalStorage extends App {
+	loadLocalStorage(key: string): string | null | undefined;
+	saveLocalStorage(key: string, value: string | undefined): void;
+}
+
+export function getAppWithLegacyLocalStorage(app: App): AppWithLegacyLocalStorage {
+	return app as AppWithLegacyLocalStorage;
+}
+
+/**
+ * Runtime Canvas node data exposed by Obsidian's canvas view.
+ */
+export interface CanvasNodeRuntimeData {
+	id?: string;
+	text?: string;
+	file?: string;
+	label?: string;
+	x?: number;
+	y?: number;
+	width?: number;
+	height?: number;
+}
+
+/**
+ * Live Canvas node instance used for selection and DOM overlays.
+ */
+export interface CanvasNodeRuntime {
+	id?: string;
+	text?: string;
+	file?: string;
+	label?: string;
+	unknownData?: CanvasNodeRuntimeData;
+	nodeEl?: HTMLElement;
+	contentEl?: HTMLElement;
+	containerEl?: HTMLElement;
+	el?: HTMLElement;
+	getData?: () => CanvasNodeRuntimeData;
+}
+
+export interface CanvasRuntime {
+	nodes?: Map<string, CanvasNodeRuntime> | Iterable<CanvasNodeRuntime>;
+	selectOnly: (node: CanvasNodeRuntime) => void;
+	zoomToSelection: () => void;
+}
+
+export interface CanvasViewShape {
+	canvas?: CanvasRuntime;
+	file?: TFile | null;
+}
+
+export function isCanvasLeafView(view: View): view is View & CanvasViewShape {
+	return typeof view === "object" && view !== null && "canvas" in view;
+}
+
+export function getCanvasNodeRuntimeData(node: CanvasNodeRuntime): CanvasNodeRuntimeData {
+	if (typeof node.getData === "function") {
+		return node.getData();
+	}
+	return node;
+}
+
+export function getCanvasNodeElement(node: CanvasNodeRuntime): HTMLElement | null {
+	for (const candidate of [node.nodeEl, node.contentEl, node.containerEl, node.el]) {
+		if (candidate instanceof HTMLElement) {
+			return candidate;
+		}
+	}
+	return null;
+}
+
+export function collectCanvasNodes(
+	nodesSource: Map<string, CanvasNodeRuntime> | Iterable<CanvasNodeRuntime> | undefined
+): CanvasNodeRuntime[] {
+	if (!nodesSource) {
+		return [];
+	}
+	if (nodesSource instanceof Map) {
+		return Array.from(nodesSource.values());
+	}
+	return Array.from(nodesSource);
+}
+
+/**
  * Notice 扩展接口
  */
+export interface NoticeWithShownState {
+	isShown?: boolean | (() => boolean);
+	hide?: () => void;
+}
+
+export function getNoticeWithShownState(notice: Notice): NoticeWithShownState {
+	return notice as unknown as NoticeWithShownState;
+}
+
+export function readNoticeShownState(notice: Notice): boolean | null {
+	const { isShown } = getNoticeWithShownState(notice);
+	if (typeof isShown === "function") {
+		try {
+			return Boolean(isShown.call(notice));
+		} catch {
+			return null;
+		}
+	}
+	if (typeof isShown === "boolean") {
+		return isShown;
+	}
+	return null;
+}
+
 export interface ExtendedNoticeElement {
 	/** Notice DOM 元素 */
 	noticeEl?: HTMLElement;

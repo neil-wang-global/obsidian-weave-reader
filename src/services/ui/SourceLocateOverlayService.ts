@@ -7,6 +7,7 @@ import {
 	normalizeSourceLocateMatchValue,
 	parseTaggedSourceLocateCandidates,
 } from "./source-locate-candidates";
+import { domInstanceOf } from "../../utils/dom-instance-of";
 
 interface LocateOverlayOptions {
 	label?: string;
@@ -63,7 +64,7 @@ export class SourceLocateOverlayService {
 
 		const label = options.label || "定位到溯源位置";
 		const icon = options.icon || "map-pinned";
-		const overlay = document.body.createDiv({ cls: "weave-source-locate-overlay" });
+		const overlay = activeDocument.body.createDiv({ cls: "weave-source-locate-overlay" });
 		overlay.classList.add("weave-source-locate-overlay--measuring");
 		overlay.setCssProps({
 			top: "-9999px",
@@ -185,17 +186,17 @@ export class SourceLocateOverlayService {
 		}
 
 		const previewLinks = Array.from(
-			container.querySelectorAll(
+			container.querySelectorAll<HTMLElement>(
 				".markdown-preview-view a.internal-link, .markdown-preview-view a[href]"
 			)
-		) as HTMLElement[];
+		);
 		const previewLink = previewLinks.find((link) => {
 			const href = `${link.getAttribute("href") || ""} ${link.getAttribute("data-href") || ""}`;
 			return cleanCandidates.some((candidate) => this.matchesCandidate(href, candidate));
 		});
 
 		if (previewLink) {
-			const target = previewLink.closest(".callout, blockquote, p, li, div") as HTMLElement | null;
+			const target = previewLink.closest<HTMLElement>(".callout, blockquote, p, li, div");
 			return this.buildLocateTarget(
 				target || previewLink,
 				request.textCandidates.length > 0 ? request.textCandidates : cleanCandidates,
@@ -203,7 +204,7 @@ export class SourceLocateOverlayService {
 			);
 		}
 
-		const sourceLines = Array.from(container.querySelectorAll(".cm-line")) as HTMLElement[];
+		const sourceLines = Array.from(container.querySelectorAll<HTMLElement>(".cm-line"));
 		const sourceLineCandidates = Array.from(
 			new Set([
 				...(request.textCandidates.length > 0 ? request.textCandidates : []),
@@ -219,7 +220,7 @@ export class SourceLocateOverlayService {
 		}
 
 		if (!request.hasEpubTarget) {
-			const activeLine = container.querySelector(".cm-active, .cm-line") as HTMLElement | null;
+			const activeLine = container.querySelector<HTMLElement>(".cm-active, .cm-line");
 			if (activeLine) {
 				return this.buildLocateTarget(
 					activeLine,
@@ -276,10 +277,10 @@ export class SourceLocateOverlayService {
 	): HTMLElement | null {
 		if (candidates.length === 0) return null;
 		const previewTargets = Array.from(
-			container.querySelectorAll(
+			container.querySelectorAll<HTMLElement>(
 				".markdown-preview-view [id], .markdown-preview-view [data-heading], .markdown-preview-view [data-block-id], .markdown-preview-view [data-blockid], .markdown-preview-view [href], .markdown-preview-view [data-href]"
 			)
-		) as HTMLElement[];
+		);
 
 		let bestElement: HTMLElement | null = null;
 		let bestScore = 0;
@@ -309,10 +310,10 @@ export class SourceLocateOverlayService {
 	): HTMLElement | null {
 		if (candidates.length === 0) return null;
 		const previewBlocks = Array.from(
-			container.querySelectorAll(
+			container.querySelectorAll<HTMLElement>(
 				".markdown-preview-view .callout, .markdown-preview-view blockquote, .markdown-preview-view li, .markdown-preview-view p, .markdown-preview-view pre, .markdown-preview-view h1, .markdown-preview-view h2, .markdown-preview-view h3, .markdown-preview-view h4, .markdown-preview-view h5, .markdown-preview-view h6"
 			)
-		) as HTMLElement[];
+		);
 
 		let bestElement: HTMLElement | null = null;
 		let bestScore = 0;
@@ -341,7 +342,7 @@ export class SourceLocateOverlayService {
 			".markdown-rendered .callout",
 			".markdown-rendered blockquote",
 		]) {
-			for (const block of Array.from(container.querySelectorAll(selector)) as HTMLElement[]) {
+			for (const block of Array.from(container.querySelectorAll<HTMLElement>(selector))) {
 				blockSet.add(block);
 			}
 		}
@@ -364,7 +365,7 @@ export class SourceLocateOverlayService {
 		container: HTMLElement,
 		request: MarkdownLocateRequest
 	): MarkdownLocateTarget | null {
-		const sourceLines = Array.from(container.querySelectorAll(".cm-line")) as HTMLElement[];
+		const sourceLines = Array.from(container.querySelectorAll<HTMLElement>(".cm-line"));
 		if (sourceLines.length === 0) {
 			return null;
 		}
@@ -476,8 +477,8 @@ export class SourceLocateOverlayService {
 		if (linkCandidates.length === 0) return 0;
 
 		const links = Array.from(
-			block.querySelectorAll("a.internal-link, a[href], [data-href], [href]")
-		) as HTMLElement[];
+			block.querySelectorAll<HTMLElement>("a.internal-link, a[href], [data-href], [href]")
+		);
 		let bestLinkScore = 0;
 
 		for (const link of links) {
@@ -563,7 +564,7 @@ export class SourceLocateOverlayService {
 			}
 		};
 
-		if (element instanceof HTMLElement) {
+		if (domInstanceOf(element, HTMLElement)) {
 			pushValue(element.textContent);
 			pushValue(element.getAttribute("href"));
 			pushValue(element.getAttribute("data-href"));
@@ -574,7 +575,7 @@ export class SourceLocateOverlayService {
 				"a.internal-link, a[href], [data-href], [href], .internal-link"
 			);
 			for (const node of Array.from(descendants)) {
-				if (!(node instanceof HTMLElement)) {
+				if (!domInstanceOf(node, HTMLElement)) {
 					continue;
 				}
 				pushValue(node.textContent);

@@ -28,6 +28,8 @@
 - [ ] Self-review of code completed
 - [ ] Comments added for complex logic
 - [ ] No new warnings generated
+- [ ] `npm run verify:obsidian-community` passed (0 errors + 0 strict warnings)
+- [ ] DOM type checks use `domInstanceOf` (not bare `instanceof` or `.instanceOf()`)
 
 ### Testing
 - [ ] New tests added for new features/bug fixes
@@ -84,7 +86,8 @@
 
 <!-- PR合并前必须满足 -->
 
-- [ ] CI Pipeline passing (all checks green)
+- [ ] CI Pipeline passing (includes Obsidian community + strict lint)
+- [ ] `npm run verify:community` passed locally if touching `src/` or `manifest.json`
 - [ ] Code reviewed and approved
 - [ ] No merge conflicts
 - [ ] Branch up-to-date with base branch

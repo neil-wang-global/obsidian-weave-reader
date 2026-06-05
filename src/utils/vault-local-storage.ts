@@ -10,6 +10,7 @@
 
 import type { App } from "obsidian";
 import { getPluginPaths } from "../config/paths";
+import { getAppWithLegacyLocalStorage } from "../types/obsidian-extensions";
 import { DirectoryUtils } from "./directory-utils";
 import { logger } from "./logger";
 
@@ -110,7 +111,7 @@ class VaultLocalStorage {
 
 	async flush(): Promise<void> {
 		if (this.persistTimer !== null) {
-			clearTimeout(this.persistTimer);
+			window.clearTimeout(this.persistTimer);
 			this.persistTimer = null;
 		}
 		await this.persistPendingEntries();
@@ -121,7 +122,7 @@ class VaultLocalStorage {
 	 */
 	resetForTests(): void {
 		if (this.persistTimer !== null) {
-			clearTimeout(this.persistTimer);
+			window.clearTimeout(this.persistTimer);
 			this.persistTimer = null;
 		}
 		this.app = null;
@@ -146,12 +147,13 @@ class VaultLocalStorage {
 		if (!this.app) {
 			return null;
 		}
-		return (this.app as any).loadLocalStorage(key) ?? null;
+		const value = getAppWithLegacyLocalStorage(this.app).loadLocalStorage(key);
+		return typeof value === "string" ? value : null;
 	}
 
 	private writeLegacyValue(key: string, value: string | undefined): void {
 		if (this.app) {
-			(this.app as any).saveLocalStorage(key, value);
+			getAppWithLegacyLocalStorage(this.app).saveLocalStorage(key, value);
 		}
 	}
 
@@ -165,7 +167,7 @@ class VaultLocalStorage {
 			return;
 		}
 
-		this.persistTimer = setTimeout(() => {
+		this.persistTimer = window.setTimeout(() => {
 			this.persistTimer = null;
 			void this.persistPendingEntries();
 		}, PERSIST_DELAY_MS);

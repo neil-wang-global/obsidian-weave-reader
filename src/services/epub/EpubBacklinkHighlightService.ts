@@ -19,10 +19,18 @@ import { isSupportedBookPath } from "./book-format";
 import {
 	epubVaultPathsReferToSameBook,
 	resolveComparableBookVaultPath,
-	resolveEpubVaultPath,
 } from "./epub-vault-path";
-import { resolveEpubHost } from "./epub-host";
 import { getEpubRuntime } from "./epub-runtime";
+import {
+	clearDeckAndAnalyticsCaches,
+	invalidateCardMetadataCache,
+	notifyWeaveDataSyncChange,
+	rebuildWdeckCacheIfNeeded,
+	removeCardIndexes,
+	resolveWeaveCacheHost,
+	triggerCardMutationEvents,
+	type WeaveCardMutationPayload,
+} from "./weave-cache-bridge";
 import type { HighlightSourceLocator } from "./reader-engine-types";
 import type { EpubHighlightStyle } from "./types";
 
@@ -193,9 +201,6 @@ const EPUB_BACKLINK_HIGHLIGHTS_CACHE_VERSION = "1.3.0";
 const EPUB_BACKLINK_SOURCE_INDEX_VERSION = "1.3.0";
 
 const DEFAULT_HIGHLIGHT_COLOR = "yellow";
-const MARKDOWN_SOURCE_KIND = "markdown";
-const CARD_DATA_SOURCE_KIND = "cardData";
-const CANVAS_SOURCE_KIND = "canvas";
 
 export class EpubBacklinkHighlightService {
 	private app: App;
@@ -1332,7 +1337,7 @@ export class EpubBacklinkHighlightService {
 		sourceFile: string
 	): IndexedBacklinkHighlightEntry[] {
 		try {
-			const parsed = JSON.parse(content);
+			const parsed: unknown = JSON.parse(content);
 			const results: IndexedBacklinkHighlightEntry[] = [];
 			for (const card of this.extractCardsFromJson(parsed)) {
 				results.push(...this.parseIndexedHighlightsFromCardDataCard(card, sourceFile));
@@ -2031,7 +2036,7 @@ export class EpubBacklinkHighlightService {
 		}
 
 		try {
-			const parsed = JSON.parse(content);
+			const parsed: unknown = JSON.parse(content);
 			const targetCardUuid = sourceRef?.startsWith("card:") ? sourceRef.slice(5) : null;
 
 			for (const entry of this.extractCardEntriesFromJson(parsed)) {
@@ -2330,7 +2335,8 @@ export class EpubBacklinkHighlightService {
 			}
 
 			return results;
-		} catch (_e) {
+		} catch (error) {
+			void error;
 			logger.debug("[EpubBacklinkHighlightService] Failed to parse canvas json:", sourceFile);
 			return [];
 		}
@@ -2363,7 +2369,8 @@ export class EpubBacklinkHighlightService {
 					(highlight) => this.withAdditionalSourceLocator(highlight, canvasLocator)
 				);
 			}
-		} catch (_e) {
+		} catch (error) {
+			void error;
 			logger.debug(
 				"[EpubBacklinkHighlightService] Failed to read canvas file node target:",
 				node.file
@@ -2443,7 +2450,12 @@ export class EpubBacklinkHighlightService {
 			const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
 			const targetNodeId = this.normalizeCanvasSourceRef(sourceRef);
 			const changed = await this.processVaultJsonFile(sourceFile, (parsed) => {
-				const nodes = Array.isArray(parsed?.nodes) ? (parsed.nodes as CanvasNodeLike[]) : [];
+				if (!parsed || typeof parsed !== "object") {
+					return null;
+				}
+				const nodes = Array.isArray((parsed as { nodes?: unknown }).nodes)
+					? ((parsed as { nodes: CanvasNodeLike[] }).nodes)
+					: [];
 				let changed = false;
 
 				for (const node of nodes) {
@@ -2482,7 +2494,12 @@ export class EpubBacklinkHighlightService {
 			const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
 			const targetNodeId = this.normalizeCanvasSourceRef(sourceRef);
 			const changed = await this.processVaultJsonFile(sourceFile, (parsed) => {
-				const nodes = Array.isArray(parsed?.nodes) ? (parsed.nodes as CanvasNodeLike[]) : [];
+				if (!parsed || typeof parsed !== "object") {
+					return null;
+				}
+				const nodes = Array.isArray((parsed as { nodes?: unknown }).nodes)
+					? ((parsed as { nodes: CanvasNodeLike[] }).nodes)
+					: [];
 				let changed = false;
 
 				for (const node of nodes) {
@@ -2527,7 +2544,12 @@ export class EpubBacklinkHighlightService {
 			const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
 			const targetNodeId = this.normalizeCanvasSourceRef(sourceRef);
 			const changed = await this.processVaultJsonFile(sourceFile, (parsed) => {
-				const nodes = Array.isArray(parsed?.nodes) ? (parsed.nodes as CanvasNodeLike[]) : [];
+				if (!parsed || typeof parsed !== "object") {
+					return null;
+				}
+				const nodes = Array.isArray((parsed as { nodes?: unknown }).nodes)
+					? ((parsed as { nodes: CanvasNodeLike[] }).nodes)
+					: [];
 				let changed = false;
 
 				for (const node of nodes) {
@@ -2575,7 +2597,12 @@ export class EpubBacklinkHighlightService {
 			const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
 			const targetNodeId = this.normalizeCanvasSourceRef(sourceRef);
 			const changed = await this.processVaultJsonFile(sourceFile, (parsed) => {
-				const nodes = Array.isArray(parsed?.nodes) ? (parsed.nodes as CanvasNodeLike[]) : [];
+				if (!parsed || typeof parsed !== "object") {
+					return null;
+				}
+				const nodes = Array.isArray((parsed as { nodes?: unknown }).nodes)
+					? ((parsed as { nodes: CanvasNodeLike[] }).nodes)
+					: [];
 				let changed = false;
 
 				for (const node of nodes) {
@@ -2703,60 +2730,32 @@ export class EpubBacklinkHighlightService {
 					.filter(Boolean)
 			)
 		);
-		const host = resolveEpubHost(this.app) as Record<string, any> | null;
-		const workspace = (this.app.workspace as any) || host?.app?.workspace;
+		const cacheHost = resolveWeaveCacheHost(this.app);
 
 		try {
-			await this.refreshHostSourceCaches(host, normalizedSourcePath);
+			await rebuildWdeckCacheIfNeeded(cacheHost.wdeckService, normalizedSourcePath);
+			invalidateCardMetadataCache(cacheHost.cardMetadataCache, normalizedCardUuids);
 
-			const cardMetadataCache = host?.cardMetadataCache;
-			if (cardMetadataCache) {
-				if (normalizedCardUuids.length > 0 && typeof cardMetadataCache.invalidate === "function") {
-					for (const uuid of normalizedCardUuids) {
-						cardMetadataCache.invalidate(uuid);
-					}
-				} else if (typeof cardMetadataCache.clear === "function") {
-					cardMetadataCache.clear();
-				}
+			if (action === "delete") {
+				removeCardIndexes(cacheHost.cardIndexService, normalizedCardUuids);
 			}
 
-			if (action === "delete" && normalizedCardUuids.length > 0) {
-				const cardIndexService = host?.cardIndexService;
-				if (cardIndexService && typeof cardIndexService.removeCardIndex === "function") {
-					for (const uuid of normalizedCardUuids) {
-						cardIndexService.removeCardIndex(uuid);
-					}
-				}
-			}
+			clearDeckAndAnalyticsCaches(cacheHost);
+			triggerCardMutationEvents(
+				cacheHost.workspace,
+				action,
+				normalizedCardUuids,
+				normalizedSourcePath
+			);
 
-			host?.deckAggregationService?.clearCache?.();
-			host?.analyticsService?.clearCache?.();
-
-			if (workspace && typeof workspace.trigger === "function") {
-				if (action === "delete") {
-					for (const uuid of normalizedCardUuids) {
-						workspace.trigger("Weave:card-deleted", uuid);
-					}
-				}
-				workspace.trigger("Weave:card-updated", {
-					type: "cards",
-					action,
-					ids: normalizedCardUuids,
-					source: "epub-backlink-highlight",
-					sourcePath: normalizedSourcePath,
-				});
-			}
-
-			const dataSyncService = host?.dataSyncService;
-			if (dataSyncService && typeof dataSyncService.notifyChange === "function") {
-				await dataSyncService.notifyChange({
-					type: "cards",
-					action,
-					ids: normalizedCardUuids,
-					source: "epub-backlink-highlight",
-					sourcePath: normalizedSourcePath,
-				});
-			}
+			const payload: WeaveCardMutationPayload = {
+				type: "cards",
+				action,
+				ids: normalizedCardUuids,
+				source: "epub-backlink-highlight",
+				sourcePath: normalizedSourcePath,
+			};
+			await notifyWeaveDataSyncChange(cacheHost.dataSyncService, payload);
 		} catch (error) {
 			logger.warn("[EpubBacklinkHighlightService] Failed to notify card-data mutation:", {
 				sourcePath: normalizedSourcePath,
@@ -2782,52 +2781,28 @@ export class EpubBacklinkHighlightService {
 				? sourceRef.slice(5).trim()
 				: "";
 		const ids = normalizedCardUuid ? [normalizedCardUuid] : [];
-		const host = resolveEpubHost(this.app) as Record<string, any> | null;
-		const workspace = (this.app.workspace as any) || host?.app?.workspace;
+		const cacheHost = resolveWeaveCacheHost(this.app);
 
 		try {
-			await this.refreshHostSourceCaches(host, normalizedSourcePath);
+			await rebuildWdeckCacheIfNeeded(cacheHost.wdeckService, normalizedSourcePath);
+			invalidateCardMetadataCache(cacheHost.cardMetadataCache, ids);
+			clearDeckAndAnalyticsCaches(cacheHost);
+			triggerCardMutationEvents(
+				cacheHost.workspace,
+				action,
+				ids,
+				normalizedSourcePath,
+				true
+			);
 
-			const cardMetadataCache = host?.cardMetadataCache;
-			if (cardMetadataCache) {
-				if (ids.length > 0 && typeof cardMetadataCache.invalidate === "function") {
-					for (const uuid of ids) {
-						cardMetadataCache.invalidate(uuid);
-					}
-				} else if (typeof cardMetadataCache.clear === "function") {
-					cardMetadataCache.clear();
-				}
-			}
-
-			host?.deckAggregationService?.clearCache?.();
-			host?.analyticsService?.clearCache?.();
-
-			if (workspace && typeof workspace.trigger === "function") {
-				if (action === "delete") {
-					for (const uuid of ids) {
-						workspace.trigger("Weave:card-deleted", uuid);
-					}
-				}
-				workspace.trigger("Weave:card-updated", {
-					type: "cards",
-					action,
-					ids,
-					source: "epub-backlink-highlight",
-					sourcePath: normalizedSourcePath,
-				});
-				workspace.trigger("Weave:data-changed");
-			}
-
-			const dataSyncService = host?.dataSyncService;
-			if (dataSyncService && typeof dataSyncService.notifyChange === "function") {
-				await dataSyncService.notifyChange({
-					type: "cards",
-					action,
-					ids,
-					source: "epub-backlink-highlight",
-					sourcePath: normalizedSourcePath,
-				});
-			}
+			const payload: WeaveCardMutationPayload = {
+				type: "cards",
+				action,
+				ids,
+				source: "epub-backlink-highlight",
+				sourcePath: normalizedSourcePath,
+			};
+			await notifyWeaveDataSyncChange(cacheHost.dataSyncService, payload);
 		} catch (error) {
 			logger.warn("[EpubBacklinkHighlightService] Failed to notify linked-source mutation:", {
 				sourcePath: normalizedSourcePath,
@@ -2835,27 +2810,6 @@ export class EpubBacklinkHighlightService {
 				sourceRef,
 				error,
 			});
-		}
-	}
-
-	private async refreshHostSourceCaches(
-		host: Record<string, any> | null,
-		sourcePath: string
-	): Promise<void> {
-		if (!host || !sourcePath) {
-			return;
-		}
-
-		const normalizedSourcePath = normalizePath(String(sourcePath || "").trim());
-		if (!normalizedSourcePath) {
-			return;
-		}
-
-		if (normalizedSourcePath.toLowerCase().endsWith(".wdeck")) {
-			const rebuildCache = host?.wdeckService?.rebuildCache;
-			if (typeof rebuildCache === "function") {
-				await rebuildCache.call(host.wdeckService);
-			}
 		}
 	}
 
@@ -2923,7 +2877,7 @@ export class EpubBacklinkHighlightService {
 		sourceFile: string
 	): BacklinkHighlight[] {
 		try {
-			const parsed = JSON.parse(content);
+			const parsed: unknown = JSON.parse(content);
 			const results: BacklinkHighlight[] = [];
 
 			for (const card of this.extractCardsFromJson(parsed)) {
@@ -2931,7 +2885,8 @@ export class EpubBacklinkHighlightService {
 			}
 
 			return results;
-		} catch (_e) {
+		} catch (error) {
+			void error;
 			logger.debug("[EpubBacklinkHighlightService] Failed to parse card json:", sourceFile);
 			return [];
 		}
@@ -3359,7 +3314,7 @@ export class EpubBacklinkHighlightService {
 			}
 
 			if (this.isJsonCardLikeObject(current)) {
-				cards.push(current as JsonCardLike);
+				cards.push(current);
 			}
 
 			for (const value of Object.values(current as Record<string, unknown>)) {
@@ -3391,7 +3346,7 @@ export class EpubBacklinkHighlightService {
 				this.isJsonCardLikeObject(current)
 			) {
 				entries.push({
-					card: current as JsonCardLike,
+					card: current,
 					container,
 					key,
 				});
@@ -3430,7 +3385,7 @@ export class EpubBacklinkHighlightService {
 		if (!Object.prototype.hasOwnProperty.call(entry.container, entry.key)) {
 			return false;
 		}
-		delete (entry.container as Record<string, unknown>)[entry.key];
+		delete entry.container[entry.key];
 		return true;
 	}
 
@@ -3486,8 +3441,10 @@ export class EpubBacklinkHighlightService {
 					? candidate.lastUpdated
 					: new Date().toISOString(),
 			entries:
-				candidate.entries && typeof candidate.entries === "object"
-					? (candidate.entries as Record<string, EpubBacklinkHighlightsCacheEntry>)
+				candidate.entries &&
+				typeof candidate.entries === "object" &&
+				!Array.isArray(candidate.entries)
+					? candidate.entries
 					: {},
 			...(normalizedSourceIndex ? { sourceIndex: normalizedSourceIndex } : {}),
 		};
@@ -3811,7 +3768,6 @@ export class EpubBacklinkHighlightService {
 		excerptId?: string,
 		sourceMarkdownPath?: string
 	): string {
-		const normalizedTargetCfi = EpubLinkService.normalizeCfi(cfiRange);
 		return this.updateCalloutAppearance(
 			content,
 			cfiRange,
@@ -3949,7 +3905,7 @@ export class EpubBacklinkHighlightService {
 
 	private async processVaultJsonFile(
 		sourcePath: string,
-		mutator: (parsed: any) => any | null
+		mutator: (parsed: unknown) => unknown | null
 	): Promise<boolean> {
 		const file = this.app.vault.getAbstractFileByPath(sourcePath);
 		if (!(file && this.isTFile(file))) {
@@ -3957,7 +3913,7 @@ export class EpubBacklinkHighlightService {
 		}
 
 		const content = await this.readVaultFileText(file);
-		const parsed = JSON.parse(content);
+		const parsed: unknown = JSON.parse(content);
 		const updatedParsed = mutator(parsed);
 		if (!updatedParsed) {
 			return false;
@@ -4011,24 +3967,23 @@ export class EpubBacklinkHighlightService {
 	}
 
 	private getOpenMarkdownViewsForPath(sourcePath: string): OpenMarkdownViewLike[] {
-		const getLeavesOfType = (this.app.workspace as any)?.getLeavesOfType;
-		if (typeof getLeavesOfType !== "function") {
-			return [];
-		}
-
 		const normalizedSourcePath = normalizePath(sourcePath);
-		return getLeavesOfType
-			.call(this.app.workspace, "markdown")
-			.map((leaf: any) => leaf?.view as OpenMarkdownViewLike | undefined)
-			.filter((view: OpenMarkdownViewLike | undefined): view is OpenMarkdownViewLike => {
-				if (!view) {
+		return this.app.workspace
+			.getLeavesOfType("markdown")
+			.map((leaf) => leaf.view)
+			.filter((view): view is OpenMarkdownViewLike => {
+				if (!view || typeof view !== "object") {
 					return false;
 				}
-				const path = typeof view?.file?.path === "string" ? normalizePath(view.file.path) : "";
+				const markdownView = view as OpenMarkdownViewLike;
+				const path =
+					typeof markdownView.file?.path === "string"
+						? normalizePath(markdownView.file.path)
+						: "";
 				return (
 					path === normalizedSourcePath &&
-					typeof view.editor?.getValue === "function" &&
-					typeof view.editor?.setValue === "function"
+					typeof markdownView.editor?.getValue === "function" &&
+					typeof markdownView.editor?.setValue === "function"
 				);
 			});
 	}
@@ -4071,7 +4026,7 @@ export class EpubBacklinkHighlightService {
 			JSON.parse(raw);
 			return raw;
 		} catch (error) {
-			const recovered = await safeReadJson(
+			const recovered = await safeReadJson<unknown>(
 				this.app.vault.adapter as {
 					read: (path: string) => Promise<string>;
 					exists: (path: string) => Promise<boolean>;
@@ -4251,7 +4206,7 @@ export class EpubBacklinkHighlightService {
 		}
 
 		try {
-			const parsed = JSON.parse(content);
+			const parsed: unknown = JSON.parse(content);
 			for (const card of this.extractCardsFromJson(parsed)) {
 				if (this.textMayReferenceTarget(String(card.content || ""), targetIdentity)) {
 					return true;

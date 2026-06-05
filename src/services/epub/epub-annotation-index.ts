@@ -84,10 +84,10 @@ export class EpubAnnotationIndexService {
 			this.warmedBookPaths.clear();
 		}
 		if (this.bookshelfWarmupTimer) {
-			clearTimeout(this.bookshelfWarmupTimer);
+			window.clearTimeout(this.bookshelfWarmupTimer);
 		}
 		this.cancelled = false;
-		this.bookshelfWarmupTimer = setTimeout(() => {
+		this.bookshelfWarmupTimer = window.setTimeout(() => {
 			this.bookshelfWarmupTimer = null;
 			void this.warmBookshelfMembers();
 		}, delayMs);
@@ -96,7 +96,7 @@ export class EpubAnnotationIndexService {
 	cancel(): void {
 		this.cancelled = true;
 		if (this.bookshelfWarmupTimer) {
-			clearTimeout(this.bookshelfWarmupTimer);
+			window.clearTimeout(this.bookshelfWarmupTimer);
 			this.bookshelfWarmupTimer = null;
 		}
 	}
@@ -325,7 +325,7 @@ export class EpubAnnotationIndexService {
 }
 
 function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+	return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 export function getEpubAnnotationIndexService(app: App): EpubAnnotationIndexService {

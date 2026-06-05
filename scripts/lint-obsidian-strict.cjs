@@ -30,6 +30,21 @@ async function main() {
         files: ["src/**/*.ts"],
         rules: STRICT_RULES,
       },
+      {
+        // Vendor files are @ts-nocheck third-party code; keep them out of strict audit.
+        files: ["src/services/epub/vendor/**/*.ts"],
+        rules: {
+          "@typescript-eslint/no-unsafe-assignment": "off",
+          "@typescript-eslint/no-unsafe-return": "off",
+          "@typescript-eslint/no-unsafe-member-access": "off",
+          "@typescript-eslint/no-unsafe-call": "off",
+          "@typescript-eslint/no-unsafe-argument": "off",
+          "@typescript-eslint/no-unnecessary-type-assertion": "off",
+          "@typescript-eslint/no-unsafe-enum-comparison": "off",
+          "@typescript-eslint/await-thenable": "off",
+          "@typescript-eslint/no-deprecated": "off",
+        },
+      },
     ],
     errorOnUnmatchedPattern: false,
   });
@@ -106,7 +121,7 @@ async function main() {
     console.log('Use "npm run lint:obsidian:strict -- --verbose" to inspect every warning.');
   }
 
-  process.exit(summary.errors > 0 ? 1 : 0);
+  process.exit(summary.errors > 0 || summary.warnings > 0 ? 1 : 0);
 }
 
 main().catch((error) => {

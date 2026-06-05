@@ -1,5 +1,10 @@
 import { TFile } from "obsidian";
 import type { App, TAbstractFile, WorkspaceLeaf } from "obsidian";
+import {
+	focusWorkspaceLeaf,
+	getLeafViewFile,
+	iterateAllWorkspaceLeaves,
+} from "./obsidian-workspace-utils";
 
 function unwrapLinkText(linkText: string): string {
 	return (
@@ -17,34 +22,16 @@ function getLinkTargetPath(linkText: string): string {
 }
 
 function collectAllLeaves(app: App): WorkspaceLeaf[] {
-	const workspace = app.workspace as any;
 	const leaves: WorkspaceLeaf[] = [];
-
-	if (typeof workspace.iterateAllLeaves === "function") {
-		workspace.iterateAllLeaves((leaf: WorkspaceLeaf) => {
-			leaves.push(leaf);
-		});
-		return leaves;
-	}
-
-	const fallbackTypes = ["markdown", "pdf", "canvas", "image", "audio", "video", "media"];
-	const seen = new Set<WorkspaceLeaf>();
-
-	for (const type of fallbackTypes) {
-		for (const leaf of app.workspace.getLeavesOfType(type)) {
-			if (!seen.has(leaf)) {
-				seen.add(leaf);
-				leaves.push(leaf);
-			}
-		}
-	}
-
+	iterateAllWorkspaceLeaves(app, (leaf) => {
+		leaves.push(leaf);
+	});
 	return leaves;
 }
 
 export function findLeafByFile(app: App, file: TFile): WorkspaceLeaf | null {
 	for (const leaf of collectAllLeaves(app)) {
-		const leafFile = (leaf.view as any)?.file;
+		const leafFile = getLeafViewFile(leaf);
 		if (leafFile?.path === file.path) {
 			return leaf;
 		}
@@ -54,19 +41,7 @@ export function findLeafByFile(app: App, file: TFile): WorkspaceLeaf | null {
 }
 
 export function revealLeaf(app: App, leaf: WorkspaceLeaf, focus = true): void {
-	const workspace = app.workspace as any;
-
-	try {
-		if (typeof workspace.setActiveLeaf === "function") {
-			try {
-				workspace.setActiveLeaf(leaf, { focus });
-			} catch {
-				workspace.setActiveLeaf(leaf, focus);
-			}
-		}
-	} catch {}
-
-	void app.workspace.revealLeaf(leaf);
+	focusWorkspaceLeaf(app, leaf, focus);
 }
 
 function resolveLinkFile(app: App, linkText: string, contextPath: string): TFile | null {

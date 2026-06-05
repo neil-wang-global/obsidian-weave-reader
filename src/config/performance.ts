@@ -146,7 +146,7 @@ export class PerformanceMonitor {
 		this.isMonitoring = false;
 
 		if (this.monitoringInterval) {
-			clearInterval(this.monitoringInterval);
+			window.clearInterval(this.monitoringInterval);
 			this.monitoringInterval = null;
 		}
 

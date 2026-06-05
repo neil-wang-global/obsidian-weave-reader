@@ -114,11 +114,62 @@ export function parseEpubSourceInfo(content: string): {
 	}
 }
 
+export type YAMLScalar = string | number | boolean;
+export type YAMLValue = YAMLScalar | YAMLValue[];
+
 /**
  * YAML frontmatter 原始数据
  */
 export interface YAMLFrontmatter {
-	[key: string]: any;
+	[key: string]: YAMLValue | undefined;
+}
+
+function readOptionalString(value: YAMLValue | undefined): string | undefined {
+	return typeof value === "string" ? value : undefined;
+}
+
+function readOptionalStringArray(value: YAMLValue | undefined): string[] | undefined {
+	if (value === undefined || value === null) {
+		return undefined;
+	}
+	if (typeof value === "string") {
+		return [value];
+	}
+	if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+		return value;
+	}
+	return undefined;
+}
+
+function readOptionalCardType(value: YAMLValue | undefined): CardYAMLType | undefined {
+	const candidates: CardYAMLType[] = [
+		"basic",
+		"cloze",
+		"choice",
+		"code",
+		"progressive-parent",
+		"progressive-child",
+	];
+	return typeof value === "string" && candidates.includes(value as CardYAMLType)
+		? (value as CardYAMLType)
+		: undefined;
+}
+
+function readOptionalCardDifficulty(value: YAMLValue | undefined): CardYAMLDifficulty | undefined {
+	const candidates: CardYAMLDifficulty[] = ["easy", "medium", "hard"];
+	return typeof value === "string" && candidates.includes(value as CardYAMLDifficulty)
+		? (value as CardYAMLDifficulty)
+		: undefined;
+}
+
+function collectSourceStringValues(value: YAMLValue | undefined): string[] {
+	if (typeof value === "string") {
+		return value.trim() ? [value] : [];
+	}
+	if (Array.isArray(value)) {
+		return value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+	}
+	return [];
 }
 
 // ===== 核心解析函数 =====
@@ -211,7 +262,7 @@ function parseYAMLString(yaml: string): YAMLFrontmatter {
  * @param value 原始值字符串
  * @returns 解析后的值
  */
-function parseYAMLValue(value: string): any {
+function parseYAMLValue(value: string): YAMLValue {
 	const normalizedValue = unquoteString(value);
 
 	// 处理带引号的字符串
@@ -277,9 +328,13 @@ function unquoteString(value: string): string {
  * @param key 属性名
  * @returns 属性值，不存在则返回 undefined
  */
-export function getCardProperty<T = any>(content: string, key: string): T | undefined {
+export function getCardProperty<T extends YAMLValue = YAMLValue>(
+	content: string,
+	key: string
+): T | undefined {
 	const yaml = parseYAMLFromContent(content);
-	return yaml[key] as T | undefined;
+	const value = yaml[key];
+	return value === undefined ? undefined : (value as T);
 }
 
 /**
@@ -297,13 +352,13 @@ export function getCardMetadata(content: string): CardYAMLMetadata {
 			: undefined;
 
 	return {
-		we_source: yaml.we_source,
-		we_block: yaml.we_block,
+		we_source: readOptionalStringArray(yaml.we_source) ?? readOptionalString(yaml.we_source),
+		we_block: readOptionalString(yaml.we_block),
 		we_refs: normalizeToArray(yaml.we_refs),
 		we_decks: normalizeToArray(yaml.we_decks),
 		we_priority: typeof yaml.we_priority === "number" ? yaml.we_priority : undefined,
-		we_type: yaml.we_type,
-		we_difficulty: yaml.we_difficulty,
+		we_type: readOptionalCardType(yaml.we_type),
+		we_difficulty: readOptionalCardDifficulty(yaml.we_difficulty),
 		created,
 		tags: normalizeToArray(yaml.tags),
 	};
@@ -335,7 +390,7 @@ function normalizeLegacyCreatedField(yaml: YAMLFrontmatter): YAMLFrontmatter {
  * @param value 可能是数组或单个值
  * @returns 数组
  */
-function normalizeToArray(value: any): string[] | undefined {
+function normalizeToArray(value: YAMLValue | undefined): string[] | undefined {
 	if (value === undefined || value === null) {
 		return undefined;
 	}
@@ -354,7 +409,7 @@ function normalizeToArray(value: any): string[] | undefined {
  * @param value 属性值（undefined 表示删除该属性）
  * @returns 更新后的内容
  */
-export function setCardProperty(content: string, key: string, value: any): string {
+export function setCardProperty(content: string, key: string, value: YAMLValue | undefined): string {
 	const yaml = parseYAMLFromContent(content);
 
 	if (value === undefined) {
@@ -471,7 +526,7 @@ function stringifyYAML(yaml: YAMLFrontmatter): string {
  * @param value 值
  * @returns 格式化的 YAML 行
  */
-function formatYAMLLine(key: string, value: any): string {
+function formatYAMLLine(key: string, value: YAMLValue): string {
 	if (Array.isArray(value)) {
 		if (value.length === 0) {
 			return `${key}: []`;
@@ -587,8 +642,12 @@ export function createContentWithMetadata(metadata: CardYAMLMetadata, body: stri
 	if (metadata.we_priority !== undefined) yaml.we_priority = metadata.we_priority;
 	if (metadata.we_type) yaml.we_type = metadata.we_type;
 	if (metadata.we_difficulty) yaml.we_difficulty = metadata.we_difficulty;
-	if (metadata.created || metadata.we_created) {
-		yaml.created = metadata.created || metadata.we_created;
+	const legacyCreated =
+		"we_created" in metadata
+			? (metadata as { we_created?: string }).we_created
+			: undefined;
+	if (metadata.created || legacyCreated) {
+		yaml.created = metadata.created || legacyCreated;
 	}
 	if (metadata.tags && metadata.tags.length > 0) yaml.tags = metadata.tags;
 
@@ -607,7 +666,10 @@ export function createContentWithMetadata(metadata: CardYAMLMetadata, body: stri
  * @param body 正文内容
  * @returns 完整内容（含YAML frontmatter）
  */
-export function buildContentWithYAML(yamlData: Record<string, any>, body: string): string {
+export function buildContentWithYAML(
+	yamlData: Record<string, YAMLValue | null | undefined>,
+	body: string
+): string {
 	const filtered: YAMLFrontmatter = {};
 	for (const [key, value] of Object.entries(yamlData)) {
 		if (value !== undefined && value !== null && value !== "") {
@@ -707,8 +769,8 @@ export function parseSourceInfo(content: string): SourceInfo {
 		let sourceBlock: string | undefined;
 
 		// 1. 优先从 we_source 解析（支持合并格式 ![[文档#^blockId]]）
-		if (yaml.we_source) {
-			const sourceValues = Array.isArray(yaml.we_source) ? yaml.we_source : [yaml.we_source];
+		const sourceValues = collectSourceStringValues(yaml.we_source);
+		if (sourceValues.length > 0) {
 			for (const sourceValue of sourceValues) {
 				if (typeof sourceValue !== "string" || !sourceValue.trim()) {
 					continue;
@@ -725,8 +787,8 @@ export function parseSourceInfo(content: string): SourceInfo {
 		}
 
 		// 2. 兼容旧版：从 we_block 补充块ID（如果 we_source 中没有）
-		if (!sourceBlock && yaml.we_block) {
-			const blockValue = Array.isArray(yaml.we_block) ? yaml.we_block[0] : yaml.we_block;
+		if (!sourceBlock) {
+			const blockValue = collectSourceStringValues(yaml.we_block)[0];
 			if (blockValue) {
 				sourceBlock = parseBlockId(blockValue);
 
@@ -739,11 +801,11 @@ export function parseSourceInfo(content: string): SourceInfo {
 
 		// 3. 解析关联文档列表
 		let refs: string[] | undefined;
-		if (yaml.we_refs) {
-			const refsArray = Array.isArray(yaml.we_refs) ? yaml.we_refs : [yaml.we_refs];
+		const refsArray = collectSourceStringValues(yaml.we_refs);
+		if (refsArray.length > 0) {
 			refs = refsArray
-				.map((ref: string) => parseObsidianLink(ref))
-				.filter((ref: string | undefined): ref is string => !!ref);
+				.map((ref) => parseObsidianLink(ref))
+				.filter((ref): ref is string => !!ref);
 			if (refs.length === 0) refs = undefined;
 		}
 
@@ -809,7 +871,9 @@ export function parseObsidianLink(link: string): string | undefined {
 
 		try {
 			docName = decodeURIComponent(docName);
-		} catch {}
+		} catch {
+			/* ignore */
+		}
 
 		const hasKnownNonMarkdownExtension =
 			/\.(canvas|excalidraw(?:\.md)?|pdf|epub|png|jpe?g|gif|webp|svg|bmp|tiff|mp3|wav|ogg|flac|m4a|mp4|mov|avi|webm|txt|docx?)$/i.test(
@@ -872,19 +936,10 @@ export function migrateSourceFields(content: string): { content: string; migrate
 			return { content, migrated: false };
 		}
 
-		const sourceValues = Array.isArray(yaml.we_source)
-			? yaml.we_source
-			: yaml.we_source
-			? [yaml.we_source]
-			: [];
-		const firstSourceIndex = sourceValues.findIndex(
-			(value): value is string => typeof value === "string" && value.trim().length > 0
-		);
+		const sourceValues = collectSourceStringValues(yaml.we_source);
+		const firstSourceIndex = sourceValues.findIndex((value) => value.trim().length > 0);
 		const sourceValue = firstSourceIndex >= 0 ? sourceValues[firstSourceIndex] : undefined;
-		const blockValues = Array.isArray(yaml.we_block) ? yaml.we_block : [yaml.we_block];
-		const blockValue = blockValues.find(
-			(value): value is string => typeof value === "string" && value.trim().length > 0
-		);
+		const blockValue = collectSourceStringValues(yaml.we_block)[0];
 
 		// 如果任一 we_source 已包含块ID，只需删除 we_block
 		if (
@@ -926,7 +981,7 @@ export function migrateSourceFields(content: string): { content: string; migrate
 		// 更新 YAML
 		const { we_block: _removedWeBlock, ...newYaml } = yaml;
 		if (Array.isArray(yaml.we_source)) {
-			const nextSourceValues = [...sourceValues];
+			const nextSourceValues: string[] = [...sourceValues];
 			if (firstSourceIndex >= 0) {
 				nextSourceValues[firstSourceIndex] = mergedSource;
 			} else {

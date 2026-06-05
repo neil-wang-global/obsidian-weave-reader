@@ -49,8 +49,12 @@ jobs:
         run: npm run lint:check
         continue-on-error: false
 
-      - name: Run Obsidian ESLint
+      - name: Run Obsidian community lint
         run: npm run lint:obsidian
+        continue-on-error: false
+
+      - name: Run Obsidian strict audit
+        run: npm run lint:obsidian:strict
         continue-on-error: false
       
       - name: Check Svelte 5 Compliance

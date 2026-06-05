@@ -4,7 +4,6 @@ import { EPUB_RUNTIME } from "./epub-runtime";
 import { PremiumFeatureGuard, PREMIUM_FEATURES } from "../premium/PremiumFeatureGuard";
 import { i18n } from "../../utils/i18n";
 import { isFreeBookFormat } from "./book-format";
-import { resolveEpubHost } from "./epub-host";
 
 export interface EpubFeatureTierPreviewItem {
 	title: string;

@@ -3,6 +3,7 @@ import type {
 	FoliateResolvedTarget,
 	FoliateVaultPublicationParser,
 } from "./FoliateVaultPublicationParser";
+import { domInstanceOf } from "../../utils/dom-instance-of";
 import { logger } from "../../utils/logger";
 
 function logFootnoteDiag(message: string, ...args: unknown[]): void {
@@ -524,10 +525,10 @@ export class FootnotePreviewResolver {
 		if (!container) {
 			return null;
 		}
-		if ((container as Node).nodeType === 1) {
-			return container as Element;
+		if (domInstanceOf(container, Element)) {
+			return container;
 		}
-		return (container as Node).parentElement ?? null;
+		return container.parentElement ?? null;
 	}
 
 	private extractNormalizedFootnoteTextFromRange(range: Range | null): string {
@@ -536,7 +537,7 @@ export class FootnotePreviewResolver {
 		}
 		try {
 			const fragment = range.cloneContents();
-			const ownerDocument = range.commonAncestorContainer.ownerDocument || document;
+			const ownerDocument = range.commonAncestorContainer.ownerDocument || activeDocument;
 			const container = ownerDocument.createElement("div");
 			container.appendChild(fragment);
 			container.querySelectorAll(FOOTNOTE_BACKREF_SELECTOR).forEach((element) => element.remove());
@@ -617,7 +618,10 @@ export class FootnotePreviewResolver {
 	}
 
 	private getNormalizedFootnoteElementText(element: Element): string {
-		const clone = element.cloneNode(true) as HTMLElement;
+		const clone = element.cloneNode(true);
+		if (!domInstanceOf(clone, Element)) {
+			return this.normalizeFootnotePreviewText(element.textContent);
+		}
 		clone.querySelectorAll(FOOTNOTE_BACKREF_SELECTOR).forEach((entry) => entry.remove());
 		return this.normalizeFootnotePreviewText(clone.textContent);
 	}
@@ -981,7 +985,7 @@ export class FootnotePreviewResolver {
 	private withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutLabel: string): Promise<T> {
 		return new Promise<T>((resolve, reject) => {
 			let settled = false;
-			const timeoutHandle = setTimeout(() => {
+			const timeoutHandle = window.setTimeout(() => {
 				if (settled) {
 					return;
 				}
@@ -994,7 +998,7 @@ export class FootnotePreviewResolver {
 						return;
 					}
 					settled = true;
-					clearTimeout(timeoutHandle);
+					window.clearTimeout(timeoutHandle);
 					resolve(value);
 				})
 				.catch((error) => {
@@ -1002,7 +1006,7 @@ export class FootnotePreviewResolver {
 						return;
 					}
 					settled = true;
-					clearTimeout(timeoutHandle);
+					window.clearTimeout(timeoutHandle);
 					reject(error);
 				});
 		});
@@ -1060,7 +1064,7 @@ export class FootnotePreviewController {
 			options?.rectOverride
 		);
 		let timeoutTriggered = false;
-		const timeoutHandle = setTimeout(() => {
+		const timeoutHandle = window.setTimeout(() => {
 			timeoutTriggered = true;
 			const href = anchor.getAttribute("href") || "";
 			logFootnoteDiag(
@@ -1073,7 +1077,7 @@ export class FootnotePreviewController {
 		void this.deps
 			.resolvePreviewInfo(doc, anchor, options?.rectOverride)
 			.then((info) => {
-				clearTimeout(timeoutHandle);
+				window.clearTimeout(timeoutHandle);
 				const href = anchor.getAttribute("href") || "";
 				logFootnoteDiag(
 					`Preview payload resolved href=${href} hasInfo=${String(Boolean(info))} textLength=${String(
@@ -1086,7 +1090,7 @@ export class FootnotePreviewController {
 				this.notifyPreviewIfCurrent(requestToken, info || timeoutInfo || null);
 			})
 			.catch((error) => {
-				clearTimeout(timeoutHandle);
+				window.clearTimeout(timeoutHandle);
 				const href = anchor.getAttribute("href") || "";
 				logFootnoteDiag(`Preview payload failed href=${href}`, error);
 				if (!timeoutTriggered) {

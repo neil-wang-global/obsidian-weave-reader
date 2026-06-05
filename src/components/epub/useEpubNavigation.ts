@@ -1,7 +1,6 @@
 import type { BookLocateIntent, PendingLocateState } from "../../services/navigation/navigation-intent";
 import { bookLocateFromPending } from "../../services/navigation/navigation-intent";
 import type { EpubReaderEngine } from "../../services/epub";
-import type { FlashStyle } from "../../services/epub";
 
 export interface EpubNavigationControllerOptions {
 	getReaderReady: () => boolean;
@@ -92,7 +91,7 @@ export function createEpubNavigationController(options: EpubNavigationController
 		if (fromLocate) {
 			requestBookLocate({
 				...fromLocate,
-				flashStyle: (fromLocate.flashStyle ?? "highlight") as FlashStyle,
+				flashStyle: fromLocate.flashStyle ?? "highlight",
 				showLocateOverlay: fromLocate.showLocateOverlay ?? true,
 			});
 			return;

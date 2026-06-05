@@ -233,7 +233,7 @@ function createBinaryReadAttempts(app: App, file: TFile): BinaryReadAttempt[] {
 }
 
 function readArrayBufferResource(resourcePath: string): Promise<ArrayBuffer> {
-	if (shouldPreferFetchForResourceUrl(resourcePath) && typeof globalThis.fetch === "function") {
+	if (shouldPreferFetchForResourceUrl(resourcePath) && typeof window.fetch === "function") {
 		return readArrayBufferResourceViaFetch(resourcePath);
 	}
 
@@ -269,11 +269,11 @@ function readArrayBufferResource(resourcePath: string): Promise<ArrayBuffer> {
 }
 
 async function readArrayBufferResourceViaFetch(resourcePath: string): Promise<ArrayBuffer> {
-	if (typeof globalThis.fetch !== "function") {
+	if (typeof window.fetch !== "function") {
 		throw new Error("Failed to load binary resource");
 	}
 
-	const response = await globalThis.fetch(resourcePath);
+	const response = await window.fetch(resourcePath);
 	if (!response.ok) {
 		throw new Error(`Failed to load binary resource: ${response.status} ${response.statusText}`);
 	}

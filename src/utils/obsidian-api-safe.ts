@@ -5,6 +5,7 @@ import { logger } from "../utils/logger";
  */
 
 import { Notice } from "obsidian";
+import { readNoticeShownState } from "../types/obsidian-extensions";
 import { untrack } from "svelte";
 
 /**
@@ -57,11 +58,9 @@ export class SafeNotice {
 				untrack(() => {
 					this.notice?.hide();
 				});
-			} else if (this.notice && "isShown" in this.notice) {
-				// 尝试替代方案：检查 isShown 属性
-				const isShown = (this.notice as any).isShown;
-				if (typeof isShown === "boolean" && isShown) {
-					// 如果 Notice 仍然显示，尝试通过 DOM 操作隐藏
+			} else {
+				const isShown = readNoticeShownState(this.notice);
+				if (isShown === true) {
 					this.hideViaDom();
 				}
 			}
@@ -81,7 +80,7 @@ export class SafeNotice {
 	private hideViaDom(): void {
 		try {
 			// 查找并隐藏相关的 Notice DOM 元素
-			const noticeElements = document.querySelectorAll(".notice");
+			const noticeElements = activeDocument.querySelectorAll(".notice");
 			noticeElements.forEach((_element) => {
 				const htmlElement = _element as HTMLElement;
 				if (htmlElement.style.display !== "none") {
@@ -102,14 +101,9 @@ export class SafeNotice {
 		}
 
 		try {
-			// 安全检查 isShown 属性/方法
-			if ("isShown" in this.notice) {
-				const isShown = (this.notice as any).isShown;
-				if (typeof isShown === "function") {
-					return untrack(() => isShown.call(this.notice));
-				} else if (typeof isShown === "boolean") {
-					return isShown;
-				}
+			const isShown = readNoticeShownState(this.notice);
+			if (isShown !== null) {
+				return isShown;
 			}
 
 			// 如果无法确定，假设仍在显示
@@ -152,7 +146,7 @@ export function safeOpenSettings(app: any, tabId?: string): void {
 
 				if (tabId && typeof app.setting.openTabById === "function") {
 					// 延迟打开特定标签，确保设置页面已加载
-					setTimeout(() => {
+					window.setTimeout(() => {
 						try {
 							app.setting.openTabById(tabId);
 						} catch (tabError) {
@@ -210,11 +204,11 @@ export function safeEventHandler<T extends Event>(handler: (event: T) => void): 
 export function cleanupCompatibilityIssues(): void {
 	try {
 		// 清理可能的错误标记
-		const errorElements = document.querySelectorAll("[data-svelte-error]");
+		const errorElements = activeDocument.querySelectorAll("[data-svelte-error]");
 		errorElements.forEach((el) => el.removeAttribute("data-svelte-error"));
 
 		// 清理可能的隐藏 Notice
-		const hiddenNotices = document.querySelectorAll('.notice[style*="display: none"]');
+		const hiddenNotices = activeDocument.querySelectorAll('.notice[style*="display: none"]');
 		hiddenNotices.forEach((el) => el.remove());
 
 		// 强制垃圾回收（如果可用）

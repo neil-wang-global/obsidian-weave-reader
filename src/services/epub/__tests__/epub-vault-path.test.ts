@@ -59,10 +59,11 @@ describe("epub-vault-path", () => {
 	});
 
 	it("treats trash and dot-folders as non-visible vault book paths", () => {
-		expect(isVisibleVaultBookPath("Books/demo.epub")).toBe(true);
-		expect(isVisibleVaultBookPath(".trash/demo.epub")).toBe(false);
-		expect(isVisibleVaultBookPath(".obsidian/plugins/demo.epub")).toBe(false);
-		expect(isVisibleVaultBookPath("Books/.hidden/demo.epub")).toBe(false);
+		const configDir = ".obsidian";
+		expect(isVisibleVaultBookPath("Books/demo.epub", configDir)).toBe(true);
+		expect(isVisibleVaultBookPath(".trash/demo.epub", configDir)).toBe(false);
+		expect(isVisibleVaultBookPath(".obsidian/plugins/demo.epub", configDir)).toBe(false);
+		expect(isVisibleVaultBookPath("Books/.hidden/demo.epub", configDir)).toBe(false);
 	});
 
 	it("joins adapter.list entries under the current folder", () => {

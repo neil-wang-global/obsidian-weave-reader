@@ -8,7 +8,6 @@ import {
 import { DirectoryUtils } from "../../utils/directory-utils";
 import { logger } from "../../utils/logger";
 import {
-	DEFAULT_MOBILE_READER_SETTINGS,
 	DEFAULT_READER_SETTINGS,
 	getDefaultEpubReaderSettings,
 	normalizeEpubReaderSettingsForDevice,
@@ -38,7 +37,6 @@ import type {
 	ReadingPosition,
 	ReadingStats,
 	EpubStrikethroughDisplayMode,
-	Highlight,
 } from "./types";
 import { getEpubRuntime } from "./epub-runtime";
 
@@ -219,7 +217,7 @@ export class EpubStorageService {
 			if (shouldHydrateStates) {
 				await this.ensureBooksCacheHydrated();
 			}
-			return this._booksCache!;
+			return localBooks;
 		}
 		const legacyBooks = await this.readLegacyBooks();
 		const books = {
@@ -232,7 +230,7 @@ export class EpubStorageService {
 			if (shouldHydrateStates) {
 				await this.ensureBooksCacheHydrated();
 			}
-			return this._booksCache!;
+			return books;
 		}
 
 		this._booksCache = {};
@@ -687,7 +685,7 @@ export class EpubStorageService {
 				sourceFingerprint:
 					typeof entry.sourceFingerprint === "string" ? entry.sourceFingerprint : undefined,
 				legacySourceIds: this.normalizeLegacySourceIds(
-					(entry as Partial<EpubSourceRegistryEntry>).legacySourceIds,
+					entry.legacySourceIds,
 					String(entry.sourceId || "").trim()
 				),
 				sourceSize: typeof entry.sourceSize === "number" ? entry.sourceSize : undefined,
@@ -1039,7 +1037,9 @@ export class EpubStorageService {
 		const adapter = this.app.vault.adapter;
 		for (let attempt = 0; attempt < 2; attempt += 1) {
 			if (attempt > 0) {
-				await new Promise((resolve) => setTimeout(resolve, UNIFIED_LOCAL_DATA_PARSE_RETRY_DELAY_MS));
+				await new Promise((resolve) =>
+					window.setTimeout(resolve, UNIFIED_LOCAL_DATA_PARSE_RETRY_DELAY_MS)
+				);
 			}
 			try {
 				const content = await adapter.read(sourcePath);
@@ -1771,7 +1771,7 @@ export class EpubStorageService {
 			.filter(
 				(file) =>
 					this.isEpubFile(file) &&
-					isVisibleVaultBookPath(file.path) &&
+					isVisibleVaultBookPath(file.path, this.app.vault.configDir) &&
 					this.isPathWithinFolder(file.path, normalizedFolder)
 			)
 			.map((file) => normalizePath(file.path));
@@ -1927,7 +1927,9 @@ export class EpubStorageService {
 	private async filterExistingBookshelfEntries(
 		entries: EpubScanIndexEntry[]
 	): Promise<EpubScanIndexEntry[]> {
-		const visibleEntries = entries.filter((entry) => isVisibleVaultBookPath(entry.path));
+		const visibleEntries = entries.filter((entry) =>
+			isVisibleVaultBookPath(entry.path, this.app.vault.configDir)
+		);
 		const results = await Promise.all(
 			visibleEntries.map(async (entry) => ({
 				entry,
@@ -2478,12 +2480,8 @@ export class EpubStorageService {
 
 		try {
 			const binary = await adapter.readBinary(normalizedPath);
-			const input = binary instanceof Uint8Array ? binary : new Uint8Array(binary as ArrayBuffer);
-			const buffer = input.buffer.slice(
-				input.byteOffset,
-				input.byteOffset + input.byteLength
-			) as ArrayBuffer;
-			const digest = await crypto.subtle.digest("SHA-256", buffer);
+			const input = binary instanceof Uint8Array ? binary : new Uint8Array(binary);
+			const digest = await crypto.subtle.digest("SHA-256", input);
 			return Array.from(new Uint8Array(digest))
 				.map((value) => value.toString(16).padStart(2, "0"))
 				.join("");
@@ -3280,7 +3278,8 @@ export class EpubStorageService {
 	private async removeLocalBookState(bookId: string): Promise<void> {
 		await this.updateUnifiedLocalReaderData((localData) => {
 			if (localData.books) {
-				const { [bookId]: _removed, ...nextBooks } = localData.books;
+				const nextBooks = { ...localData.books };
+				delete nextBooks[bookId];
 				localData.books = nextBooks;
 			}
 		});
@@ -3307,7 +3306,8 @@ export class EpubStorageService {
 
 	private async deleteBook(bookId: string): Promise<void> {
 		const books = await this.loadBooks();
-		const { [bookId]: _removed, ...nextBooks } = books;
+		const nextBooks = { ...books };
+		delete nextBooks[bookId];
 		await this.writeBooksWithLock(nextBooks);
 
 		const bookDir = `${this.basePath}/${bookId}`;
@@ -3508,7 +3508,7 @@ export class EpubStorageService {
 		bookId = await this.resolveCanonicalBookId(bookId);
 		this._pendingProgress = { bookId, position, readingStats };
 		if (this._progressDebounceTimer) return;
-		this._progressDebounceTimer = setTimeout(async () => {
+		this._progressDebounceTimer = window.setTimeout(async () => {
 			this._progressDebounceTimer = null;
 			const pending = this._pendingProgress;
 			if (!pending) return;
@@ -3534,7 +3534,7 @@ export class EpubStorageService {
 
 	async flushPendingProgress(): Promise<void> {
 		if (this._progressDebounceTimer) {
-			clearTimeout(this._progressDebounceTimer);
+			window.clearTimeout(this._progressDebounceTimer);
 			this._progressDebounceTimer = null;
 		}
 		const pending = this._pendingProgress;
@@ -3594,7 +3594,8 @@ export class EpubStorageService {
 		if (stats.completedTime === undefined) {
 			return book;
 		}
-		const { completedTime: _completedTime, ...rest } = stats;
+		const rest = { ...stats };
+		delete rest.completedTime;
 		book.readingStats = normalizeReadingPaceStats(rest);
 		await this.writeBookState(book.id, {
 			currentPosition: book.currentPosition,
@@ -3676,7 +3677,7 @@ export class EpubStorageService {
 			.filter((item): item is ConcealedText => Boolean(item && typeof item === "object"))
 			.map((item) => ({
 				...item,
-				mode: this.normalizeConcealedTextMode((item as ConcealedText).mode),
+				mode: this.normalizeConcealedTextMode(item.mode),
 			}));
 	}
 

@@ -8,7 +8,36 @@ import {
 } from "../services/epub/epub-vault-path";
 import { epubActiveDocumentStore } from "../stores/epub-active-document-store";
 import { VIEW_TYPE_EPUB } from "../views/EpubView";
+import type { AppWithViewRegistry, ViewRegistryExtension } from "../types/obsidian-extensions";
+import { focusWorkspaceLeaf } from "./obsidian-workspace-utils";
 import { getLeafLocation } from "./view-location-utils";
+
+function getViewRegistry(app: App): ViewRegistryExtension | null {
+	return (app as App & AppWithViewRegistry).viewRegistry ?? null;
+}
+
+function readMapLikeValue<T>(
+	value: Map<string, T> | (Record<string, T> & { get?: (key: string) => T | undefined }) | undefined,
+	key: string
+): T | null {
+	if (!value || !key) {
+		return null;
+	}
+	if (value instanceof Map) {
+		return value.get(key) ?? null;
+	}
+	if (typeof value.get === "function") {
+		return value.get(key) ?? null;
+	}
+	return value[key] ?? null;
+}
+
+function hasMapLikeValue(
+	value: Map<string, unknown> | (Record<string, unknown> & { get?: (key: string) => unknown }) | undefined,
+	key: string
+): boolean {
+	return readMapLikeValue(value, key) != null;
+}
 
 const KNOWN_EPUB_VIEW_TYPES = Array.from(
 	new Set([
@@ -30,35 +59,17 @@ function readRegisteredViewTypeForExtension(app: App, extension: string): string
 	if (!normalizedExtension) {
 		return null;
 	}
-	const typeByExtension = (app as any)?.viewRegistry?.typeByExtension;
-	if (!typeByExtension) {
-		return null;
-	}
-	if (typeof typeByExtension.get === "function") {
-		return typeByExtension.get(normalizedExtension) ?? null;
-	}
-	if (typeof typeByExtension === "object") {
-		return typeByExtension[normalizedExtension] ?? null;
-	}
-	return null;
+	const typeByExtension = getViewRegistry(app)?.typeByExtension;
+	return readMapLikeValue(typeByExtension, normalizedExtension);
 }
 
 function isRegisteredViewType(app: App, viewType: string): boolean {
-	const registry = (app as any)?.viewRegistry;
+	const registry = getViewRegistry(app);
 	if (!registry || !viewType) {
 		return false;
 	}
 	const creators = registry.viewByType ?? registry.viewCreators ?? registry.views;
-	if (!creators) {
-		return false;
-	}
-	if (typeof creators.get === "function") {
-		return Boolean(creators.get(viewType));
-	}
-	if (typeof creators === "object") {
-		return Boolean(creators[viewType]);
-	}
-	return false;
+	return hasMapLikeValue(creators, viewType);
 }
 
 export function getAllOpenEpubLeaves(app: App): WorkspaceLeaf[] {
@@ -238,18 +249,11 @@ export async function openBookForSourceNavigation(
 		},
 	});
 
-	try {
-		if (typeof app.workspace.setActiveLeaf === "function") {
-			try {
-				app.workspace.setActiveLeaf(leaf, { focus });
-			} catch {
-				app.workspace.setActiveLeaf(leaf, { focus } as any);
-			}
-		}
-	} catch {
-		/* ignore focus failures */
+	if (focus) {
+		focusWorkspaceLeaf(app, leaf, focus);
+	} else {
+		void app.workspace.revealLeaf(leaf);
 	}
-	void app.workspace.revealLeaf(leaf);
 	return leaf;
 }
 

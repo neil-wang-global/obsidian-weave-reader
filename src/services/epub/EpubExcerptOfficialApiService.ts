@@ -1,4 +1,4 @@
-import { normalizePath } from "obsidian";
+import { normalizePath, type App } from "obsidian";
 import type { Card } from "../../data/epub-bridge-types";
 import { getLegacyWeavePlugin, type CompatiblePlugin } from "../../utils/plugin-access";
 import type {
@@ -21,7 +21,7 @@ export class EpubExcerptOfficialApiService implements EpubWeaveOfficialAPI {
 	private hostPlugin: CompatiblePlugin | null;
 
 	constructor(
-		private readonly app: any,
+		private readonly app: App,
 		options?: {
 			backlinkService?: EpubBacklinkHighlightService;
 			hostPlugin?: CompatiblePlugin | null;
@@ -29,7 +29,7 @@ export class EpubExcerptOfficialApiService implements EpubWeaveOfficialAPI {
 	) {
 		this.backlinkService =
 			options?.backlinkService ?? new EpubBacklinkHighlightService(this.app);
-		this.hostPlugin = options?.hostPlugin ?? getLegacyWeavePlugin(this.app as any);
+		this.hostPlugin = options?.hostPlugin ?? getLegacyWeavePlugin(this.app);
 	}
 
 	getInfo(): EpubWeaveOfficialAPIInfo {
@@ -178,7 +178,7 @@ export class EpubExcerptOfficialApiService implements EpubWeaveOfficialAPI {
 			return false;
 		}
 
-		const currentCard = (await storage.getCardByUUID(cardId)) as Card | null | undefined;
+		const currentCard = await storage.getCardByUUID(cardId);
 		if (!currentCard) {
 			return false;
 		}

@@ -5,7 +5,7 @@
 <div align="center">
 
 ![Weave EPUB Reader](https://img.shields.io/badge/Obsidian-EPUB%20Reader-8a5cf6?style=for-the-badge)
-![Min Obsidian](https://img.shields.io/badge/Obsidian-1.7.0+-purple?style=for-the-badge)
+![Min Obsidian](https://img.shields.io/badge/Obsidian-1.8.7+-purple?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange?style=for-the-badge)
 
 </div>
@@ -33,7 +33,7 @@
 
 各能力在 [基础体验与高级支持](#基础体验与高级支持) 中的划分见下表。
 
-最低 Obsidian 版本：**1.7.0**
+最低 Obsidian 版本：**1.8.7**
 
 ## 摘录笔记工作流
 
@@ -270,7 +270,7 @@ Getting started is light: put an EPUB in your vault, open it from the bookshelf,
 
 See [Essential experience and Premium support](#essential-experience-and-premium-support) for how capabilities are grouped.
 
-Minimum Obsidian version: **1.7.0**
+Minimum Obsidian version: **1.8.7**
 
 ## Excerpt and note workflows
 

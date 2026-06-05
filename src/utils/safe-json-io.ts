@@ -137,7 +137,6 @@ export async function safeReadJson<T = any>(
 		logger.error(`[SafeJsonIO] JSON 解析失败: ${filePath}`, parseError);
 
 		// 尝试从备份恢复
-		const backupPath = toBackupPath(filePath, app);
 		try {
 			const backupEntry = await readJsonBackup<T>(adapter, filePath, app);
 			if (backupEntry) {

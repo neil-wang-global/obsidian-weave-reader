@@ -1,6 +1,7 @@
 import { Notice, TFile, TFolder, type App, normalizePath } from "obsidian";
 import { i18n } from "../../utils/i18n";
 import { logger } from "../../utils/logger";
+import type { CanvasViewLike } from "../../types/obsidian-extensions";
 import { generateCardUUID } from "../identifier/WeaveIDGenerator";
 import { EpubLinkService } from "./EpubLinkService";
 import type {
@@ -362,7 +363,7 @@ export class EpubCanvasService {
 		try {
 			const canvasLeaves = app.workspace.getLeavesOfType("canvas");
 			for (const leaf of canvasLeaves) {
-				const canvasView = leaf.view as any;
+				const canvasView = leaf.view as CanvasViewLike;
 				if (!canvasView?.canvas) continue;
 
 				const filePath = canvasView.file?.path;
@@ -373,15 +374,28 @@ export class EpubCanvasService {
 					return;
 				}
 
-				const data = canvasView.canvas.getData?.();
+				const rawData = canvasView.canvas.getData?.();
+				const data =
+					rawData && typeof rawData === "object" && !Array.isArray(rawData)
+						? (rawData as CanvasData)
+						: null;
 				const nodes = Array.isArray(data?.nodes) ? data.nodes : [];
 				let selectedNode: string | null = null;
-				for (const item of Array.from(selection.values()) as Array<{ id?: string } | undefined>) {
+				for (const item of selection.values()) {
+					const itemRecord =
+						item && typeof item === "object" ? (item as Record<string, unknown>) : null;
+					const itemId = typeof itemRecord?.id === "string" ? itemRecord.id : null;
 					if (
-						typeof item?.id === "string" &&
-						nodes.some((node: CanvasNode) => node.id === item.id)
+						itemId &&
+						nodes.some((node) => {
+							const nodeRecord =
+								node && typeof node === "object"
+									? (node as unknown as Record<string, unknown>)
+									: null;
+							return typeof nodeRecord?.id === "string" && nodeRecord.id === itemId;
+						})
 					) {
-						selectedNode = item.id;
+						selectedNode = itemId;
 						break;
 					}
 				}
@@ -391,9 +405,12 @@ export class EpubCanvasService {
 				}
 
 				let parentNodeId: string | null = null;
-				if (data?.edges) {
-					const parentEdge = data.edges.find((e: CanvasEdge) => e.toNode === selectedNode);
-					if (parentEdge) {
+				if (Array.isArray(data?.edges)) {
+					const parentEdge = data.edges.find(
+						(edge): edge is CanvasEdge =>
+							Boolean(edge && typeof edge === "object") && edge.toNode === selectedNode
+					);
+					if (parentEdge && typeof parentEdge.fromNode === "string") {
 						parentNodeId = parentEdge.fromNode;
 					}
 				}

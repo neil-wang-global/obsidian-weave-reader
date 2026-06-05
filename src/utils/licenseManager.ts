@@ -6,6 +6,12 @@ import { logger } from "../utils/logger";
  */
 
 import { type App, Platform } from "obsidian";
+import type {
+	NavigatorConnectionExtension,
+	NavigatorDeviceMemoryExtension,
+	ObsidianGlobalApp,
+	WindowWithNodeRequire,
+} from "../types/obsidian-extensions";
 import {
 	CURRENT_PLUGIN_VERSION,
 	LICENSE_PUBLIC_KEY,
@@ -65,6 +71,7 @@ export class LicenseManager {
 	 */
 	private async generateDeviceFingerprint(): Promise<string> {
 		if (!this.app) {
+			// eslint-disable-next-line @typescript-eslint/no-deprecated -- legacy fallback when App is not injected yet
 			return this.generateDeviceFingerprintLegacy();
 		}
 		return generateStableDeviceFingerprint(this.app);
@@ -104,20 +111,20 @@ export class LicenseManager {
 		components.push(navigator.maxTouchPoints?.toString() || "0");
 
 		// 内存信息（如果可用）
-		const memory = (navigator as any).deviceMemory;
+		const memory = (navigator as NavigatorDeviceMemoryExtension).deviceMemory;
 		if (memory) {
 			components.push(`${memory}GB`);
 		}
 
 		// 网络信息（如果可用）
-		const connection = (navigator as any).connection;
+		const connection = (navigator as NavigatorConnectionExtension).connection;
 		if (connection) {
 			components.push(connection.effectiveType || "unknown");
 			components.push(connection.downlink?.toString() || "unknown");
 		}
 
 		// Obsidian 特有信息
-		const obsidianApp = (window as any).app;
+		const obsidianApp = (window as Window & { app?: ObsidianGlobalApp }).app;
 		if (obsidianApp) {
 			components.push(obsidianApp.appId || "obsidian");
 			// 移除 vault.adapter.path，避免路径变化触发设备变更
@@ -125,11 +132,18 @@ export class LicenseManager {
 
 		// 系统信息（如果可用）
 		try {
-			const os = (window as any).require?.("os");
+			const windowWithRequire = window as WindowWithNodeRequire;
+			const os = windowWithRequire.require?.("os") as
+				| {
+						platform?: () => string;
+						arch?: () => string;
+						hostname?: () => string;
+				  }
+				| undefined;
 			if (os) {
-				components.push(os.platform() || "unknown");
-				components.push(os.arch() || "unknown");
-				components.push(os.hostname() || "unknown");
+				components.push(os.platform?.() || "unknown");
+				components.push(os.arch?.() || "unknown");
+				components.push(os.hostname?.() || "unknown");
 			}
 		} catch {
 			components.push("no-os-info");
@@ -137,7 +151,7 @@ export class LicenseManager {
 
 		// Canvas指纹（轻量级）
 		try {
-			const canvas = document.createElement("canvas");
+			const canvas = activeDocument.createElement("canvas");
 			const ctx = canvas.getContext("2d");
 			if (ctx) {
 				ctx.textBaseline = "top";
@@ -151,13 +165,13 @@ export class LicenseManager {
 
 		// WebGL信息（如果可用）
 		try {
-			const canvas = document.createElement("canvas");
-			const gl = canvas.getContext("webgl") as WebGLRenderingContext | null;
+			const canvas = activeDocument.createElement("canvas");
+			const gl = canvas.getContext("webgl");
 			if (gl) {
-				const renderer = gl.getParameter(gl.RENDERER);
-				const vendor = gl.getParameter(gl.VENDOR);
-				components.push(renderer || "unknown-renderer");
-				components.push(vendor || "unknown-vendor");
+				const rendererUnknown: unknown = gl.getParameter(gl.RENDERER);
+				const vendorUnknown: unknown = gl.getParameter(gl.VENDOR);
+				components.push(typeof rendererUnknown === "string" ? rendererUnknown : "unknown-renderer");
+				components.push(typeof vendorUnknown === "string" ? vendorUnknown : "unknown-vendor");
 			}
 		} catch {
 			components.push("no-webgl");
@@ -165,7 +179,13 @@ export class LicenseManager {
 
 		// 音频上下文指纹（轻量级）
 		try {
-			const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+			const AudioContextCtor =
+				window.AudioContext ||
+				(window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+			if (!AudioContextCtor) {
+				throw new Error("AudioContext unavailable");
+			}
+			const audioContext = new AudioContextCtor();
 			const oscillator = audioContext.createOscillator();
 			const analyser = audioContext.createAnalyser();
 			const gainNode = audioContext.createGain();
@@ -183,7 +203,9 @@ export class LicenseManager {
 		}
 
 		// 插件和扩展检测（基础）
+		// eslint-disable-next-line @typescript-eslint/no-deprecated -- legacy browser fingerprint component for device id fallback
 		const plugins = Array.from(navigator.plugins || [])
+			// eslint-disable-next-line @typescript-eslint/no-deprecated -- plugin name is part of the legacy fingerprint hash
 			.map((p) => p.name)
 			.slice(0, 5);
 		components.push(plugins.join(",") || "no-plugins");
@@ -879,8 +901,21 @@ export class ActivationAttemptLimiter {
 	 */
 	private static getAttempts(): ActivationAttempt[] {
 		try {
-			const stored = this.app?.loadLocalStorage(this.STORAGE_KEY);
-			return stored ? JSON.parse(stored) : [];
+			const storedUnknown: unknown = this.app?.loadLocalStorage(this.STORAGE_KEY);
+			if (typeof storedUnknown !== "string" || !storedUnknown) {
+				return [];
+			}
+			const parsed: unknown = JSON.parse(storedUnknown);
+			if (!Array.isArray(parsed)) {
+				return [];
+			}
+			return parsed.filter(
+				(entry): entry is ActivationAttempt =>
+					Boolean(entry && typeof entry === "object") &&
+					typeof (entry as ActivationAttempt).timestamp === "number" &&
+					typeof (entry as ActivationAttempt).success === "boolean" &&
+					typeof (entry as ActivationAttempt).deviceFingerprint === "string"
+			);
 		} catch {
 			return [];
 		}
@@ -986,7 +1021,14 @@ export class ActivationCodeValidator {
 		// 检查数据部分是否为有效JSON
 		try {
 			const dataString = atob(dataBase64);
-			const data = JSON.parse(dataString);
+			const dataUnknown: unknown = JSON.parse(dataString);
+			if (!dataUnknown || typeof dataUnknown !== "object" || Array.isArray(dataUnknown)) {
+				return {
+					isValid: false,
+					error: "激活码数据不完整",
+				};
+			}
+			const data = dataUnknown as Record<string, unknown>;
 
 			// 检查必要字段
 			const requiredFields = ["userId", "productId", "licenseType", "expiresAt"];
@@ -1000,7 +1042,7 @@ export class ActivationCodeValidator {
 			}
 
 			// 检查产品ID（兼容更名前的旧产品ID）
-			if (!SUPPORTED_ACTIVATION_PRODUCT_IDS.has(data.productId)) {
+			if (!SUPPORTED_ACTIVATION_PRODUCT_IDS.has(String(data.productId))) {
 				return {
 					isValid: false,
 					error: "此激活码不适用于当前产品",

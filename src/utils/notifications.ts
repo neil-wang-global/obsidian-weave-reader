@@ -2,10 +2,10 @@ export function showNotification(
 	message: string,
 	type: "success" | "error" | "info" | "warning" = "info"
 ) {
-	const n = document.createElement("div");
+	const n = activeDocument.createElement("div");
 	n.className = `weave-notification notification-${type}`;
 
-	const icon = document.createElement("span");
+	const icon = activeDocument.createElement("span");
 	icon.className = "weave-notification-icon";
 
 	const iconMap = {
@@ -18,20 +18,20 @@ export function showNotification(
 	icon.textContent = iconMap[type] || iconMap.info;
 	n.appendChild(icon);
 
-	const textSpan = document.createElement("span");
+	const textSpan = activeDocument.createElement("span");
 	textSpan.textContent = message;
 	textSpan.className = "weave-flex-1";
 	n.appendChild(textSpan);
 
-	document.body.appendChild(n);
+	activeDocument.body.appendChild(n);
 
-	setTimeout(() => {
+	window.setTimeout(() => {
 		n.classList.add("is-visible");
 	}, 10);
 
-	setTimeout(() => {
+	window.setTimeout(() => {
 		n.classList.remove("is-visible");
-		setTimeout(() => {
+		window.setTimeout(() => {
 			if (n.parentNode) {
 				n.remove();
 			}

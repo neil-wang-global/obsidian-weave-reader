@@ -79,7 +79,7 @@ export function makePlainTextBook(options: {
 
 	const bookSections = sections.map((section, index) => ({
 		id: section.id,
-		cfi: EpubCfi.fake.fromIndex(index),
+		cfi: String(EpubCfi.fake.fromIndex(index)),
 		linear: "yes",
 		size: section.size,
 		load: () => loadSection(section),
@@ -146,7 +146,10 @@ function resolvePlainTextCfiTarget(
 		}
 		return {
 			index,
-			anchor: (doc: Document) => EpubCfi.toRange(doc, parsed),
+			anchor: (doc: Document): Range | null => {
+				const range = EpubCfi.toRange(doc, parsed) as unknown;
+				return range instanceof Range ? range : null;
+			},
 		};
 	} catch {
 		return null;
@@ -349,7 +352,7 @@ function escapeHtml(text: string): string {
 }
 
 function cssEscape(text: string): string {
-	const nativeEscape = (globalThis as { CSS?: { escape?: (value: string) => string } }).CSS?.escape;
+	const nativeEscape = (window as { CSS?: { escape?: (value: string) => string } }).CSS?.escape;
 	if (typeof nativeEscape === "function") {
 		return nativeEscape(text);
 	}

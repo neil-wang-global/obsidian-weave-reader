@@ -18,7 +18,7 @@
   import { PremiumFeatureGuard, PREMIUM_FEATURES } from "../../services/premium/PremiumFeatureGuard";
   import { tr } from "../../utils/i18n";
   import { getEpubBacklinkHighlightService } from "../../services/epub/epub-backlink-highlight-access";
-  import { scheduleEpubExcerptCacheWarmup } from "../../services/epub/epub-excerpt-cache-warmup";
+  import { scheduleEpubAnnotationIndexWarmup } from "../../services/epub/epub-annotation-index";
 
   interface Props {
     plugin: any;
@@ -427,7 +427,7 @@
           try {
             const service = getEpubBacklinkHighlightService(plugin.app);
             await service.rebuildHighlightIndexes();
-            scheduleEpubExcerptCacheWarmup(plugin.app, 2_000, { forceAll: true });
+            scheduleEpubAnnotationIndexWarmup(plugin.app, 2_000, { forceAll: true });
             showNotification(t("epub.settings.basic.rebuildHighlightIndexSuccess"), "success");
           } catch (error) {
             console.error("[EpubSettings] rebuild highlight index failed:", error);

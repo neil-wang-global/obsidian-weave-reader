@@ -78,10 +78,6 @@ export { EpubAnnotationService } from "./EpubAnnotationService";
 export { EpubBacklinkHighlightService } from "./EpubBacklinkHighlightService";
 export { getEpubBacklinkHighlightService } from "./epub-backlink-highlight-access";
 export {
-	scheduleEpubExcerptCacheWarmup,
-	warmEpubExcerptCachesForPaths,
-} from "./epub-excerpt-cache-warmup";
-export {
 	EpubAnnotationIndexService,
 	bootstrapEpubAnnotationIndex,
 	getEpubAnnotationIndexService,

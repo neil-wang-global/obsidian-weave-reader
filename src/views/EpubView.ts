@@ -11,6 +11,7 @@ import {
 	normalizePath,
 	setIcon,
 } from "obsidian";
+import { domInstanceOf } from "../utils/dom-instance-of";
 import type {
 	EpubExcerptSettings,
 	EpubFlowMode,
@@ -29,6 +30,7 @@ import {
 	pendingLocateFromLegacyState,
 	type PendingLocateState,
 } from "../services/navigation/navigation-intent";
+import type { CanvasViewLike, WorkspaceLeafWithGroup } from "../types/obsidian-extensions";
 import { getBookSessionManager } from "../services/epub/session/book-session-manager-access";
 import { i18n, syncI18nWithObsidianLanguage } from "../utils/i18n";
 import { logger } from "../utils/logger";
@@ -297,8 +299,8 @@ export class EpubView extends ItemView {
 		const { unmount } = await import("svelte");
 		try {
 			void unmount(this.lockedFormatPreviewComponent);
-		} catch (_error) {
-			// ignore
+		} catch {
+			/* ignore */
 		}
 		this.lockedFormatPreviewComponent = null;
 	}
@@ -309,8 +311,8 @@ export class EpubView extends ItemView {
 			const { unmount } = await import("svelte");
 			try {
 				void unmount(this.component);
-			} catch (_error) {
-				// ignore
+			} catch {
+				/* ignore */
 			}
 			this.component = null;
 		}
@@ -467,7 +469,7 @@ export class EpubView extends ItemView {
 				"bookmark-plus",
 				this.t("views.epubView.menu.markResumePoint"),
 				(evt) => {
-					void this.actionHandlers.markIRResumePoint?.(evt as MouseEvent);
+					void this.actionHandlers.markIRResumePoint?.(evt);
 				}
 			);
 			this.tutorialBtn = this.addAction(
@@ -1132,12 +1134,23 @@ export class EpubView extends ItemView {
 		return { filePath: this.filePath, file: this.filePath };
 	}
 
-	async setState(state: any, result: any): Promise<void> {
+	async setState(state: unknown, result: unknown): Promise<void> {
 		await super.setState(state, result);
 
-		const incomingPath = state?.filePath || state?.file || "";
+		const viewState =
+			state && typeof state === "object" && !Array.isArray(state)
+				? (state as Record<string, unknown>)
+				: {};
+		const incomingPath = String(viewState.filePath || viewState.file || "").trim();
 
-		const incomingPending = pendingLocateFromLegacyState(state || {});
+		const incomingPending = pendingLocateFromLegacyState({
+			pendingLocate:
+				viewState.pendingLocate && typeof viewState.pendingLocate === "object"
+					? (viewState.pendingLocate as PendingLocateState)
+					: undefined,
+			pendingCfi: typeof viewState.pendingCfi === "string" ? viewState.pendingCfi : undefined,
+			pendingText: typeof viewState.pendingText === "string" ? viewState.pendingText : undefined,
+		});
 		if (incomingPending) {
 			this.pendingLocate = incomingPending;
 			this.pendingCfi = incomingPending.cfi || "";
@@ -1241,7 +1254,7 @@ export class EpubView extends ItemView {
 		};
 		try {
 			surfaceTokens = getViewSurfaceTokens(this.leaf);
-		} catch (_error) {
+		} catch {
 			// In partial workspace states, fall back to the main-surface token set.
 		}
 		const targets = [this.contentEl, this.readerHostEl, this.readerHostEl?.parentElement].filter(
@@ -1404,7 +1417,7 @@ export class EpubView extends ItemView {
 		label: string,
 		onClick: (evt: MouseEvent) => void
 	): HTMLButtonElement {
-		const button = document.createElement("button");
+		const button = activeDocument.createElement("button");
 		button.type = "button";
 		button.className = "epub-left-inline-toolbar-btn clickable-icon";
 		setIcon(button, icon);
@@ -1482,11 +1495,6 @@ export class EpubView extends ItemView {
 				return;
 			}
 			button.toggleClass("epub-view-action-hidden", !options.visible);
-			if (options.visible) {
-				button.style.removeProperty("display");
-			} else {
-				button.style.setProperty("display", "none");
-			}
 		}
 	}
 
@@ -1544,7 +1552,7 @@ export class EpubView extends ItemView {
 			this.app.workspace.trigger("layout-change");
 
 			const titleEl = this.leaf?.view?.containerEl?.querySelector(".view-header-title");
-			if (titleEl instanceof HTMLElement) {
+			if (domInstanceOf(titleEl, HTMLElement)) {
 				titleEl.textContent = title;
 				titleEl.setAttribute("aria-label", title);
 			}
@@ -1798,7 +1806,7 @@ export class EpubView extends ItemView {
 			return;
 		}
 
-		const myGroup = (this.leaf as any).group;
+		const myGroup = (this.leaf as WorkspaceLeafWithGroup).group;
 
 		if (!myGroup) {
 			if (this.linkedCanvasPath) {
@@ -1814,8 +1822,8 @@ export class EpubView extends ItemView {
 		let foundCanvasPath: string | null = null;
 
 		for (const leaf of canvasLeaves) {
-			if ((leaf as any).group === myGroup) {
-				const file = (leaf.view as any)?.file;
+			if ((leaf as WorkspaceLeafWithGroup).group === myGroup) {
+				const file = (leaf.view as CanvasViewLike).file;
 				if (file?.path) {
 					foundCanvasPath = file.path;
 					break;

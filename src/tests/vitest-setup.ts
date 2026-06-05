@@ -10,6 +10,10 @@ import { afterEach, vi } from 'vitest';
 
 afterEach(() => {
   vi.useRealTimers();
+  const testWindow = window as TestWindow & {
+    __weaveThemeManagerCleanup?: (() => void) | null;
+  };
+  testWindow.__weaveThemeManagerCleanup?.();
 });
 
 type TestWindow = Window &
@@ -24,6 +28,48 @@ Object.defineProperty(globalThis, 'vi', {
   value: vi,
   writable: true
 });
+
+function installObsidianPopoutGlobals(): void {
+  if (typeof document !== "undefined" && !("activeDocument" in globalThis)) {
+    Object.defineProperty(globalThis, "activeDocument", {
+      configurable: true,
+      get: () => document,
+    });
+  }
+  if (typeof window !== "undefined" && !("activeWindow" in globalThis)) {
+    Object.defineProperty(globalThis, "activeWindow", {
+      configurable: true,
+      get: () => window,
+    });
+    const testWindow = window as TestWindow & {
+      activeDocument?: Document;
+      activeWindow?: Window;
+    };
+    if (!testWindow.activeDocument) {
+      Object.defineProperty(testWindow, "activeDocument", {
+        configurable: true,
+        get: () => document,
+      });
+    }
+    if (!testWindow.activeWindow) {
+      Object.defineProperty(testWindow, "activeWindow", {
+        configurable: true,
+        get: () => window,
+      });
+    }
+  }
+
+  if (typeof Node !== "undefined" && !("instanceOf" in Node.prototype)) {
+    Object.defineProperty(Node.prototype, "instanceOf", {
+      configurable: true,
+      value<T>(this: Node, type: { new (): T }): this is T {
+        return this instanceof type;
+      },
+    });
+  }
+}
+
+installObsidianPopoutGlobals();
 
 // Mock Obsidian全局对象（如果需要）
 if (typeof window !== 'undefined') {

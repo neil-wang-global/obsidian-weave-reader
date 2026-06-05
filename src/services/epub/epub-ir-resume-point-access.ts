@@ -276,20 +276,21 @@ export class EpubIrResumePointAccess {
 		}
 
 		let updated = false;
-		const nextTasks = raw.map((item) => {
-			if (!isRecord(item) || item.id !== pointId) {
-				return item;
+		const nextTasks: unknown[] = [];
+		for (const item of raw) {
+			if (isRecord(item) && item.id === pointId) {
+				updated = true;
+				nextTasks.push({
+					...item,
+					resumeCfi: cfi,
+					resumeUpdatedAt: Date.now(),
+					updatedAt:
+						typeof item.updatedAt === "number" ? Date.now() : item.updatedAt,
+				});
+				continue;
 			}
-
-			updated = true;
-			return {
-				...item,
-				resumeCfi: cfi,
-				resumeUpdatedAt: Date.now(),
-				updatedAt:
-					typeof item.updatedAt === "number" ? Date.now() : item.updatedAt,
-			};
-		});
+			nextTasks.push(item);
+		}
 
 		if (!updated) {
 			return false;

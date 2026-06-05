@@ -1,4 +1,11 @@
 import { type App, type Editor, MarkdownView, Notice, type WorkspaceLeaf } from "obsidian";
+import {
+	type CanvasNodeRuntime,
+	collectCanvasNodes,
+	getCanvasNodeElement,
+	getCanvasNodeRuntimeData,
+	isCanvasLeafView,
+} from "../../types/obsidian-extensions";
 import { i18n } from "../../utils/i18n";
 import {
 	openFileWithExistingLeaf,
@@ -7,10 +14,6 @@ import {
 import { getSourceLocateOverlayService } from "./SourceLocateOverlayService";
 import {
 	buildSourceLocateTimestampCandidates,
-	EPUB_LOCATE_CFI_PREFIX,
-	EPUB_LOCATE_EXCERPT_PREFIX,
-	EPUB_LOCATE_LINK_PREFIX,
-	EPUB_LOCATE_TIME_PREFIX,
 	isDescriptiveSourceLocateTextCandidate,
 	normalizeSourceLocateMatchValue,
 	parseTaggedSourceLocateCandidates,
@@ -53,15 +56,15 @@ export class SourceNavigationService {
 	constructor(private readonly app: App) {}
 
 	async locateInMarkdownView(
-		view: MarkdownView | any,
+		view: MarkdownView,
 		candidates: string[],
 		options: LocateOptions = {}
 	): Promise<boolean> {
-		if (!view?.containerEl) return false;
+		if (!view.containerEl) return false;
 
-		const target = this.overlay.findMarkdownLocateTarget(view.containerEl as HTMLElement, candidates);
+		const target = this.overlay.findMarkdownLocateTarget(view.containerEl, candidates);
 		if (!target) {
-			const editor = view?.editor as Editor | undefined;
+			const editor = view.editor;
 			if (!editor || !this.locateInMarkdownEditor(editor, candidates)) {
 				return false;
 			}
@@ -81,7 +84,7 @@ export class SourceNavigationService {
 	}
 
 	private showMarkdownOverlayFromViewWithRetry(
-		view: MarkdownView | any,
+		view: MarkdownView,
 		candidates: string[],
 		options: LocateOptions,
 		attempt: number
@@ -89,7 +92,7 @@ export class SourceNavigationService {
 		const delay = attempt === 0 ? 60 : this.markdownOverlayRetryDelayMs;
 		window.setTimeout(() => {
 			try {
-				const containerEl = view?.containerEl as HTMLElement | undefined;
+				const containerEl = view.containerEl;
 				const target = containerEl ? this.overlay.findMarkdownLocateTarget(containerEl, candidates) : null;
 				if (target) {
 					const shown = this.overlay.showAtRect(target.overlayRect, {
@@ -110,7 +113,7 @@ export class SourceNavigationService {
 	}
 
 	private showMarkdownOverlayWithRetry(
-		view: MarkdownView | any,
+		view: MarkdownView,
 		candidates: string[],
 		options: LocateOptions,
 		fallbackTarget: { overlayRect: DOMRect; scrollTarget: HTMLElement },
@@ -119,7 +122,7 @@ export class SourceNavigationService {
 		const delay = attempt === 0 ? 40 : this.markdownOverlayRetryDelayMs;
 		window.setTimeout(() => {
 			try {
-				const containerEl = view?.containerEl as HTMLElement | undefined;
+				const containerEl = view.containerEl;
 				const latestTarget =
 					(containerEl
 						? this.overlay.findMarkdownLocateTarget(containerEl, candidates)
@@ -167,11 +170,7 @@ export class SourceNavigationService {
 		const delay = attempt === 0 ? options.delayMs ?? 220 : this.markdownLocateRetryDelayMs;
 		window.setTimeout(async () => {
 			try {
-				const activeView = (
-					openedLeaf?.view?.getViewType?.() === "markdown"
-						? openedLeaf.view
-						: this.app.workspace.getActiveViewOfType("markdown" as any)
-				) as any;
+				const activeView = this.resolveActiveMarkdownView(openedLeaf);
 				const located = activeView
 					? await this.locateInMarkdownView(activeView, candidates, options)
 					: false;
@@ -219,7 +218,7 @@ export class SourceNavigationService {
 	): Promise<WorkspaceLeaf | null> {
 		let canvasLeaf =
 			this.app.workspace.getLeavesOfType("canvas").find((leaf) => {
-				return (leaf.view as any)?.file?.path === canvasPath;
+				return isCanvasLeafView(leaf.view) && leaf.view.file?.path === canvasPath;
 			}) || null;
 
 		if (!canvasLeaf) {
@@ -283,10 +282,11 @@ export class SourceNavigationService {
 				},
 				true
 			);
-		} catch (_e) {
+		} catch (error) {
+			void error;
 			try {
 				editor.scrollIntoView({ from: startPos, to: startPos }, true);
-			} catch (_inner) {
+			} catch {
 				/* ignore */
 			}
 		}
@@ -507,6 +507,14 @@ export class SourceNavigationService {
 		});
 	}
 
+	private resolveActiveMarkdownView(openedLeaf: WorkspaceLeaf | null): MarkdownView | null {
+		const leafView = openedLeaf?.view;
+		if (leafView?.getViewType() === "markdown" && leafView instanceof MarkdownView) {
+			return leafView;
+		}
+		return this.app.workspace.getActiveViewOfType(MarkdownView);
+	}
+
 	private locateCanvasNodeWithRetry(
 		canvasLeaf: WorkspaceLeaf,
 		candidates: string[],
@@ -516,17 +524,23 @@ export class SourceNavigationService {
 	): void {
 		window.setTimeout(() => {
 			try {
-				const canvasView = canvasLeaf.view as any;
-				const canvas = canvasView?.canvas;
-				const nodesMap = canvas?.nodes;
-				if (!canvas || !nodesMap) {
+				const canvasView = canvasLeaf.view;
+				if (!isCanvasLeafView(canvasView)) {
 					if (attempt < 5) {
 						this.locateCanvasNodeWithRetry(canvasLeaf, candidates, nodeId, options, attempt + 1);
 					}
 					return;
 				}
 
-				const nodes = Array.from(nodesMap.values());
+				const canvas = canvasView.canvas;
+				if (!canvas?.nodes) {
+					if (attempt < 5) {
+						this.locateCanvasNodeWithRetry(canvasLeaf, candidates, nodeId, options, attempt + 1);
+					}
+					return;
+				}
+
+				const nodes = collectCanvasNodes(canvas.nodes);
 				const matchedNode =
 					this.findCanvasNodeById(nodes, nodeId) ||
 					this.findCanvasNodeByLocateCandidates(nodes, candidates) ||
@@ -547,12 +561,8 @@ export class SourceNavigationService {
 				canvas.selectOnly(matchedNode);
 				canvas.zoomToSelection();
 
-				const nodeEl =
-					(matchedNode as any)?.nodeEl ||
-					(matchedNode as any)?.contentEl ||
-					(matchedNode as any)?.containerEl ||
-					(matchedNode as any)?.el;
-				if (nodeEl instanceof HTMLElement) {
+				const nodeEl = getCanvasNodeElement(matchedNode);
+				if (nodeEl) {
 					window.setTimeout(() => {
 						this.overlay.showAtRect(nodeEl.getBoundingClientRect(), {
 							label: options.label || DEFAULT_LABEL,
@@ -568,12 +578,12 @@ export class SourceNavigationService {
 		}, (options.delayMs ?? 350) + attempt * 180);
 	}
 
-	private findCanvasNodeById(nodes: any[], nodeId?: string): any | null {
+	private findCanvasNodeById(nodes: CanvasNodeRuntime[], nodeId?: string): CanvasNodeRuntime | null {
 		const normalizedNodeId = this.normalizeCanvasNodeId(nodeId);
 		if (!normalizedNodeId) return null;
 		for (const node of nodes) {
-			const data = typeof node?.getData === "function" ? node.getData() : node;
-			const currentId = node?.id || data?.id || node?.unknownData?.id;
+			const data = getCanvasNodeRuntimeData(node);
+			const currentId = node.id || data.id || node.unknownData?.id;
 			if (typeof currentId === "string" && currentId === normalizedNodeId) {
 				return node;
 			}
@@ -599,7 +609,10 @@ export class SourceNavigationService {
 		return queryIndex >= 0 ? withoutCaret.slice(0, queryIndex) : withoutCaret;
 	}
 
-	private findCanvasNodeByLocateCandidates(nodes: any[], candidates: string[]): any | null {
+	private findCanvasNodeByLocateCandidates(
+		nodes: CanvasNodeRuntime[],
+		candidates: string[]
+	): CanvasNodeRuntime | null {
 		const parsed = this.parseEditorLocateCandidates(candidates);
 		const rawCandidates = candidates.filter(
 			(candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0
@@ -615,7 +628,7 @@ export class SourceNavigationService {
 			return null;
 		}
 
-		let bestNode: any | null = null;
+		let bestNode: CanvasNodeRuntime | null = null;
 		let bestScore = 0;
 
 		for (const node of nodes) {
@@ -633,19 +646,19 @@ export class SourceNavigationService {
 		return bestScore > 0 ? bestNode : null;
 	}
 
-	private buildCanvasNodeSearchText(node: any): string {
-		const data = typeof node?.getData === "function" ? node.getData() : node;
+	private buildCanvasNodeSearchText(node: CanvasNodeRuntime): string {
+		const data = getCanvasNodeRuntimeData(node);
 		const values = [
-			node?.id,
-			data?.id,
-			node?.text,
-			data?.text,
-			node?.file,
-			data?.file,
-			node?.label,
-			data?.label,
-			node?.unknownData?.text,
-			node?.unknownData?.file,
+			node.id,
+			data.id,
+			node.text,
+			data.text,
+			node.file,
+			data.file,
+			node.label,
+			data.label,
+			node.unknownData?.text,
+			node.unknownData?.file,
 		];
 		return values
 			.map((value) => String(value || "").trim())
@@ -673,31 +686,36 @@ export class SourceNavigationService {
 		return score;
 	}
 
-	private findCanvasNodeByRect(nodes: any[], nodeRect?: LocateOptions["nodeRect"]): any | null {
+	private findCanvasNodeByRect(
+		nodes: CanvasNodeRuntime[],
+		nodeRect?: LocateOptions["nodeRect"]
+	): CanvasNodeRuntime | null {
 		if (!nodeRect || !Number.isFinite(nodeRect.x) || !Number.isFinite(nodeRect.y)) {
 			return null;
 		}
 
-		let bestNode: any | null = null;
+		let bestNode: CanvasNodeRuntime | null = null;
 		let bestScore = Number.POSITIVE_INFINITY;
 
 		for (const node of nodes) {
-			const data = typeof node?.getData === "function" ? node.getData() : node;
-			const x = Number(data?.x);
-			const y = Number(data?.y);
+			const data = getCanvasNodeRuntimeData(node);
+			const x = Number(data.x);
+			const y = Number(data.y);
 			if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
 
-			const width = Number(data?.width);
-			const height = Number(data?.height);
+			const width = Number(data.width);
+			const height = Number(data.height);
 			const dx = Math.abs(x - nodeRect.x);
 			const dy = Math.abs(y - nodeRect.y);
 			const dw =
-				Number.isFinite(width) && Number.isFinite(nodeRect.width)
-					? Math.abs(width - (nodeRect.width as number))
+				Number.isFinite(width) && typeof nodeRect.width === "number" && Number.isFinite(nodeRect.width)
+					? Math.abs(width - nodeRect.width)
 					: 0;
 			const dh =
-				Number.isFinite(height) && Number.isFinite(nodeRect.height)
-					? Math.abs(height - (nodeRect.height as number))
+				Number.isFinite(height) &&
+				typeof nodeRect.height === "number" &&
+				Number.isFinite(nodeRect.height)
+					? Math.abs(height - nodeRect.height)
 					: 0;
 			const score = dx + dy + dw + dh;
 

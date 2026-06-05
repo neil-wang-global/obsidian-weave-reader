@@ -8,6 +8,7 @@ import {
 	resetMobileBlobIframePatchStateForTests,
 } from "../foliate-runtime-patches";
 import { logger } from "../../../utils/logger";
+import { flushThemeManagerForTests } from "../../../utils/theme-detection";
 
 async function createSampleEpubBuffer(): Promise<ArrayBuffer> {
 	const zip = new JSZip();
@@ -1337,23 +1338,18 @@ describe("FoliateReaderService", () => {
 			}) as typeof window.requestAnimationFrame;
 			window.cancelAnimationFrame = vi.fn() as typeof window.cancelAnimationFrame;
 
-			const appearanceSpy = vi
-				.spyOn(service, "applyReaderAppearance")
-				.mockResolvedValue(undefined);
+			const refreshSpy = vi.spyOn(service as any, "scheduleThemeRefresh");
 			(service as any).attachThemeChangeListener();
-			document.body.classList.add("theme-dark");
-			await Promise.resolve();
-			await Promise.resolve();
-
-			expect(appearanceSpy).toHaveBeenCalledWith({});
+			activeDocument.documentElement.classList.add("theme-dark");
+			flushThemeManagerForTests();
+			expect(refreshSpy).toHaveBeenCalled();
 
 			service.destroy();
-			appearanceSpy.mockClear();
+			refreshSpy.mockClear();
 			document.body.classList.remove("theme-dark");
-			await Promise.resolve();
-			await Promise.resolve();
+			flushThemeManagerForTests();
 
-			expect(appearanceSpy).not.toHaveBeenCalled();
+			expect(refreshSpy).not.toHaveBeenCalled();
 		} finally {
 			window.requestAnimationFrame = originalRequestAnimationFrame;
 			window.cancelAnimationFrame = originalCancelAnimationFrame;
@@ -1387,18 +1383,13 @@ describe("FoliateReaderService", () => {
 			}) as typeof window.requestAnimationFrame;
 			window.cancelAnimationFrame = vi.fn() as typeof window.cancelAnimationFrame;
 
-			const appearanceSpy = vi
-				.spyOn(service, "applyReaderAppearance")
-				.mockResolvedValue(undefined);
+			const refreshSpy = vi.spyOn(service as any, "scheduleThemeRefresh");
 			(service as any).attachThemeChangeListener();
-			appearanceSpy.mockClear();
+			refreshSpy.mockClear();
 
-			document.body.style.setProperty("--background-primary", "rgb(31, 41, 55)");
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
-
-			expect(appearanceSpy).toHaveBeenCalledWith({});
+			activeDocument.body.style.setProperty("--background-primary", "rgb(31, 41, 55)");
+			flushThemeManagerForTests();
+			expect(refreshSpy).toHaveBeenCalled();
 		} finally {
 			window.requestAnimationFrame = originalRequestAnimationFrame;
 			window.cancelAnimationFrame = originalCancelAnimationFrame;

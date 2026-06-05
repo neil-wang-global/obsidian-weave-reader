@@ -8,16 +8,20 @@ function normalizeComparableVaultPath(path: string): string {
 		.toLowerCase();
 }
 
-const EXCLUDED_VAULT_BOOK_ROOTS = [".trash", ".obsidian"] as const;
+function normalizeConfigDirRoot(configDir: string): string {
+	return normalizePath(String(configDir || "").trim()).replace(/^\/+/, "");
+}
 
 /** Paths that should not appear in bookshelf scan/import (trash, plugin config, dot-folders). */
-export function isVisibleVaultBookPath(filePath: string): boolean {
+export function isVisibleVaultBookPath(filePath: string, configDir: string): boolean {
 	const normalizedPath = normalizePath(String(filePath || "").trim()).replace(/^\/+/, "");
 	if (!normalizedPath || !isSupportedBookPath(normalizedPath)) {
 		return false;
 	}
 
-	for (const excludedRoot of EXCLUDED_VAULT_BOOK_ROOTS) {
+	const excludedConfigDir = normalizeConfigDirRoot(configDir);
+	const excludedRoots = excludedConfigDir ? ([".trash", excludedConfigDir] as const) : ([".trash"] as const);
+	for (const excludedRoot of excludedRoots) {
 		if (normalizedPath === excludedRoot || normalizedPath.startsWith(`${excludedRoot}/`)) {
 			return false;
 		}
@@ -98,7 +102,7 @@ function buildVaultBookPathCandidates(filePath: string): string[] {
  */
 export function resolveSupportedBookFile(app: App, filePath: string): TFile | null {
 	const normalizedPath = normalizePath(String(filePath || "").trim());
-	if (!normalizedPath || !isVisibleVaultBookPath(normalizedPath)) {
+	if (!normalizedPath || !isVisibleVaultBookPath(normalizedPath, app.vault.configDir)) {
 		return null;
 	}
 

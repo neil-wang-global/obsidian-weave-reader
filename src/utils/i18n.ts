@@ -6,7 +6,6 @@ import {
 	translations,
 	translationOverrides,
 } from "./i18n/resources";
-import { flattenTranslationLeafKeys } from "./i18n/flat-locale";
 import type { I18nConfig, SupportedLanguage, TranslationKey } from "./i18n/types";
 import { derived, get, writable } from "svelte/store";
 
@@ -244,10 +243,10 @@ export class I18nService {
 	 */
 	private getDirectTranslation(key: string, language: SupportedLanguage): string | null {
 		const keys = key.split(".");
-		let current: any = translationCatalog[language];
+		let current: TranslationKey | string | undefined = translationCatalog[language];
 
 		for (const k of keys) {
-			if (current && typeof current === "object" && k in current) {
+			if (typeof current === "object" && current !== null && k in current) {
 				current = current[k];
 			} else {
 				return null;

@@ -57,7 +57,9 @@ function inferExistingVaultPathKind(app: App, normalizedPath: string): "file" | 
 		const ctorName = (abstractFile as { constructor?: { name?: string } }).constructor?.name;
 		if (ctorName === "TFile") return "file";
 		if (ctorName === "TFolder") return "folder";
-	} catch {}
+	} catch {
+		/* ignore */
+	}
 
 	return null;
 }

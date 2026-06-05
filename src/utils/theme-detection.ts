@@ -63,7 +63,9 @@ export class UnifiedThemeManager {
       w.__weaveThemeManagerCleanup = () => {
         try {
           (w.__weaveThemeManager as UnifiedThemeManager | undefined)?.destroy();
-        } catch {}
+        } catch {
+          /* ignore */
+        }
         try {
           w.__weaveThemeManager = undefined;
           w.__weaveThemeManagerCleanup = undefined;
@@ -83,17 +85,17 @@ export class UnifiedThemeManager {
       this.mediaQuery.addEventListener("change", this.mediaQueryChangeHandler);
     }
 
-    this.domObserver.observe(document.documentElement, {
+    this.domObserver.observe(activeDocument.documentElement, {
       attributes: true,
       attributeFilter: ["class", "style"],
     });
-    if (document.body) {
-      this.domObserver.observe(document.body, {
+    if (activeDocument.body) {
+      this.domObserver.observe(activeDocument.body, {
         attributes: true,
         attributeFilter: ["class", "style"],
       });
     }
-    this.headObserver.observe(document.head || document.documentElement, {
+    this.headObserver.observe(activeDocument.head || activeDocument.documentElement, {
       attributes: true,
       childList: true,
       subtree: true,
@@ -107,14 +109,14 @@ export class UnifiedThemeManager {
       return;
     }
 
-    this.pendingThemeCheckFrame = requestAnimationFrame(() => {
+    this.pendingThemeCheckFrame = window.requestAnimationFrame(() => {
       this.pendingThemeCheckFrame = null;
       this.handleThemeChange();
     });
   }
 
   private detectTheme(): ThemeDetectionResult {
-    if (document.documentElement.classList.contains("theme-dark")) {
+    if (activeDocument.documentElement.classList.contains("theme-dark")) {
       return {
         mode: "dark",
         isDark: true,
@@ -123,7 +125,7 @@ export class UnifiedThemeManager {
       };
     }
 
-    if (document.documentElement.classList.contains("theme-light")) {
+    if (activeDocument.documentElement.classList.contains("theme-light")) {
       return {
         mode: "light",
         isDark: false,
@@ -132,7 +134,7 @@ export class UnifiedThemeManager {
       };
     }
 
-    if (document.body?.classList.contains("theme-dark")) {
+    if (activeDocument.body?.classList.contains("theme-dark")) {
       return {
         mode: "dark",
         isDark: true,
@@ -141,7 +143,7 @@ export class UnifiedThemeManager {
       };
     }
 
-    if (document.body?.classList.contains("theme-light")) {
+    if (activeDocument.body?.classList.contains("theme-light")) {
       return {
         mode: "light",
         isDark: false,
@@ -189,10 +191,10 @@ export class UnifiedThemeManager {
   }
 
   private buildThemeSignature(): string {
-    const rootStyle = getComputedStyle(document.documentElement);
-    const bodyStyle = getComputedStyle(document.body || document.documentElement);
-    const rootClasses = Array.from(document.documentElement.classList).sort().join(" ");
-    const bodyClasses = Array.from(document.body?.classList ?? []).sort().join(" ");
+    const rootStyle = getComputedStyle(activeDocument.documentElement);
+    const bodyStyle = getComputedStyle(activeDocument.body || activeDocument.documentElement);
+    const rootClasses = Array.from(activeDocument.documentElement.classList).sort().join(" ");
+    const bodyClasses = Array.from(activeDocument.body?.classList ?? []).sort().join(" ");
     const variableSignature = UnifiedThemeManager.THEME_SIGNATURE_VARIABLES.map((varName) => {
       const bodyValue = bodyStyle.getPropertyValue(varName).trim();
       const rootValue = rootStyle.getPropertyValue(varName).trim();
@@ -245,7 +247,7 @@ export class UnifiedThemeManager {
     this.domObserver.disconnect();
     this.headObserver.disconnect();
     if (this.pendingThemeCheckFrame !== null) {
-      cancelAnimationFrame(this.pendingThemeCheckFrame);
+      window.cancelAnimationFrame(this.pendingThemeCheckFrame);
       this.pendingThemeCheckFrame = null;
     }
     this.listeners.length = 0;
@@ -256,10 +258,20 @@ export class UnifiedThemeManager {
       if (w.__weaveThemeManager === this) {
         w.__weaveThemeManager = undefined;
       }
-    } catch {}
+    } catch {
+      /* ignore */
+    }
 
     UnifiedThemeManager.instance = null as any;
   }
+}
+
+/** Test helper: flush pending theme observer callbacks in jsdom. */
+export function flushThemeManagerForTests(): void {
+  const manager = UnifiedThemeManager.getInstance() as UnifiedThemeManager & {
+    scheduleThemeCheck: () => void;
+  };
+  manager.scheduleThemeCheck();
 }
 
 /** 创建可在组件里复用的响应式主题快照。 */

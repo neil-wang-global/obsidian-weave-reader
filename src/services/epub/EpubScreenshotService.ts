@@ -1,6 +1,9 @@
 import { Notice, TFile, TFolder, type App, normalizePath } from "obsidian";
 import { i18n } from "../../utils/i18n";
 import { logger } from "../../utils/logger";
+import type { VaultConfigLike } from "../../types/obsidian-extensions";
+import { getElectronRemoteModule } from "../../utils/electron-screenshot-access";
+import { domInstanceOf } from "../../utils/dom-instance-of";
 import { EpubLinkService } from "./EpubLinkService";
 
 export interface ScreenshotRect {
@@ -45,7 +48,7 @@ export class EpubScreenshotService {
 		rect: ScreenshotRect
 	): Promise<Blob | null> {
 		try {
-			const remote = this.getElectronRemote();
+			const remote = getElectronRemoteModule();
 			if (!remote) return null;
 
 			const win = remote.getCurrentWindow();
@@ -62,27 +65,17 @@ export class EpubScreenshotService {
 			if (nativeImage.isEmpty()) return null;
 
 			const buffer = nativeImage.toJPEG(92);
-			return new Blob([buffer], { type: "image/jpeg" });
+			return new Blob([new Uint8Array(buffer)], { type: "image/jpeg" });
 		} catch (e) {
 			logger.warn("[EpubScreenshotService] Electron capture failed:", e);
 			return null;
 		}
 	}
 
-	private getElectronRemote(): any {
-		try {
-			// /skip require('electron') is needed for desktop-only screenshot capture via webContents, wrapped in try/catch for mobile safety
-			const electron = (window as any).require("electron");
-			if (electron.remote) return electron.remote;
-		} catch (_) {
-			/* not available */
-		}
-		try {
-			return (window as any).require("@electron/remote");
-		} catch (_) {
-			/* not available */
-		}
-		return null;
+	private readAttachmentFolderPath(): string {
+		const vault = this.app.vault as VaultConfigLike;
+		const configured = vault.getConfig?.("attachmentFolderPath");
+		return typeof configured === "string" ? configured : "";
 	}
 
 	private async captureWithSvgCanvas(
@@ -91,7 +84,7 @@ export class EpubScreenshotService {
 		visibleFrames?: EpubVisibleFrameLike[]
 	): Promise<Blob | null> {
 		try {
-			const canvas = document.createElement("canvas");
+			const canvas = activeDocument.createElement("canvas");
 			const dpr = window.devicePixelRatio || 1;
 			canvas.width = rect.width * dpr;
 			canvas.height = rect.height * dpr;
@@ -128,7 +121,7 @@ export class EpubScreenshotService {
 					const styles = Array.from(iframeDoc.querySelectorAll('style, link[rel="stylesheet"]'));
 					let styleText = "";
 					for (const s of styles) {
-						if (s instanceof HTMLStyleElement) {
+						if (domInstanceOf(s, HTMLStyleElement)) {
 							styleText += s.textContent || "";
 						}
 					}
@@ -187,7 +180,7 @@ export class EpubScreenshotService {
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-").substring(0, 19);
 		const fileName = `epub-${sanitizedTitle}-${timestamp}.jpg`;
 
-		const attachmentFolder = (this.app.vault as any).getConfig?.("attachmentFolderPath") || "";
+		const attachmentFolder = this.readAttachmentFolderPath();
 		let folderPath = attachmentFolder || "";
 
 		if (!folderPath || folderPath === "/" || folderPath === ".") {
@@ -353,7 +346,7 @@ export class EpubScreenshotService {
 	): HTMLIFrameElement[] {
 		const discovered = new Set<HTMLIFrameElement>();
 		const pushFrame = (frame: HTMLIFrameElement | null | undefined) => {
-			if (frame instanceof HTMLIFrameElement) {
+			if (domInstanceOf(frame, HTMLIFrameElement)) {
 				discovered.add(frame);
 			}
 		};

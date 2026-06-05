@@ -186,14 +186,20 @@ const LEGACY_AI_SPLIT_CONFIG_MODAL_METHODS = [
 	"openAIConfigModal",
 ] as const;
 
+type PluginHostApp = App & {
+	plugins: {
+		getPlugin(id: string): unknown;
+	};
+};
+
 function getRuntimePluginHost(app: App): EpubHostCapabilities | null {
 	const runtime = getEpubRuntime();
-	const plugin = (app as any)?.plugins?.getPlugin?.(runtime.pluginId);
-	if (!plugin || typeof plugin !== "object") {
+	const pluginUnknown: unknown = (app as PluginHostApp).plugins.getPlugin(runtime.pluginId);
+	if (!pluginUnknown || typeof pluginUnknown !== "object") {
 		return null;
 	}
 
-	return plugin as EpubHostCapabilities;
+	return pluginUnknown as EpubHostCapabilities;
 }
 
 function getLegacyHost(app: App): EpubHostCapabilities | null {

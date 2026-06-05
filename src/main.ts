@@ -1,5 +1,7 @@
 import "./utils/group-by-compat";
 import { Menu, Notice, Plugin, TAbstractFile, TFile, normalizePath } from "obsidian";
+import { domInstanceOf } from "./utils/dom-instance-of";
+
 import { EpubSettingsTab } from "./components/settings/EpubSettingsTab";
 import { isSupportedBookFile, isSupportedBookPath } from "./services/epub/book-format";
 import {
@@ -233,11 +235,14 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 
 	private getPersistedSettings(): PersistedStandaloneEpubPluginSettings {
 		const {
-			lastSelectedIRDeckId: _lastSelectedIRDeckId,
-			selectionQuickCreateLastFolder: _selectionQuickCreateLastFolder,
-			epubMarkdownExportLastFolder: _epubMarkdownExportLastFolder,
+			lastSelectedIRDeckId,
+			selectionQuickCreateLastFolder,
+			epubMarkdownExportLastFolder,
 			...persistedSettings
 		} = this.settings;
+		void lastSelectedIRDeckId;
+		void selectionQuickCreateLastFolder;
+		void epubMarkdownExportLastFolder;
 		return persistedSettings;
 	}
 
@@ -265,15 +270,22 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		].some((key) => Object.prototype.hasOwnProperty.call(record, key));
 	}
 
+	private normalizeLoadedSettings(raw: unknown): Partial<PersistedStandaloneEpubPluginSettings> {
+		if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+			return {};
+		}
+		return raw as Partial<PersistedStandaloneEpubPluginSettings>;
+	}
+
 	private async persistSettingsData(): Promise<void> {
 		await this.saveData(this.getPersistedSettings());
 	}
 
 	async loadSettings(): Promise<void> {
-		const loadedData = await this.loadData();
+		const loadedData = this.normalizeLoadedSettings(await this.loadData());
 		this.settings = {
 			...DEFAULT_STANDALONE_EPUB_SETTINGS,
-			...(loadedData ?? {}),
+			...loadedData,
 		};
 		this.settings.bookmarkFolder =
 			normalizeEpubBookmarkFolderPath(this.settings.bookmarkFolder) || DEFAULT_EPUB_BOOKMARK_FOLDER;
@@ -474,12 +486,13 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			});
 		});
 
-		if (options.event instanceof MouseEvent) {
+		if (domInstanceOf(options.event, MouseEvent)) {
 			menu.showAtMouseEvent(options.event);
 			return;
 		}
 
-		const target = options.event.target instanceof HTMLElement ? options.event.target : null;
+		const eventTarget = options.event.target;
+		const target = domInstanceOf(eventTarget, HTMLElement) ? eventTarget : null;
 		if (target) {
 			const rect = target.getBoundingClientRect();
 			menu.showAtPosition({ x: rect.left, y: rect.bottom + 4 });
@@ -500,7 +513,8 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		try {
 			openAISplitConfigModal(input);
 			return true;
-		} catch (_error) {
+		} catch (error) {
+			void error;
 			return false;
 		}
 	}
@@ -572,8 +586,8 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.registerDomEvent(window, "focus", () => {
 			syncI18nWithObsidianLanguage();
 		});
-		this.registerDomEvent(document, "visibilitychange", () => {
-			if (!document.hidden) {
+		this.registerDomEvent(activeDocument, "visibilitychange", () => {
+			if (!activeDocument.hidden) {
 				syncI18nWithObsidianLanguage();
 			}
 		});

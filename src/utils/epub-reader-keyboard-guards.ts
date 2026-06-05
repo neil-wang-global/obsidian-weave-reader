@@ -1,3 +1,5 @@
+import { domInstanceOf } from "./dom-instance-of";
+
 const INTERACTIVE_INPUT_TYPES = new Set([
 	"text",
 	"search",
@@ -19,7 +21,7 @@ const INTERACTIVE_INPUT_TYPES = new Set([
  * True when the event target is an editable or arrow-consuming form control.
  */
 export function isInteractiveFormTarget(target: EventTarget | null): boolean {
-	if (!(target instanceof HTMLElement)) {
+	if (!domInstanceOf(target, HTMLElement)) {
 		return false;
 	}
 
@@ -28,7 +30,7 @@ export function isInteractiveFormTarget(target: EventTarget | null): boolean {
 		return false;
 	}
 
-	if (control instanceof HTMLInputElement) {
+	if (domInstanceOf(control, HTMLInputElement)) {
 		const type = (control.type || "text").toLowerCase();
 		if (type === "button" || type === "submit" || type === "reset" || type === "checkbox" || type === "radio") {
 			return false;

@@ -50,6 +50,7 @@ import {
 } from "./reading-pace";
 import { i18n } from "../../utils/i18n";
 import { logger } from "../../utils/logger";
+import { domInstanceOf } from "../../utils/dom-instance-of";
 import { UnifiedThemeManager } from "../../utils/theme-detection";
 import { installFoliateCustomElementGuard } from "../../utils/foliate-custom-element-guard";
 import { usesFoliateGenericBookLoader } from "./book-format";
@@ -237,6 +238,12 @@ const PARAGRAPH_BOILERPLATE_PATTERNS = [
 	/\bEPUB_\d{10,}\b/u,
 ];
 
+type FoliateOverlayerModule = {
+	Overlayer: {
+		highlight: (rects: unknown[], options?: unknown) => SVGElement;
+	};
+};
+
 export class FoliateReaderService implements EpubReaderEngine {
 	readonly engineType = "foliate" as const;
 
@@ -304,8 +311,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private temporaryHighlightDataMap = new Map<string, ReaderHighlight>();
 	private savedHighlights: ReaderHighlight[] = [];
 	private renderedAnnotations = new Map<string, RenderedFoliateAnnotation>();
-	private temporaryHighlightTimers = new Map<string, ReturnType<typeof setTimeout>>();
-	private temporarilyRevealedConcealmentTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	private temporaryHighlightTimers = new Map<string, ReturnType<typeof window.setTimeout>>();
+	private temporarilyRevealedConcealmentTimers = new Map<string, ReturnType<typeof window.setTimeout>>();
 	private documentFootnoteCleanups = new Map<Document, () => void>();
 	private documentSelectionCleanups = new Map<Document, () => void>();
 	private documentHighlightClickCleanups = new Map<Document, () => void>();
@@ -313,7 +320,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private documentStyleElements = new WeakMap<Document, HTMLStyleElement>();
 	private loadedDocumentSectionIndexes = new WeakMap<Document, number>();
 	private lastSelectionByDocument = new WeakMap<Document, string>();
-	private overlayerModulePromise: Promise<typeof import("foliate-js/overlayer.js")> | null = null;
+	private overlayerModulePromise: Promise<FoliateOverlayerModule> | null = null;
 	private renderContainerWheelCleanup: (() => void) | null = null;
 	private themeChangeCleanup: (() => void) | null = null;
 	private pendingThemeRefreshFrame: number | null = null;
@@ -334,7 +341,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private pendingActiveReadMs = 0;
 	private lastReaderActivityAt = 0;
 	private currentSectionProgression = 0;
-	private paceHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+	private paceHeartbeatTimer: ReturnType<typeof window.setInterval> | null = null;
 	private paceVisibilityCleanup: (() => void) | null = null;
 	private static readonly PACE_HEARTBEAT_MS = PACE_HEARTBEAT_MS;
 	private static readonly PACE_IDLE_CUTOFF_MS = PACE_IDLE_CUTOFF_MS;
@@ -377,7 +384,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (customElements.get("foliate-view")) {
 			return;
 		}
-		const viewModule = await import("foliate-js/view.js");
+		const viewModule = (await import("foliate-js/view.js")) as {
+			View?: CustomElementConstructor;
+		};
 		const viewConstructor = (viewModule as { View?: CustomElementConstructor }).View;
 		if (viewConstructor && !customElements.get("foliate-view")) {
 			customElements.define("foliate-view", viewConstructor);
@@ -468,7 +477,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		container.replaceChildren();
 		container.dataset.foliate = "true";
 
-		const view = document.createElement("foliate-view") as FoliateViewElement;
+		const view = activeDocument.createElement("foliate-view") as FoliateViewElement;
 		view.classList.add("weave-epub-reader-host");
 		view.addEventListener("relocate", this.handleRelocateEvent as EventListener);
 		view.addEventListener("load", this.handleLoadEvent as EventListener);
@@ -1017,7 +1026,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			doc.body || doc.documentElement,
 			paragraph.elementPath
 		);
-		if (!(paragraphElement instanceof HTMLElement)) {
+		if (!domInstanceOf(paragraphElement, HTMLElement)) {
 			this.dismissParagraphFootnotePreview({ unpin: true });
 			return;
 		}
@@ -1025,16 +1034,18 @@ export class FoliateReaderService implements EpubReaderEngine {
 		const targetLabel = String(label || "")
 			.replace(/\s+/g, " ")
 			.trim();
-		const matchingAnchor = Array.from(paragraphElement.querySelectorAll("a")).find((anchor) => {
-			if (!(anchor instanceof HTMLAnchorElement) || !this.isFootnoteReference(anchor)) {
-				return false;
+		const matchingAnchor = Array.from(paragraphElement.querySelectorAll("a")).find(
+			(anchor): anchor is HTMLAnchorElement => {
+				if (!domInstanceOf(anchor, HTMLAnchorElement) || !this.isFootnoteReference(anchor)) {
+					return false;
+				}
+				const anchorHref = String(anchor.getAttribute("href") || "").trim();
+				const anchorLabel = String(anchor.textContent || "")
+					.replace(/\s+/g, " ")
+					.trim();
+				return anchorHref === targetHref || (targetLabel.length > 0 && anchorLabel === targetLabel);
 			}
-			const anchorHref = String(anchor.getAttribute("href") || "").trim();
-			const anchorLabel = String(anchor.textContent || "")
-				.replace(/\s+/g, " ")
-				.trim();
-			return anchorHref === targetHref || (targetLabel.length > 0 && anchorLabel === targetLabel);
-		}) as HTMLAnchorElement | undefined;
+		);
 		if (!matchingAnchor) {
 			this.dismissParagraphFootnotePreview({ unpin: true });
 			return;
@@ -1349,11 +1360,11 @@ export class FoliateReaderService implements EpubReaderEngine {
 		const key = getReaderHighlightIdentityKey(highlight);
 		const existingTimer = this.temporarilyRevealedConcealmentTimers.get(key);
 		if (existingTimer) {
-			clearTimeout(existingTimer);
+			window.clearTimeout(existingTimer);
 		}
 		this.temporarilyRevealedConcealmentTimers.set(
 			key,
-			setTimeout(() => {
+			window.setTimeout(() => {
 				this.temporarilyRevealedConcealmentTimers.delete(key);
 				void this.refreshHighlights();
 			}, Math.max(200, durationMs))
@@ -1379,12 +1390,12 @@ export class FoliateReaderService implements EpubReaderEngine {
 			this.temporaryHighlightDataMap.delete(key);
 			const timer = this.temporaryHighlightTimers.get(key);
 			if (timer) {
-				clearTimeout(timer);
+				window.clearTimeout(timer);
 				this.temporaryHighlightTimers.delete(key);
 			}
 			const revealedTimer = this.temporarilyRevealedConcealmentTimers.get(key);
 			if (revealedTimer) {
-				clearTimeout(revealedTimer);
+				window.clearTimeout(revealedTimer);
 				this.temporarilyRevealedConcealmentTimers.delete(key);
 			}
 		}
@@ -1816,21 +1827,25 @@ export class FoliateReaderService implements EpubReaderEngine {
 	}
 
 	private async waitForAnimationFrame(): Promise<void> {
-		await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+		await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
 	}
 
 	private clearSelections(): void {
-		const docs = new Set<Document>([document]);
+		const docs = new Set<Document>([activeDocument]);
 		for (const frame of this.getVisibleFramesWithIndex()) {
 			docs.add(frame.document);
 		}
 		for (const doc of docs) {
 			try {
 				doc.getSelection?.()?.removeAllRanges();
-			} catch {}
+			} catch {
+				/* ignore */
+			}
 			try {
 				doc.defaultView?.getSelection?.()?.removeAllRanges();
-			} catch {}
+			} catch {
+				/* ignore */
+			}
 		}
 	}
 
@@ -1851,7 +1866,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private bridgeHostSelectionMouseUp(doc: Document, event: MouseEvent): void {
 		const payload = this.createBridgedHostSelectionPayload(doc);
 		const dispatchHostMouseUp = () => {
-			document.dispatchEvent(
+			activeDocument.dispatchEvent(
 				new MouseEvent("mouseup", {
 					bubbles: event.bubbles,
 					cancelable: event.cancelable,
@@ -1873,12 +1888,12 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 		const bridgedSelection = this.createBridgedHostSelection(payload);
 		const windowSelectionDescriptor = Object.getOwnPropertyDescriptor(window, "getSelection");
-		const documentSelectionDescriptor = Object.getOwnPropertyDescriptor(document, "getSelection");
+		const documentSelectionDescriptor = Object.getOwnPropertyDescriptor(activeDocument, "getSelection");
 		Object.defineProperty(window, "getSelection", {
 			configurable: true,
 			value: () => bridgedSelection,
 		});
-		Object.defineProperty(document, "getSelection", {
+		Object.defineProperty(activeDocument, "getSelection", {
 			configurable: true,
 			value: () => bridgedSelection,
 		});
@@ -1891,9 +1906,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 				Reflect.deleteProperty(window as unknown as Record<string, unknown>, "getSelection");
 			}
 			if (documentSelectionDescriptor) {
-				Object.defineProperty(document, "getSelection", documentSelectionDescriptor);
+				Object.defineProperty(activeDocument, "getSelection", documentSelectionDescriptor);
 			} else {
-				Reflect.deleteProperty(document as unknown as Record<string, unknown>, "getSelection");
+				Reflect.deleteProperty(activeDocument as unknown as Record<string, unknown>, "getSelection");
 			}
 		}
 	}
@@ -2003,7 +2018,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 			if (rect) {
 				return rect;
 			}
-		} catch {}
+		} catch {
+			/* ignore */
+		}
 
 		const fallbackRect = this.createElementViewportRect(element);
 		if (!fallbackRect) {
@@ -2098,7 +2115,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private findFootnoteReference(target: EventTarget | null): HTMLAnchorElement | null {
 		const originElement = this.getElementFromEventTarget(target);
 		const anchor =
-			originElement instanceof HTMLAnchorElement
+			domInstanceOf(originElement, HTMLAnchorElement)
 				? originElement
 				: (originElement?.closest?.("a[href]") as HTMLAnchorElement | null);
 		if (!anchor) {
@@ -3227,7 +3244,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 	private hasOnlyInlineDescendants(element: HTMLElement): boolean {
 		for (const descendant of Array.from(element.children)) {
-			if (!(descendant instanceof HTMLElement)) {
+			if (!domInstanceOf(descendant, HTMLElement)) {
 				continue;
 			}
 			const descendantTagName = this.normalizeParagraphTagName(descendant.tagName);
@@ -3359,7 +3376,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (current.nodeType === Node.TEXT_NODE) {
 			current = current.parentElement;
 		}
-		while (current instanceof Element) {
+		while (domInstanceOf(current, Element)) {
 			const currentTagName = this.normalizeParagraphTagName(current.tagName);
 			if (
 				PARAGRAPH_TAG_NAMES.has(currentTagName) ||
@@ -3369,7 +3386,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			}
 			current = current.parentElement;
 		}
-		return range.commonAncestorContainer instanceof Element
+		return domInstanceOf(range.commonAncestorContainer, Element)
 			? range.commonAncestorContainer
 			: range.startContainer.parentElement ||
 					range.commonAncestorContainer.parentElement ||
@@ -3388,7 +3405,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 		const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
 			acceptNode: (node) => {
-				if (!(node instanceof Text) || !node.textContent) {
+				if (!(domInstanceOf(node, Text)) || !node.textContent) {
 					return NodeFilter.FILTER_REJECT;
 				}
 				if (!node.parentElement) {
@@ -3407,7 +3424,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		const segments: ReaderParagraphTextSegment[] = [];
 		let current = walker.nextNode();
 		while (current) {
-			if (current instanceof Text && current.textContent) {
+			if (domInstanceOf(current, Text) && current.textContent) {
 				segments.push({
 					path: this.getNodePath(root, current),
 					relativePath: this.getNodePath(range.commonAncestorContainer, current),
@@ -3443,7 +3460,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private getParagraphReadableBodyTextLength(root: Element): number {
 		const walker = root.ownerDocument?.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
 			acceptNode: (node) => {
-				if (!(node instanceof Text) || !node.textContent?.trim()) {
+				if (!(domInstanceOf(node, Text)) || !node.textContent?.trim()) {
 					return NodeFilter.FILTER_REJECT;
 				}
 				const parent = node.parentElement;
@@ -3459,7 +3476,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		let length = 0;
 		let current = walker?.nextNode();
 		while (current) {
-			if (current instanceof Text) {
+			if (domInstanceOf(current, Text)) {
 				length += current.textContent?.replace(/\s+/g, " ").trim().length || 0;
 			}
 			current = walker?.nextNode() || null;
@@ -3689,7 +3706,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		const seen = new Set<string>();
 		const containers = root.querySelectorAll("div, section, article, p, blockquote, li");
 		for (const container of Array.from(containers)) {
-			if (!(container instanceof HTMLElement)) {
+			if (!domInstanceOf(container, HTMLElement)) {
 				continue;
 			}
 			if (this.isParagraphReadingExcludedElement(container)) {
@@ -3748,7 +3765,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 				}
 				return;
 			}
-			if (node instanceof HTMLBRElement) {
+			if (domInstanceOf(node, HTMLBRElement)) {
 				pushRange(node, 0);
 				return;
 			}
@@ -3776,7 +3793,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 		const walker = doc.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
 			acceptNode: (node) => {
-				if (!(node instanceof Text) || !node.textContent?.trim()) {
+				if (!(domInstanceOf(node, Text)) || !node.textContent?.trim()) {
 					return NodeFilter.FILTER_REJECT;
 				}
 				const parent = node.parentElement;
@@ -3789,7 +3806,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		let last: Text | null = null;
 		let current = walker.nextNode();
 		while (current) {
-			if (current instanceof Text) {
+			if (domInstanceOf(current, Text)) {
 				last = current;
 			}
 			current = walker.nextNode();
@@ -3802,7 +3819,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		const seen = new Set<HTMLElement>();
 		const containers = root.querySelectorAll("div, section, article");
 		for (const container of Array.from(containers)) {
-			if (!(container instanceof HTMLElement)) {
+			if (!domInstanceOf(container, HTMLElement)) {
 				continue;
 			}
 			if (this.isParagraphReadingExcludedElement(container)) {
@@ -3810,7 +3827,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			}
 			const blockChildren = Array.from(container.children).filter(
 				(child): child is HTMLElement =>
-					child instanceof HTMLElement &&
+					domInstanceOf(child, HTMLElement) &&
 					["DIV", "SECTION", "ARTICLE", "P"].includes(
 						this.normalizeParagraphTagName(child.tagName)
 					)
@@ -3955,7 +3972,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 		const walker = doc.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
 			acceptNode: (node) => {
-				if (!(node instanceof Text) || !node.textContent) {
+				if (!(domInstanceOf(node, Text)) || !node.textContent) {
 					return NodeFilter.FILTER_REJECT;
 				}
 				if (!node.parentElement) {
@@ -3971,7 +3988,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		const segments: ReaderParagraphTextSegment[] = [];
 		let current = walker.nextNode();
 		while (current) {
-			if (current instanceof Text && current.textContent) {
+			if (domInstanceOf(current, Text) && current.textContent) {
 				segments.push({
 					path: this.getNodePath(root, current),
 					relativePath: this.getNodePath(element, current),
@@ -4097,7 +4114,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 	private resolveTextNodePath(root: Node, path: number[] | undefined): Text | null {
 		if (!path?.length) {
-			return root instanceof Text ? root : null;
+			return domInstanceOf(root, Text) ? root : null;
 		}
 		let current: Node | null = root;
 		for (const index of path) {
@@ -4106,12 +4123,12 @@ export class FoliateReaderService implements EpubReaderEngine {
 				return null;
 			}
 		}
-		return current instanceof Text ? current : null;
+		return domInstanceOf(current, Text) ? current : null;
 	}
 
 	private resolveElementPath(root: Node | null, path: number[] | undefined): Element | null {
 		if (!root || !path?.length) {
-			return root instanceof Element ? root : null;
+			return domInstanceOf(root, Element) ? root : null;
 		}
 		let current: Node | null = root;
 		for (const index of path) {
@@ -4120,7 +4137,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 				return null;
 			}
 		}
-		return current instanceof Element ? current : null;
+		return domInstanceOf(current, Element) ? current : null;
 	}
 
 	private resolveParagraphRangeInDocument(
@@ -4244,8 +4261,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 			const sourceAnchor = sourceAnchors[index];
 			const clonedAnchor = clonedAnchors[index];
 			if (
-				!(sourceAnchor instanceof HTMLAnchorElement) ||
-				!(clonedAnchor instanceof HTMLAnchorElement)
+				!domInstanceOf(sourceAnchor, HTMLAnchorElement) ||
+				!domInstanceOf(clonedAnchor, HTMLAnchorElement)
 			) {
 				continue;
 			}
@@ -4544,7 +4561,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	} {
 		const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
 			acceptNode: (node) => {
-				if (!(node instanceof Text) || !node.textContent) {
+				if (!(domInstanceOf(node, Text)) || !node.textContent) {
 					return NodeFilter.FILTER_REJECT;
 				}
 				if (!node.parentElement) {
@@ -4561,7 +4578,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		let lastWasWhitespace = true;
 		let current = walker.nextNode();
 		while (current) {
-			if (current instanceof Text && current.textContent) {
+			if (domInstanceOf(current, Text) && current.textContent) {
 				for (let offset = 0; offset < current.textContent.length; offset += 1) {
 					const char = current.textContent[offset];
 					if (/\s/u.test(char)) {
@@ -4847,10 +4864,12 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return null;
 		}
 
+		// Legacy WebKit API kept as fallback when caretPositionFromPoint is unavailable.
 		const caretRangeFromPoint = (
 			doc as Document & {
 				caretRangeFromPoint?: (x: number, y: number) => Range | null;
 			}
+			// eslint-disable-next-line @typescript-eslint/no-deprecated -- required for cross-browser caret hit testing in EPUB iframes
 		).caretRangeFromPoint;
 		if (typeof caretRangeFromPoint === "function") {
 			return caretRangeFromPoint.call(doc, clientX, clientY);
@@ -4891,9 +4910,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 		let pendingFrame = 0;
 		const scheduleEmit = () => {
 			if (pendingFrame) {
-				cancelAnimationFrame(pendingFrame);
+				window.cancelAnimationFrame(pendingFrame);
 			}
-			pendingFrame = requestAnimationFrame(() => {
+			pendingFrame = window.requestAnimationFrame(() => {
 				pendingFrame = 0;
 				this.emitSelectionChangeIfNeeded(doc);
 			});
@@ -4914,7 +4933,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 		const cleanup = () => {
 			if (pendingFrame) {
-				cancelAnimationFrame(pendingFrame);
+				window.cancelAnimationFrame(pendingFrame);
 			}
 			doc.removeEventListener("selectionchange", onSelectionChange);
 			doc.removeEventListener("mouseup", onMouseUp);
@@ -5077,7 +5096,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 		let node: Element | null = originElement;
 		while (node) {
-			if (node instanceof HTMLElement && node.scrollHeight > node.clientHeight + 1) {
+			if (domInstanceOf(node, HTMLElement) && node.scrollHeight > node.clientHeight + 1) {
 				return node;
 			}
 			node = node.parentElement;
@@ -5131,20 +5150,20 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return;
 		}
 
-		let hoverTimer: ReturnType<typeof setTimeout> | null = null;
-		let hideTimer: ReturnType<typeof setTimeout> | null = null;
+		let hoverTimer: ReturnType<typeof window.setTimeout> | null = null;
+		let hideTimer: ReturnType<typeof window.setTimeout> | null = null;
 		let activeAnchor: HTMLAnchorElement | null = null;
 
 		const clearHoverTimer = () => {
 			if (hoverTimer) {
-				clearTimeout(hoverTimer);
+				window.clearTimeout(hoverTimer);
 				hoverTimer = null;
 			}
 		};
 
 		const clearHideTimer = () => {
 			if (hideTimer) {
-				clearTimeout(hideTimer);
+				window.clearTimeout(hideTimer);
 				hideTimer = null;
 			}
 		};
@@ -5160,7 +5179,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			activeAnchor = anchor;
 			clearHoverTimer();
 			clearHideTimer();
-			hoverTimer = setTimeout(() => {
+			hoverTimer = window.setTimeout(() => {
 				hoverTimer = null;
 				this.emitFootnotePreviewForAnchor(doc, anchor);
 			}, 180);
@@ -5172,7 +5191,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			}
 			clearHoverTimer();
 			clearHideTimer();
-			hideTimer = setTimeout(() => {
+			hideTimer = window.setTimeout(() => {
 				activeAnchor = null;
 				this.dismissFootnotePreview();
 			}, 120);
@@ -5298,7 +5317,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 				return true;
 			}
 		}
-		return this.hasNonCollapsedTextSelection(document);
+		return this.hasNonCollapsedTextSelection(activeDocument);
 	}
 
 	private emitSelectionChangeIfNeeded(doc: Document): void {
@@ -5453,7 +5472,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		) as HTMLElement[];
 
 		for (const target of targets) {
-			if (!(target instanceof HTMLElement) || !target.style) {
+			if (!domInstanceOf(target, HTMLElement) || !target.style) {
 				continue;
 			}
 			target.style.backgroundColor = background;
@@ -5477,9 +5496,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 		const recoveryToken = ++this.layoutRecoveryToken;
 		if (this.pendingLayoutRecoveryFrame !== null) {
-			cancelAnimationFrame(this.pendingLayoutRecoveryFrame);
+			window.cancelAnimationFrame(this.pendingLayoutRecoveryFrame);
 		}
-		this.pendingLayoutRecoveryFrame = requestAnimationFrame(() => {
+		this.pendingLayoutRecoveryFrame = window.requestAnimationFrame(() => {
 			this.pendingLayoutRecoveryFrame = null;
 			void this.recoverPaginatedLayoutIfNeeded(recoveryToken);
 		});
@@ -6086,9 +6105,11 @@ body .weave-foliate-concealment {
 		return [];
 	}
 
-	private getOverlayerModule(): Promise<typeof import("foliate-js/overlayer.js")> {
+	private getOverlayerModule(): Promise<FoliateOverlayerModule> {
 		if (!this.overlayerModulePromise) {
-			this.overlayerModulePromise = import("foliate-js/overlayer.js");
+			this.overlayerModulePromise = import(
+				"foliate-js/overlayer.js"
+			) as Promise<FoliateOverlayerModule>;
 		}
 		return this.overlayerModulePromise;
 	}
@@ -6103,7 +6124,7 @@ body .weave-foliate-concealment {
 		}
 	): SVGElement {
 		const svgNS = "http://www.w3.org/2000/svg";
-		const group = document.createElementNS(svgNS, "g");
+		const group = activeDocument.createElementNS(svgNS, "g");
 
 		if (annotation.style) {
 			group.appendChild(
@@ -6137,7 +6158,7 @@ body .weave-foliate-concealment {
 	private createConcealmentOverlay = (rects: unknown[]): SVGElement => {
 		const palette = this.getConcealmentPalette();
 		const svgNS = "http://www.w3.org/2000/svg";
-		const group = document.createElementNS(svgNS, "g");
+		const group = activeDocument.createElementNS(svgNS, "g");
 
 		for (const rect of rects as Array<{
 			left: number;
@@ -6145,7 +6166,7 @@ body .weave-foliate-concealment {
 			width: number;
 			height: number;
 		}>) {
-			const background = document.createElementNS(svgNS, "rect");
+			const background = activeDocument.createElementNS(svgNS, "rect");
 			background.setAttribute("x", String(rect.left));
 			background.setAttribute("y", String(rect.top));
 			background.setAttribute("width", String(rect.width));
@@ -6157,7 +6178,7 @@ body .weave-foliate-concealment {
 
 			const stripeWidth = 9;
 			for (let x = rect.left; x < rect.left + rect.width; x += stripeWidth * 2) {
-				const stripe = document.createElementNS(svgNS, "rect");
+				const stripe = activeDocument.createElementNS(svgNS, "rect");
 				stripe.setAttribute("x", String(x));
 				stripe.setAttribute("y", String(rect.top));
 				stripe.setAttribute("width", String(Math.min(stripeWidth, rect.left + rect.width - x)));
@@ -6173,7 +6194,7 @@ body .weave-foliate-concealment {
 
 	private createCommentMarkerOverlay(annotation: FoliateAnnotation, rects: unknown[]): SVGElement {
 		const svgNS = "http://www.w3.org/2000/svg";
-		const group = document.createElementNS(svgNS, "g");
+		const group = activeDocument.createElementNS(svgNS, "g");
 		group.setAttribute("data-weave-comment-marker", "group");
 		const rectList = rects as Array<{
 			left: number;
@@ -6214,7 +6235,7 @@ body .weave-foliate-concealment {
 			targetRect.left + targetRect.width - badgeWidth - inset
 		);
 		const badgeY = targetRect.top + inset;
-		const bubbleBackdrop = document.createElementNS(svgNS, "rect");
+		const bubbleBackdrop = activeDocument.createElementNS(svgNS, "rect");
 		bubbleBackdrop.setAttribute("data-weave-comment-marker", "backdrop");
 		bubbleBackdrop.setAttribute("x", String(badgeX));
 		bubbleBackdrop.setAttribute("y", String(badgeY));
@@ -6225,7 +6246,7 @@ body .weave-foliate-concealment {
 		bubbleBackdrop.setAttribute("fill", accentColor);
 		bubbleBackdrop.setAttribute("fill-opacity", "0.16");
 		setSvgInteractionAttributes(bubbleBackdrop, { pointerEvents: "none" });
-		const bubbleBody = document.createElementNS(svgNS, "rect");
+		const bubbleBody = activeDocument.createElementNS(svgNS, "rect");
 		bubbleBody.setAttribute("data-weave-comment-marker", "bubble");
 		bubbleBody.setAttribute("x", String(badgeX));
 		bubbleBody.setAttribute("y", String(badgeY));
@@ -6240,7 +6261,7 @@ body .weave-foliate-concealment {
 		bubbleBody.setAttribute("opacity", "1");
 		setSvgInteractionAttributes(bubbleBody, { pointerEvents: "none" });
 
-		const bubbleInner = document.createElementNS(svgNS, "rect");
+		const bubbleInner = activeDocument.createElementNS(svgNS, "rect");
 		bubbleInner.setAttribute("data-weave-comment-marker", "inner");
 		bubbleInner.setAttribute("x", String(badgeX + 1.15));
 		bubbleInner.setAttribute("y", String(badgeY + 1.1));
@@ -6252,7 +6273,7 @@ body .weave-foliate-concealment {
 		bubbleInner.setAttribute("fill-opacity", "0.2");
 		setSvgInteractionAttributes(bubbleInner, { pointerEvents: "none" });
 
-		const bubbleTail = document.createElementNS(svgNS, "path");
+		const bubbleTail = activeDocument.createElementNS(svgNS, "path");
 		bubbleTail.setAttribute("data-weave-comment-marker", "tail");
 		bubbleTail.setAttribute(
 			"d",
@@ -6274,7 +6295,7 @@ body .weave-foliate-concealment {
 		const dotCenterY = badgeY + bubbleBodyHeight * 0.56;
 		const dots: SVGCircleElement[] = [];
 		for (const ratio of [0.3, 0.5, 0.7]) {
-			const dot = document.createElementNS(svgNS, "circle");
+			const dot = activeDocument.createElementNS(svgNS, "circle");
 			dot.setAttribute("data-weave-comment-marker", "dot");
 			dot.setAttribute("cx", String(badgeX + badgeWidth * ratio));
 			dot.setAttribute("cy", String(dotCenterY));
@@ -6285,7 +6306,7 @@ body .weave-foliate-concealment {
 		}
 
 		const stickerSize = Math.max(2.4, Math.min(3.4, bubbleBodyHeight * 0.26));
-		const sticker = document.createElementNS(svgNS, "circle");
+		const sticker = activeDocument.createElementNS(svgNS, "circle");
 		sticker.setAttribute("data-weave-comment-marker", "sticker");
 		sticker.setAttribute("cx", String(badgeX + badgeWidth - stickerSize - 1.15));
 		sticker.setAttribute("cy", String(badgeY + stickerSize + 0.85));
@@ -6295,7 +6316,7 @@ body .weave-foliate-concealment {
 		sticker.setAttribute("stroke-width", "0.95");
 		setSvgInteractionAttributes(sticker, { pointerEvents: "none" });
 
-		const stickerHighlight = document.createElementNS(svgNS, "circle");
+		const stickerHighlight = activeDocument.createElementNS(svgNS, "circle");
 		stickerHighlight.setAttribute("data-weave-comment-marker", "sticker-highlight");
 		stickerHighlight.setAttribute("cx", String(badgeX + badgeWidth - stickerSize - 1.9));
 		stickerHighlight.setAttribute("cy", String(badgeY + stickerSize + 0.1));
@@ -6308,7 +6329,7 @@ body .weave-foliate-concealment {
 		const hitAreaY = Math.max(targetRect.top, badgeY - 1.5);
 		const hitAreaRight = Math.min(targetRect.left + targetRect.width, badgeX + badgeWidth + 1.5);
 		const hitAreaBottom = Math.min(targetRect.top + targetRect.height, badgeY + bubbleHeight + 2);
-		const hitArea = document.createElementNS(svgNS, "rect");
+		const hitArea = activeDocument.createElementNS(svgNS, "rect");
 		hitArea.setAttribute("data-weave-comment-marker", "hit-area");
 		hitArea.setAttribute("x", String(hitAreaX));
 		hitArea.setAttribute("y", String(hitAreaY));
@@ -6343,7 +6364,7 @@ body .weave-foliate-concealment {
 
 	private createReferenceBadgeOverlay(annotation: FoliateAnnotation, rects: unknown[]): SVGElement {
 		const svgNS = "http://www.w3.org/2000/svg";
-		const group = document.createElementNS(svgNS, "g");
+		const group = activeDocument.createElementNS(svgNS, "g");
 		group.setAttribute("data-weave-reference-badge", "group");
 
 		const rectList = rects as Array<{
@@ -6382,7 +6403,7 @@ body .weave-foliate-concealment {
 		const badgeY = targetRect.top + inset;
 		const cornerRadius = Math.max(3.6, Math.min(6.2, badgeHeight * 0.52));
 
-		const background = document.createElementNS(svgNS, "rect");
+		const background = activeDocument.createElementNS(svgNS, "rect");
 		background.setAttribute("data-weave-reference-badge", "background");
 		background.setAttribute("x", String(badgeX));
 		background.setAttribute("y", String(badgeY));
@@ -6395,7 +6416,7 @@ body .weave-foliate-concealment {
 		background.setAttribute("stroke-width", "0.8");
 		setSvgInteractionAttributes(background, { pointerEvents: "none" });
 
-		const inner = document.createElementNS(svgNS, "rect");
+		const inner = activeDocument.createElementNS(svgNS, "rect");
 		inner.setAttribute("data-weave-reference-badge", "inner");
 		inner.setAttribute("x", String(badgeX + 0.9));
 		inner.setAttribute("y", String(badgeY + 0.8));
@@ -6407,7 +6428,7 @@ body .weave-foliate-concealment {
 		inner.setAttribute("fill-opacity", "0.14");
 		setSvgInteractionAttributes(inner, { pointerEvents: "none" });
 
-		const text = document.createElementNS(svgNS, "text");
+		const text = activeDocument.createElementNS(svgNS, "text");
 		text.setAttribute("data-weave-reference-badge", "text");
 		text.setAttribute("x", String(badgeX + badgeWidth / 2));
 		text.setAttribute("y", String(badgeY + badgeHeight * 0.56));
@@ -6420,7 +6441,7 @@ body .weave-foliate-concealment {
 		text.textContent = String(count);
 		setSvgInteractionAttributes(text, { pointerEvents: "none" });
 
-		const hitArea = document.createElementNS(svgNS, "rect");
+		const hitArea = activeDocument.createElementNS(svgNS, "rect");
 		hitArea.setAttribute("data-weave-reference-badge", "hit-area");
 		hitArea.setAttribute("x", String(Math.max(targetRect.left, badgeX - 1.25)));
 		hitArea.setAttribute("y", String(Math.max(targetRect.top, badgeY - 1.25)));
@@ -6532,7 +6553,7 @@ body .weave-foliate-concealment {
 		color?: string
 	): SVGElement => {
 		const svgNS = "http://www.w3.org/2000/svg";
-		const group = document.createElementNS(svgNS, "g");
+		const group = activeDocument.createElementNS(svgNS, "g");
 		const strokeColor = this.resolveHighlightTint(color);
 
 		for (const rect of rects as Array<{
@@ -6567,7 +6588,7 @@ body .weave-foliate-concealment {
 		y: number
 	): SVGElement {
 		const svgNS = "http://www.w3.org/2000/svg";
-		const line = document.createElementNS(svgNS, "line");
+		const line = activeDocument.createElementNS(svgNS, "line");
 		line.setAttribute("x1", String(rect.left));
 		line.setAttribute("y1", String(y));
 		line.setAttribute("x2", String(rect.left + rect.width));
@@ -6584,7 +6605,7 @@ body .weave-foliate-concealment {
 		strokeColor: string
 	): SVGElement {
 		const svgNS = "http://www.w3.org/2000/svg";
-		const path = document.createElementNS(svgNS, "path");
+		const path = activeDocument.createElementNS(svgNS, "path");
 		const baseY = rect.top + rect.height - 2;
 		const amplitude = Math.max(1.2, Math.min(2.8, rect.height * 0.12));
 		const wavelength = Math.max(6, Math.min(12, rect.height * 0.8));
@@ -6609,7 +6630,7 @@ body .weave-foliate-concealment {
 
 	private createTemporaryFocusOverlay = (rects: unknown[], color: string): SVGElement => {
 		const svgNS = "http://www.w3.org/2000/svg";
-		const group = document.createElementNS(svgNS, "g");
+		const group = activeDocument.createElementNS(svgNS, "g");
 		const strokeColor = this.resolveHighlightTint(color);
 
 		for (const rect of rects as Array<{
@@ -6618,7 +6639,7 @@ body .weave-foliate-concealment {
 			width: number;
 			height: number;
 		}>) {
-			const outline = document.createElementNS(svgNS, "rect");
+			const outline = activeDocument.createElementNS(svgNS, "rect");
 			outline.setAttribute("x", String(rect.left - 1.5));
 			outline.setAttribute("y", String(rect.top - 1.5));
 			outline.setAttribute("width", String(rect.width + 3));
@@ -6649,7 +6670,7 @@ body .weave-foliate-concealment {
 
 		const existingTimer = this.temporaryHighlightTimers.get(key);
 		if (existingTimer) {
-			clearTimeout(existingTimer);
+			window.clearTimeout(existingTimer);
 			this.temporaryHighlightTimers.delete(key);
 		}
 
@@ -6664,7 +6685,7 @@ body .weave-foliate-concealment {
 			await this.refreshHighlights();
 
 			if (typeof durationMs === "number" && durationMs > 0) {
-				const timer = setTimeout(() => {
+				const timer = window.setTimeout(() => {
 					this.temporaryHighlightTimers.delete(key);
 					this.removeTemporaryHighlight(normalizedHighlight.cfiRange);
 				}, durationMs);
@@ -6692,7 +6713,7 @@ body .weave-foliate-concealment {
 		const key = highlight ? getReaderHighlightIdentityKey(highlight) : this.normalizeLocationKey(cfiRange);
 		const existingTimer = this.temporaryHighlightTimers.get(key);
 		if (existingTimer) {
-			clearTimeout(existingTimer);
+			window.clearTimeout(existingTimer);
 			this.temporaryHighlightTimers.delete(key);
 		}
 		this.temporaryHighlightDataMap.delete(key);
@@ -7037,15 +7058,15 @@ body .weave-foliate-concealment {
 
 		const refreshToken = ++this.themeRefreshToken;
 		if (this.pendingThemeRefreshFrame !== null) {
-			cancelAnimationFrame(this.pendingThemeRefreshFrame);
+			window.cancelAnimationFrame(this.pendingThemeRefreshFrame);
 		}
 
-		this.pendingThemeRefreshFrame = requestAnimationFrame(() => {
+		this.pendingThemeRefreshFrame = window.requestAnimationFrame(() => {
 			if (refreshToken !== this.themeRefreshToken) {
 				this.pendingThemeRefreshFrame = null;
 				return;
 			}
-			this.pendingThemeRefreshFrame = requestAnimationFrame(() => {
+			this.pendingThemeRefreshFrame = window.requestAnimationFrame(() => {
 				this.pendingThemeRefreshFrame = null;
 				void this.refreshThemeAfterHostChange(refreshToken);
 			});
@@ -7113,12 +7134,12 @@ body .weave-foliate-concealment {
 		}
 		this.themeRefreshToken += 1;
 		if (this.pendingThemeRefreshFrame !== null) {
-			cancelAnimationFrame(this.pendingThemeRefreshFrame);
+			window.cancelAnimationFrame(this.pendingThemeRefreshFrame);
 			this.pendingThemeRefreshFrame = null;
 		}
 		this.layoutRecoveryToken += 1;
 		if (this.pendingLayoutRecoveryFrame !== null) {
-			cancelAnimationFrame(this.pendingLayoutRecoveryFrame);
+			window.cancelAnimationFrame(this.pendingLayoutRecoveryFrame);
 			this.pendingLayoutRecoveryFrame = null;
 		}
 		if (this.renderContainerWheelCleanup) {
@@ -7178,7 +7199,7 @@ body .weave-foliate-concealment {
 
 	private resetTemporaryHighlightTimers(): void {
 		for (const timer of this.temporaryHighlightTimers.values()) {
-			clearTimeout(timer);
+			window.clearTimeout(timer);
 		}
 		this.temporaryHighlightTimers.clear();
 	}
@@ -7186,7 +7207,7 @@ body .weave-foliate-concealment {
 	private resetHighlightState(): void {
 		this.resetTemporaryHighlightTimers();
 		for (const timer of this.temporarilyRevealedConcealmentTimers.values()) {
-			clearTimeout(timer);
+			window.clearTimeout(timer);
 		}
 		this.temporarilyRevealedConcealmentTimers.clear();
 		this.highlightDataMap.clear();
@@ -7247,7 +7268,7 @@ body .weave-foliate-concealment {
 	}
 
 	private isDocumentVisibleForPace(): boolean {
-		return typeof document === "undefined" || document.visibilityState === "visible";
+		return typeof activeDocument === "undefined" || activeDocument.visibilityState === "visible";
 	}
 
 	private resetReadingPaceTracking(): void {
@@ -7264,7 +7285,7 @@ body .weave-foliate-concealment {
 
 	private stopPaceHeartbeat(): void {
 		if (this.paceHeartbeatTimer !== null) {
-			clearInterval(this.paceHeartbeatTimer);
+			window.clearInterval(this.paceHeartbeatTimer);
 			this.paceHeartbeatTimer = null;
 		}
 	}
@@ -7272,7 +7293,7 @@ body .weave-foliate-concealment {
 	private attachReadingPaceListeners(): void {
 		this.resetReadingPaceTracking();
 		this.markReaderActivity();
-		if (typeof document === "undefined") {
+		if (typeof activeDocument === "undefined") {
 			return;
 		}
 		const onVisibility = () => {
@@ -7282,11 +7303,11 @@ body .weave-foliate-concealment {
 				this.markReaderActivity();
 			}
 		};
-		document.addEventListener("visibilitychange", onVisibility);
+		activeDocument.addEventListener("visibilitychange", onVisibility);
 		this.paceVisibilityCleanup = () => {
-			document.removeEventListener("visibilitychange", onVisibility);
+			activeDocument.removeEventListener("visibilitychange", onVisibility);
 		};
-		this.paceHeartbeatTimer = setInterval(() => {
+		this.paceHeartbeatTimer = window.setInterval(() => {
 			this.tickReadingPaceHeartbeat();
 		}, FoliateReaderService.PACE_HEARTBEAT_MS);
 	}
@@ -7472,7 +7493,7 @@ body .weave-foliate-concealment {
 	}
 
 	private getObsidianStyleSource(): HTMLElement {
-		return this.renderContainer || document.body || document.documentElement;
+		return this.renderContainer || activeDocument.body || activeDocument.documentElement;
 	}
 
 	private getObsidianCSSVar(varName: string, fallback: string): string {
@@ -7482,11 +7503,11 @@ body .weave-foliate-concealment {
 			if (primary) {
 				return primary;
 			}
-			const bodyValue = getComputedStyle(document.body).getPropertyValue(varName).trim();
+			const bodyValue = getComputedStyle(activeDocument.body).getPropertyValue(varName).trim();
 			if (bodyValue) {
 				return bodyValue;
 			}
-			const rootValue = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+			const rootValue = getComputedStyle(activeDocument.documentElement).getPropertyValue(varName).trim();
 			return rootValue || fallback;
 		} catch {
 			return fallback;
@@ -7546,14 +7567,14 @@ body .weave-foliate-concealment {
 	private resolveHostFontSizeExpression(valueExpression: string): string | null {
 		try {
 			const styleSource = this.getObsidianStyleSource();
-			const probe = document.createElement("span");
+			const probe = activeDocument.createElement("span");
 			probe.setCssProps({
 				position: "absolute",
 				visibility: "hidden",
 				"pointer-events": "none",
 				inset: "0",
+				fontSize: valueExpression,
 			});
-			probe.style.fontSize = valueExpression;
 			styleSource.appendChild(probe);
 			const resolvedSize = getComputedStyle(probe).fontSize.trim();
 			probe.remove();
@@ -7565,14 +7586,14 @@ body .weave-foliate-concealment {
 
 	private getCurrentColorScheme(): "light" | "dark" {
 		if (
-			document.body.classList.contains("theme-dark") ||
-			document.documentElement.classList.contains("theme-dark")
+			activeDocument.body.classList.contains("theme-dark") ||
+			activeDocument.documentElement.classList.contains("theme-dark")
 		) {
 			return "dark";
 		}
 		if (
-			document.body.classList.contains("theme-light") ||
-			document.documentElement.classList.contains("theme-light")
+			activeDocument.body.classList.contains("theme-light") ||
+			activeDocument.documentElement.classList.contains("theme-light")
 		) {
 			return "light";
 		}

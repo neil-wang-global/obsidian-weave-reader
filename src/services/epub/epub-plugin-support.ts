@@ -1,5 +1,6 @@
 import { Notice, Plugin, TFile, type App, type WorkspaceLeaf } from "obsidian";
 import type { EpubViewHost } from "../../views/epub-view-host";
+import { readMapLikeRegistryValue, type AppWithViewRegistry } from "../../types/obsidian-extensions";
 import { getNavigationHub } from "../navigation/navigation-hub-access";
 import { logger } from "../../utils/logger";
 import {
@@ -11,7 +12,6 @@ import { EpubView, VIEW_TYPE_EPUB } from "../../views/EpubView";
 import { createEpubLinkPostProcessor } from "./EpubLinkPostProcessor";
 import { EpubLinkService } from "./EpubLinkService";
 import { isSupportedBookFile, SUPPORTED_BOOK_EXTENSIONS } from "./book-format";
-import type { EpubHostCapabilities } from "./epub-host";
 import { EPUB_RUNTIME } from "./epub-runtime";
 import { ensureEpubFileAccess } from "./epub-premium";
 
@@ -23,21 +23,9 @@ export function getRegisteredViewTypeForExtension(app: App, extension: string): 
 		return null;
 	}
 
-	const viewRegistry = (app as any)?.viewRegistry;
-	const typeByExtension = viewRegistry?.typeByExtension;
-	if (!typeByExtension) {
-		return null;
-	}
-
-	if (typeof typeByExtension.get === "function") {
-		return typeByExtension.get(normalizedExtension) ?? null;
-	}
-
-	if (typeof typeByExtension === "object") {
-		return typeByExtension[normalizedExtension] ?? null;
-	}
-
-	return null;
+	const typeByExtension = (app as App & AppWithViewRegistry).viewRegistry?.typeByExtension;
+	const mapped = readMapLikeRegistryValue(typeByExtension, normalizedExtension);
+	return typeof mapped === "string" ? mapped : null;
 }
 
 export function registerExtensionsSafely(

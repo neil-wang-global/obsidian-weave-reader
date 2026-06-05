@@ -90,7 +90,7 @@ export class DeferredLeafRedirectController {
 			return;
 		}
 
-		this.redirectTimer = setTimeout(() => {
+		this.redirectTimer = window.setTimeout(() => {
 			this.redirectTimer = null;
 			if (this.disposed || !this.shouldRedirect()) {
 				return;

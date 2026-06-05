@@ -171,7 +171,7 @@ export class EpubHighlightViewSnapshotService {
 		this.schedulePersistSnapshot(contextKey);
 
 		if (input.readerService && !snapshot.pageLabelsResolved) {
-			setTimeout(() => {
+			window.setTimeout(() => {
 				void this.hydratePageLabels({
 					bookId: input.bookId,
 					filePath: input.filePath,
@@ -278,7 +278,7 @@ export class EpubHighlightViewSnapshotService {
 			this.schedulePersistSnapshot(contextKey);
 
 			if (input.readerService && !snapshot.pageLabelsResolved) {
-				setTimeout(() => {
+				window.setTimeout(() => {
 					void this.hydratePageLabels(input);
 				}, 0);
 			}
@@ -411,7 +411,7 @@ export class EpubHighlightViewSnapshotService {
 					: new Date().toISOString(),
 			entries:
 				candidate.entries && typeof candidate.entries === "object"
-					? (candidate.entries as Record<string, EpubHighlightRenderSnapshot>)
+					? candidate.entries
 					: {},
 		};
 	}
@@ -469,7 +469,7 @@ export class EpubHighlightViewSnapshotService {
 		if (this.diskPersistTimer) {
 			return;
 		}
-		this.diskPersistTimer = setTimeout(() => {
+		this.diskPersistTimer = window.setTimeout(() => {
 			this.diskPersistTimer = null;
 			void this.flushDiskPersistQueue();
 		}, 0);

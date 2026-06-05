@@ -1,5 +1,4 @@
 import { normalizePath } from "obsidian";
-import type { Card } from "../data/epub-bridge-types";
 import { isSupportedBookPath } from "../services/epub/book-format";
 
 export type WDeckPersistenceCardLike = {

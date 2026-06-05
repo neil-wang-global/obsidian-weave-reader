@@ -1,6 +1,6 @@
 import type { Plugin } from "obsidian";
 import type { EffectiveLicenseState } from "../types/license";
-import { WEAVE_MAIN_PLUGIN_ID } from "./weave-reader-access";
+import { getWeaveMainPlugin } from "./weave-reader-access";
 
 /**
  * Workspace event emitted by the Weave main plugin after license activation,
@@ -56,7 +56,7 @@ function buildLicenseSyncFingerprint(plugin: LicenseSyncCapablePlugin): string {
 		local: codes(state.localLicenses),
 		inherited: codes(state.inheritedLicenses),
 		premium: state.isPremiumActive,
-		weaveInstalled: Boolean((plugin.app as any)?.plugins?.getPlugin?.(WEAVE_MAIN_PLUGIN_ID)),
+		weaveInstalled: Boolean(plugin.app && getWeaveMainPlugin(plugin.app)),
 	});
 }
 
@@ -121,7 +121,7 @@ export function registerLicenseSyncBridge(
 	};
 
 	plugin.registerEvent(
-		plugin.app.workspace.on(WEAVE_LICENSE_CHANGED_WORKSPACE_EVENT as any, handleLicenseChanged)
+		plugin.app.workspace.on(WEAVE_LICENSE_CHANGED_WORKSPACE_EVENT, handleLicenseChanged)
 	);
 	plugin.registerDomEvent(
 		window,
@@ -129,8 +129,8 @@ export function registerLicenseSyncBridge(
 		handleLicenseChanged
 	);
 	plugin.registerDomEvent(window, "focus", handlePassiveSync);
-	plugin.registerDomEvent(document, "visibilitychange", () => {
-		if (!document.hidden) {
+	plugin.registerDomEvent(activeDocument, "visibilitychange", () => {
+		if (!activeDocument.hidden) {
 			handlePassiveSync();
 		}
 	});

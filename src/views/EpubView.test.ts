@@ -43,6 +43,7 @@ function enhanceDiv<T extends HTMLDivElement>(div: T) {
 vi.mock('svelte', () => ({
 	mount: mountSpy,
 	unmount: unmountSpy,
+	untrack: <T>(fn: () => T) => fn(),
 }));
 
 vi.mock('../components/epub/EpubReaderApp.svelte', () => ({

@@ -123,16 +123,16 @@ class AIConfigStore {
 				version: 0,
 			});
 		} catch (error) {
-			logger.warn("[AIConfigStore] 加载时structuredClone失败，使用JSON fallback:", error);
+			logger.warn("[AIConfigStore] 加载时structuredClone失败，使用浅拷贝 fallback:", error);
 			this.store.set({
-				customFormatActions: JSON.parse(
-					JSON.stringify(normalizePersistedCustomActions(aiConfig.customFormatActions, "format"))
-				),
-				customSplitActions: JSON.parse(
-					JSON.stringify(normalizePersistedCustomActions(aiConfig.customSplitActions, "split"))
-				),
+				customFormatActions: [
+					...normalizePersistedCustomActions(aiConfig.customFormatActions, "format"),
+				],
+				customSplitActions: [
+					...normalizePersistedCustomActions(aiConfig.customSplitActions, "split"),
+				],
 				defaultProvider: normalizeDefaultProvider(aiConfig.defaultProvider),
-				apiKeys: JSON.parse(JSON.stringify(aiConfig.apiKeys || {})),
+				apiKeys: { ...(aiConfig.apiKeys || {}) },
 				lastModified: Date.now(),
 				version: 0,
 			});
@@ -256,7 +256,7 @@ class AIConfigStore {
 			this.plugin.settings.aiConfig = createDefaultPersistedAIConfig();
 		}
 
-		return this.plugin.settings.aiConfig as PersistedAIConfig;
+		return this.plugin.settings.aiConfig;
 	}
 
 	// ============================================================================
@@ -265,10 +265,10 @@ class AIConfigStore {
 
 	private scheduleSave() {
 		if (this.saveDebounceTimer) {
-			clearTimeout(this.saveDebounceTimer);
+			window.clearTimeout(this.saveDebounceTimer);
 		}
 
-		this.saveDebounceTimer = setTimeout(() => {
+		this.saveDebounceTimer = window.setTimeout(() => {
 			void this.saveToPlugin();
 		}, this.SAVE_DEBOUNCE_MS);
 	}
@@ -313,7 +313,7 @@ class AIConfigStore {
 	 */
 	async forceSave() {
 		if (this.saveDebounceTimer) {
-			clearTimeout(this.saveDebounceTimer);
+			window.clearTimeout(this.saveDebounceTimer);
 			this.saveDebounceTimer = null;
 		}
 		await this.saveToPlugin();
@@ -324,7 +324,7 @@ class AIConfigStore {
 	 */
 	destroy() {
 		if (this.saveDebounceTimer) {
-			clearTimeout(this.saveDebounceTimer);
+			window.clearTimeout(this.saveDebounceTimer);
 			this.saveDebounceTimer = null;
 		}
 	}

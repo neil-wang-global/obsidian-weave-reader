@@ -588,10 +588,6 @@ export class EpubBookmarkService {
 			return preferredPath;
 		}
 
-		const normalizedBookPath = normalizePath(String(book.filePath || "").trim());
-		const normalizedSourceFingerprint = String(book.sourceFingerprint || "").trim();
-		const normalizedSourceId = String(book.sourceId || "").trim();
-		const normalizedBookId = String(book.id || "").trim();
 		const folderPath = this.getBookmarkFolder();
 
 		for (const file of this.app.vault.getFiles()) {
@@ -881,7 +877,7 @@ export class EpubBookmarkService {
 			return null;
 		}
 		try {
-			const parsed = parseYaml(match[1]);
+			const parsed: unknown = parseYaml(match[1]);
 			if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
 				return null;
 			}

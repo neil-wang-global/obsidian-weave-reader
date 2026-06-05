@@ -14,7 +14,7 @@
                 canUseEpubReadingProgress,
                 getEpubStorageService,
                 resolveEpubHost,
-                warmEpubExcerptCachesForPaths,
+                warmEpubAnnotationIndexForPaths,
         } from '../../services/epub';
         import { PremiumFeatureGuard } from '../../services/premium/PremiumFeatureGuard';
         import { getBookFormatDisplayLabel, isSupportedBookFile, stripSupportedBookExtension } from '../../services/epub/book-format';
@@ -1813,7 +1813,7 @@
                                         }
 
                                 await refreshBookshelf();
-                                warmEpubExcerptCachesForPaths(
+                                warmEpubAnnotationIndexForPaths(
                                         app,
                                         addedEntries.map((entry) => entry.path)
                                 );

@@ -25,7 +25,7 @@ export function attachExternalHighlightSyncReload(
 	};
 
 	const onVisibilityChange = () => {
-		if (document.visibilityState === "visible") {
+		if (activeDocument.visibilityState === "visible") {
 			queueReload(160);
 		}
 	};
@@ -38,12 +38,12 @@ export function attachExternalHighlightSyncReload(
 		queueReload(120);
 	};
 
-	document.addEventListener("visibilitychange", onVisibilityChange);
+	activeDocument.addEventListener("visibilitychange", onVisibilityChange);
 	window.addEventListener("focus", onWindowFocus);
 	window.addEventListener("pageshow", onPageShow);
 
 	return () => {
-		document.removeEventListener("visibilitychange", onVisibilityChange);
+		activeDocument.removeEventListener("visibilitychange", onVisibilityChange);
 		window.removeEventListener("focus", onWindowFocus);
 		window.removeEventListener("pageshow", onPageShow);
 	};

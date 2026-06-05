@@ -5,7 +5,7 @@
 <div align="center">
 
 ![Weave EPUB Reader](https://img.shields.io/badge/Obsidian-EPUB%20Reader-8a5cf6?style=for-the-badge)
-![Min Obsidian](https://img.shields.io/badge/Obsidian-1.7.0+-purple?style=for-the-badge)
+![Min Obsidian](https://img.shields.io/badge/Obsidian-1.8.7+-purple?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange?style=for-the-badge)
 
 </div>
@@ -31,7 +31,7 @@
 
 機能の区分は [基本体験とプレミアムサポート](#基本体験とプレミアムサポート) を参照してください。
 
-最低 Obsidian バージョン：**1.7.0**
+最低 Obsidian バージョン：**1.8.7**
 
 ## 抜粋とノートのワークフロー
 

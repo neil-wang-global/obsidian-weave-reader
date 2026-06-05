@@ -1,4 +1,4 @@
-import { App, TFile, normalizePath } from "obsidian";
+import { App, TFile } from "obsidian";
 import type { EpubHighlightStyle } from "./types";
 import { inflateRaw } from "pako";
 import { logger } from "../../utils/logger";
@@ -59,7 +59,7 @@ export class EpubLinkService {
 		const protocolPattern = EPUB_RUNTIME.protocol.allNames
 			.map((name) => EpubLinkService.escapeRegex(name))
 			.join("|");
-		return new RegExp(`obsidian:\\/\\/(?:${protocolPattern})\\?[^\\s\"'<>]+`, "gi");
+		return new RegExp(`obsidian:\\/\\/(?:${protocolPattern})\\?[^\\s"'<>]+`, "gi");
 	}
 
 	private static matchesSupportedProtocolHref(value: string): boolean {
@@ -201,12 +201,11 @@ export class EpubLinkService {
 			if (!compressed) {
 				return null;
 			}
-			const decompressed = inflateRaw(compressed);
-			const payload = JSON.parse(
-				new TextDecoder().decode(
-					decompressed instanceof Uint8Array ? decompressed : Uint8Array.from(decompressed)
-				)
-			) as unknown;
+			const decompressedUnknown: unknown = inflateRaw(compressed);
+			if (!(decompressedUnknown instanceof Uint8Array)) {
+				return null;
+			}
+			const payload = JSON.parse(new TextDecoder().decode(decompressedUnknown)) as unknown;
 			if (!Array.isArray(payload) || typeof payload[0] !== "string") {
 				return null;
 			}

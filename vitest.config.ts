@@ -41,6 +41,7 @@ export default defineConfig({
       'src/utils/__tests__/mobile-floating-viewport.test.ts',
       'src/utils/__tests__/mobile-reading-viewport-lock.test.ts',
       'src/utils/__tests__/epub-reader-keyboard-guards.test.ts',
+      'src/utils/__tests__/dom-instance-of.test.ts',
       'src/utils/__tests__/i18n-locales.test.ts',
       'src/services/epub/__tests__/epub-premium-i18n.test.ts'
     ],

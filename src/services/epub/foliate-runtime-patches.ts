@@ -9,8 +9,8 @@ function shouldPreferFetchForResourceUrl(resourceUrl: string): boolean {
 }
 
 function readTextFromResourceUrl(resourceUrl: string): Promise<string> {
-	if (shouldPreferFetchForResourceUrl(resourceUrl) && typeof globalThis.fetch === "function") {
-		return globalThis.fetch(resourceUrl).then(async (response) => {
+	if (shouldPreferFetchForResourceUrl(resourceUrl) && typeof window.fetch === "function") {
+		return window.fetch(resourceUrl).then(async (response) => {
 			if (!response.ok) {
 				throw new Error(`HTTP ${response.status} ${response.statusText}`);
 			}
@@ -30,7 +30,7 @@ function readTextFromResourceUrl(resourceUrl: string): Promise<string> {
 			reject(new Error(`HTTP ${request.status} ${request.statusText || "Unknown error"}`));
 		};
 		request.onerror = async () => {
-			const fetchFn = globalThis.fetch;
+			const fetchFn = window.fetch;
 			if (typeof fetchFn === "function") {
 				try {
 					const response = await fetchFn(resourceUrl);
@@ -135,13 +135,13 @@ export function installMobileBlobIframePatch(onLoadError: (error: unknown) => vo
 	const getIframeSrc = (iframe: HTMLIFrameElement): string =>
 		srcDescriptor.get
 			? (
-					// eslint-disable-next-line @typescript-eslint/unbound-method
+					// eslint-disable-next-line @typescript-eslint/unbound-method -- Reflect.apply needs the original getter reference
 					Reflect.apply(srcDescriptor.get as (this: HTMLIFrameElement) => string, iframe, [])
 			  )
 			: iframe.getAttribute("src") || "";
 	const setIframeSrc = (iframe: HTMLIFrameElement, value: string): void => {
 		Reflect.apply(
-			// eslint-disable-next-line @typescript-eslint/unbound-method
+			// eslint-disable-next-line @typescript-eslint/unbound-method -- Reflect.apply needs the original setter reference
 			srcDescriptor.set as (this: HTMLIFrameElement, value: string) => void,
 			iframe,
 			[value]
@@ -171,7 +171,7 @@ export function installMobileBlobIframePatch(onLoadError: (error: unknown) => vo
 				.catch((error) => {
 					try {
 						setIframeSrc(this, normalizedValue);
-					} catch (_fallbackError) {
+					} catch {
 						// Keep the original load error as the primary signal.
 					}
 					onLoadError(error);

@@ -117,8 +117,8 @@ export class EpubBookshelfSidebarView extends ItemView {
 			const { unmount } = await import("svelte");
 			try {
 				void unmount(this.component);
-			} catch (_error) {
-				// ignore
+			} catch {
+				/* ignore */
 			}
 			this.component = null;
 		}

@@ -9,7 +9,11 @@ export class EpubSettingsTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
-	async display(): Promise<void> {
+	display(): void {
+		void this.renderPanel();
+	}
+
+	private async renderPanel(): Promise<void> {
 		const { containerEl } = this;
 		containerEl.empty();
 

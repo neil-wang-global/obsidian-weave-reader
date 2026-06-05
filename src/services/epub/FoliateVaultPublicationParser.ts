@@ -1,5 +1,6 @@
 import JSZip from "jszip";
 import { type App, TFile } from "obsidian";
+import { domInstanceOf } from "../../utils/dom-instance-of";
 import { logger } from "../../utils/logger";
 import { readVaultBinaryData } from "./EpubBinaryData";
 import {
@@ -16,7 +17,6 @@ import type { EpubBookFootnoteEntry, EpubBookFootnotesDraft } from "./reader-eng
 
 const EPUB_OPS_NAMESPACE = "http://www.idpf.org/2007/ops";
 const POSITION_CHAR_BUCKET = 1800;
-const CONTEXT_SIZE = 48;
 const MAX_SEARCH_RESULTS = 120;
 const TEXT_NODE_TAG_BLACKLIST = new Set(["SCRIPT", "STYLE", "NOSCRIPT"]);
 const COMPACT_READIUM_MARKER = "loc";
@@ -36,6 +36,7 @@ const MARKDOWN_SKIPPED_TAGS = new Set([
 	"link",
 	"head",
 ]);
+
 const MARKDOWN_CONTAINER_TAGS = new Set([
 	"body",
 	"main",
@@ -307,9 +308,17 @@ export class FoliateVaultPublicationParser {
 			this.packageDocumentPath = await this.findPackageDocumentPath();
 			await this.buildManifestMediaTypeLookup();
 
-			const { EPUB } = await import("foliate-js/epub.js");
+			const epubModule = (await import("foliate-js/epub.js")) as {
+				EPUB?: new (loader: unknown) => {
+					init(): Promise<FoliateBook>;
+				};
+			};
+			const EPUB = epubModule.EPUB;
+			if (!EPUB) {
+				throw new Error("foliate-js EPUB constructor unavailable");
+			}
 			const loader = this.createFoliateLoader();
-			this.currentBook = (await new EPUB(loader).init()) as FoliateBook;
+			this.currentBook = await new EPUB(loader).init();
 		} else if (usesPlainTextBookAdapter(extension)) {
 			this.archive = null;
 			this.archiveEntryLookup.clear();
@@ -1004,7 +1013,7 @@ export class FoliateVaultPublicationParser {
 
 	private async buildMetadata(): Promise<void> {
 		const book = this.getBook();
-		const metadata = (book.metadata || {}) as Record<string, unknown>;
+		const metadata = book.metadata ?? {};
 		const packageMetadataDoc = await this.readPackageMetadataDocument();
 		const identifier =
 			this.readPackagePrimaryIdentifier(packageMetadataDoc) ||
@@ -1288,7 +1297,10 @@ export class FoliateVaultPublicationParser {
 			if (indexedByPrefix !== null) {
 				return {
 					index: indexedByPrefix,
-					anchor: (doc: Document) => EpubCfi.toRange(doc, parsed),
+					anchor: (doc: Document): Range | null => {
+						const rangeUnknown: unknown = EpubCfi.toRange(doc, parsed);
+						return rangeUnknown instanceof Range ? rangeUnknown : null;
+					},
 				};
 			}
 			const parentPath = Array.isArray((parsed as EpubCfi.ParsedCfiRange).parent)
@@ -1301,7 +1313,10 @@ export class FoliateVaultPublicationParser {
 			}
 			return {
 				index,
-				anchor: (doc: Document) => EpubCfi.toRange(doc, parsed),
+				anchor: (doc: Document): Range | null => {
+					const rangeUnknown: unknown = EpubCfi.toRange(doc, parsed);
+					return rangeUnknown instanceof Range ? rangeUnknown : null;
+				},
 			};
 		} catch (error) {
 			logger.debugWithTag("FoliateVaultPublicationParser", "Failed to resolve CFI target", {
@@ -1338,7 +1353,12 @@ export class FoliateVaultPublicationParser {
 	}
 
 	private getBaseSectionCfi(index: number): string {
-		return this.getBook().sections[index]?.cfi || EpubCfi.fake.fromIndex(index);
+		const sectionCfi = this.getBook().sections[index]?.cfi;
+		if (typeof sectionCfi === "string" && sectionCfi.trim()) {
+			return sectionCfi;
+		}
+		const fakeCfiUnknown: unknown = EpubCfi.fake.fromIndex(index);
+		return typeof fakeCfiUnknown === "string" ? fakeCfiUnknown : String(fakeCfiUnknown ?? "");
 	}
 
 	private resolveAnchorAsRange(
@@ -1349,7 +1369,7 @@ export class FoliateVaultPublicationParser {
 		if (anchor instanceof Range) {
 			return anchor;
 		}
-		if (anchor instanceof Node) {
+		if (domInstanceOf(anchor, Node)) {
 			return this.createRangeForNode(anchor);
 		}
 		return null;
@@ -1415,7 +1435,9 @@ export class FoliateVaultPublicationParser {
 				if (resolved?.index === targetIndex) {
 					return this.normalizeInternalHref(this.packageDocumentPath || href, href);
 				}
-			} catch {}
+			} catch {
+				/* ignore */
+			}
 		}
 		return "";
 	}
@@ -1586,6 +1608,8 @@ export class FoliateVaultPublicationParser {
 		if (!url.startsWith("blob:")) {
 			throw new Error(`Unsupported generic section load URL: ${url}`);
 		}
+		// blob: markup is resolved in-process; requestUrl does not apply to object URLs.
+		// eslint-disable-next-line no-restricted-globals -- same-origin blob section payload
 		const response = await fetch(url);
 		if (!response.ok) {
 			throw new Error(`Failed to fetch generic section markup (${response.status})`);
@@ -2117,7 +2141,9 @@ export class FoliateVaultPublicationParser {
 			if (bySelector) {
 				return bySelector;
 			}
-		} catch {}
+		} catch {
+			/* ignore */
+		}
 
 		for (const element of Array.from(doc.getElementsByTagName("*"))) {
 			if (
@@ -2147,7 +2173,7 @@ export class FoliateVaultPublicationParser {
 			range.setEnd(textNode, Math.min(textNode.textContent?.length || 0, 1));
 			return range;
 		}
-		if (node instanceof Element) {
+		if (domInstanceOf(node, Element)) {
 			const textSegments = this.collectTextSegments(node);
 			if (textSegments.length > 0) {
 				const range = node.ownerDocument.createRange();
@@ -2207,7 +2233,7 @@ export class FoliateVaultPublicationParser {
 				return segment.start + Math.min(offset, segment.text.length);
 			}
 		}
-		const rangeDoc = node.ownerDocument || document;
+		const rangeDoc = node.ownerDocument || activeDocument;
 		const probe = rangeDoc.createRange();
 		try {
 			probe.setStart(segments[0].node, 0);
@@ -2827,7 +2853,7 @@ export class FoliateVaultPublicationParser {
 		}
 		try {
 			const fragment = range.cloneContents();
-			const ownerDocument = range.commonAncestorContainer.ownerDocument || document;
+			const ownerDocument = range.commonAncestorContainer.ownerDocument || activeDocument;
 			const container = ownerDocument.createElement("div");
 			container.appendChild(fragment);
 			this.removeFootnoteBacklinks(container);
@@ -3858,7 +3884,7 @@ export class FoliateVaultPublicationParser {
 		const normalizedLocalName = localName.toLowerCase();
 		const matches: Element[] = [];
 		if (
-			root instanceof Element &&
+			domInstanceOf(root, Element) &&
 			(root.localName || root.tagName).toLowerCase() === normalizedLocalName
 		) {
 			matches.push(root);
@@ -4049,7 +4075,7 @@ export class FoliateVaultPublicationParser {
 		}
 		const normalizedLocalName = localName.toLowerCase();
 		if (
-			root instanceof Element &&
+			domInstanceOf(root, Element) &&
 			(root.localName || root.tagName).toLowerCase() === normalizedLocalName
 		) {
 			return root;
@@ -4395,7 +4421,7 @@ export class FoliateVaultPublicationParser {
 }
 
 function readTextResourceViaXhr(href: string): Promise<string> {
-	if (shouldPreferFetchForResourceUrl(href) && typeof globalThis.fetch === "function") {
+	if (shouldPreferFetchForResourceUrl(href) && typeof window.fetch === "function") {
 		return readTextResourceViaFetch(href);
 	}
 
@@ -4426,11 +4452,11 @@ function readTextResourceViaXhr(href: string): Promise<string> {
 }
 
 async function readTextResourceViaFetch(href: string): Promise<string> {
-	if (typeof globalThis.fetch !== "function") {
+	if (typeof window.fetch !== "function") {
 		throw new Error("Failed to load text resource");
 	}
 
-	const response = await globalThis.fetch(href);
+	const response = await window.fetch(href);
 	if (!response.ok) {
 		throw new Error(`Failed to load text resource: ${response.status} ${response.statusText}`);
 	}
@@ -4440,11 +4466,11 @@ async function readTextResourceViaFetch(href: string): Promise<string> {
 async function readBinaryResourceViaFetch(
 	href: string
 ): Promise<{ bytes: Uint8Array; mimeType: string }> {
-	if (typeof globalThis.fetch !== "function") {
+	if (typeof window.fetch !== "function") {
 		throw new Error("Failed to load binary resource");
 	}
 
-	const response = await globalThis.fetch(href);
+	const response = await window.fetch(href);
 	if (!response.ok) {
 		throw new Error(`Failed to load binary resource: ${response.status} ${response.statusText}`);
 	}

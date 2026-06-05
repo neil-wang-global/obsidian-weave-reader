@@ -145,7 +145,8 @@ export class DirectoryUtils {
 			remove?: (path: string) => Promise<void>;
 		};
 
-		if (typeof adapterWithDirOps.list !== "function") {
+		const listDir = adapterWithDirOps.list;
+		if (typeof listDir !== "function") {
 			return 0;
 		}
 
@@ -182,7 +183,7 @@ export class DirectoryUtils {
 
 			let listing: { files?: string[]; folders?: string[] };
 			try {
-				listing = await adapterWithDirOps.list!(dir);
+				listing = await listDir(dir);
 			} catch {
 				return;
 			}
@@ -192,7 +193,7 @@ export class DirectoryUtils {
 			}
 
 			try {
-				listing = await adapterWithDirOps.list!(dir);
+				listing = await listDir(dir);
 			} catch {
 				return;
 			}
