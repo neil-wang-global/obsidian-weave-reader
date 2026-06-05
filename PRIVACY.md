@@ -47,6 +47,12 @@
 
 插件不会在后台持续读取剪贴板，也不会在你未操作时访问剪贴板。
 
+### 3.3 本地存储
+
+插件设置与持久化状态优先使用 Obsidian 官方插件数据 API（`loadData` / `saveData`）以及 Vault 内插件目录下的 JSON 状态文件（例如 `state/local-storage.json`）。
+
+少量历史兼容逻辑仍可能通过 Obsidian 提供的 `App#loadLocalStorage` / `App#saveLocalStorage` 读取或清理旧键值；插件不会直接依赖浏览器 `window.localStorage` 或 `sessionStorage` 作为长期持久化方案。
+
 ## 4. 可能发生联网的场景
 
 以下场景可能发生网络请求：

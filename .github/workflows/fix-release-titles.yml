@@ -15,7 +15,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Repair empty release titles
+      - name: Repair release assets and titles
         env:
           GITHUB_TOKEN: ${{ github.token }}
         shell: bash
@@ -31,7 +31,8 @@ jobs:
             };
 
             let page = 1;
-            let fixed = 0;
+            let fixedTitles = 0;
+            let removedAssets = 0;
 
             while (page <= 20) {
               const url = `https://api.github.com/repos/${repo}/releases?per_page=100&page=${page}`;
@@ -45,30 +46,50 @@ jobs:
 
               for (const release of releases) {
                 const tag = release.tag_name;
-                if (!tag || release.name === tag) continue;
+                if (!tag) continue;
 
-                const patchResponse = await fetch(
-                  `https://api.github.com/repos/${repo}/releases/${release.id}`,
-                  {
-                    method: "PATCH",
-                    headers: { ...headers, "Content-Type": "application/json" },
-                    body: JSON.stringify({ name: tag, tag_name: tag }),
+                if (release.name !== tag) {
+                  const patchResponse = await fetch(
+                    `https://api.github.com/repos/${repo}/releases/${release.id}`,
+                    {
+                      method: "PATCH",
+                      headers: { ...headers, "Content-Type": "application/json" },
+                      body: JSON.stringify({ name: tag, tag_name: tag }),
+                    }
+                  );
+
+                  if (!patchResponse.ok) {
+                    throw new Error(`Failed to patch release ${tag}: ${patchResponse.status}`);
                   }
-                );
 
-                if (!patchResponse.ok) {
-                  throw new Error(`Failed to patch release ${tag}: ${patchResponse.status}`);
+                  fixedTitles += 1;
+                  console.log(`Fixed release title for ${tag}`);
                 }
 
-                fixed += 1;
-                console.log(`Fixed release title for ${tag}`);
+                for (const asset of release.assets ?? []) {
+                  if (asset.name !== "versions.json") continue;
+
+                  const deleteResponse = await fetch(
+                    `https://api.github.com/repos/${repo}/releases/assets/${asset.id}`,
+                    { method: "DELETE", headers }
+                  );
+
+                  if (!deleteResponse.ok) {
+                    throw new Error(
+                      `Failed to delete versions.json from ${tag}: ${deleteResponse.status}`
+                    );
+                  }
+
+                  removedAssets += 1;
+                  console.log(`Removed versions.json from ${tag}`);
+                }
               }
 
               if (releases.length < 100) break;
               page += 1;
             }
 
-            console.log(`Done. Updated ${fixed} release(s).`);
+            console.log(`Done. Updated ${fixedTitles} title(s), removed ${removedAssets} extra asset(s).`);
           })().catch((error) => {
             console.error(error);
             process.exit(1);

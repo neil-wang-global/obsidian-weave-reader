@@ -34,7 +34,12 @@ jobs:
           cache: "npm"
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci --no-audit --no-fund || (
+            echo "npm ci failed; retrying with a clean install..."
+            rm -rf node_modules
+            npm ci --no-audit --no-fund
+          )
 
       - name: Verify public repo safety
         if: github.event_name != 'workflow_dispatch'
@@ -106,7 +111,7 @@ jobs:
         run: node scripts/verify-no-dynamic-script.cjs dist/main.js
 
       - name: Attest release assets
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest@v4
         with:
           subject-path: |
             dist/main.js
