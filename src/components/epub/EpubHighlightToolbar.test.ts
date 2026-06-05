@@ -27,7 +27,7 @@ function createInfo(): HighlightClickInfo {
 function createReaderService(frameDocuments: Document[] = []): EpubReaderEngine {
   return {
     getVisibleFrames: () => frameDocuments.map((document) => ({
-      document,
+      frameDocument: document,
       window: document.defaultView || window,
       cfiFromRange: () => null,
     })),

@@ -162,10 +162,10 @@ describe("FoliateReaderService comment marker layering", () => {
 			const frame = {
 				index: 12,
 				href: "txt-section-13.xhtml",
-				document: doc,
+				frameDocument: doc,
 				frameElement: null,
 				frame: {
-					document: doc,
+					frameDocument: doc,
 					window: doc.defaultView as Window,
 					cfiFromRange: () => null,
 				},

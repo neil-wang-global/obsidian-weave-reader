@@ -2499,7 +2499,7 @@
 			return {
 				frameElement,
 				frameWindow: frame.window,
-				frameDocument: frame.document,
+				frameDocument: frame.frameDocument,
 			};
 		}
 		return null;

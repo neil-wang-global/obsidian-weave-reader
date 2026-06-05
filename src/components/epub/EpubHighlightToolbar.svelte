@@ -84,8 +84,8 @@
 		const binder = createEventBinder();
 		const eventTargets = new Set<EventTarget>([document]);
 		for (const frame of readerService.getVisibleFrames()) {
-			if (frame?.document) {
-				eventTargets.add(frame.document);
+			if (frame?.frameDocument) {
+				eventTargets.add(frame.frameDocument);
 			}
 		}
 

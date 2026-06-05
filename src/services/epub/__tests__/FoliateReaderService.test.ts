@@ -812,7 +812,7 @@ describe("FoliateReaderService", () => {
 
 			const frames = service.getVisibleFrames();
 			expect(frames).toHaveLength(1);
-			expect(frames[0]?.document).toBe(document);
+			expect(frames[0]?.frameDocument).toBe(document);
 		} finally {
 			service.destroy();
 		}
@@ -1145,10 +1145,10 @@ describe("FoliateReaderService", () => {
 				{
 					index: 0,
 					href: "OPS/text/chapter1.xhtml",
-					document: frameDoc,
+					frameDocument: frameDoc,
 					frameElement: iframe,
 					frame: {
-						document: frameDoc,
+						frameDocument: frameDoc,
 						window: frameDoc.defaultView,
 						cfiFromRange: () => "epubcfi(/6/2!/4/2,/1:0,/1:4)",
 					},
@@ -1212,10 +1212,10 @@ describe("FoliateReaderService", () => {
 				{
 					index: 0,
 					href: "OPS/text/chapter1.xhtml",
-					document: frameDoc,
+					frameDocument: frameDoc,
 					frameElement: iframe,
 					frame: {
-						document: frameDoc,
+						frameDocument: frameDoc,
 						window,
 						cfiFromRange: () => null,
 					},
@@ -1266,10 +1266,10 @@ describe("FoliateReaderService", () => {
 				{
 					index: 0,
 					href: "OPS/text/chapter1.xhtml",
-					document: frameDoc,
+					frameDocument: frameDoc,
 					frameElement: null,
 					frame: {
-						document: frameDoc,
+						frameDocument: frameDoc,
 						window,
 						cfiFromRange: () => null,
 					},
@@ -1654,7 +1654,7 @@ describe("FoliateReaderService", () => {
 			vi.spyOn(service as any, "getVisibleFramesWithIndex").mockReturnValue([
 				{
 					index: 12,
-					document: frameDoc,
+					frameDocument: frameDoc,
 					frameElement: iframe,
 					frame: {},
 				},
@@ -1722,7 +1722,7 @@ describe("FoliateReaderService", () => {
 			(service as any).highlightDataMap.set(key, highlight);
 			(service as any).highlightClickCallbacks.add(callback);
 			vi.spyOn(service as any, "getVisibleFramesWithIndex").mockReturnValue([
-				{ index: 0, document: frameDoc, frameElement: null, frame: {} },
+				{ index: 0, frameDocument: frameDoc, frameElement: null, frame: {} },
 			]);
 
 			(service as any).handleShowAnnotationEvent({
@@ -1765,7 +1765,7 @@ describe("FoliateReaderService", () => {
 			(service as any).highlightDataMap.set(key, highlight);
 			(service as any).highlightClickCallbacks.add(callback);
 			vi.spyOn(service as any, "getVisibleFramesWithIndex").mockReturnValue([
-				{ index: 0, document: frameDoc },
+				{ index: 0, frameDocument: frameDoc },
 			]);
 
 			(service as any).handleShowAnnotationEvent({
@@ -1816,10 +1816,10 @@ describe("FoliateReaderService", () => {
 				{
 					index: 0,
 					href: "OPS/text/chapter1.xhtml",
-					document: frameDoc,
+					frameDocument: frameDoc,
 					frameElement: null,
 					frame: {
-						document: frameDoc,
+						frameDocument: frameDoc,
 						window,
 						cfiFromRange: () => null,
 					},
@@ -2400,10 +2400,10 @@ describe("FoliateReaderService", () => {
 				{
 					index: 8,
 					href: "text/part0108.xhtml",
-					document: frameDoc,
+					frameDocument: frameDoc,
 					frameElement: null,
 					frame: {
-						document: frameDoc,
+						frameDocument: frameDoc,
 						window,
 						cfiFromRange: () => null,
 					},
@@ -2624,10 +2624,10 @@ describe("FoliateReaderService", () => {
 				{
 					index: 0,
 					href: "OPS/text/chapter1.xhtml",
-					document: frameDoc,
+					frameDocument: frameDoc,
 					frameElement: null,
 					frame: {
-						document: frameDoc,
+						frameDocument: frameDoc,
 						window,
 						cfiFromRange: () => null,
 					},

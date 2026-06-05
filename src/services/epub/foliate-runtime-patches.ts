@@ -136,21 +136,13 @@ export function installMobileBlobIframePatch(onLoadError: (error: unknown) => vo
 		if (!srcDescriptor.get) {
 			return iframe.getAttribute("src") || "";
 		}
-		return Reflect.apply(
-			srcDescriptor.get as (this: HTMLIFrameElement) => string,
-			iframe,
-			[]
-		);
+		return (srcDescriptor.get as (this: HTMLIFrameElement) => string).call(iframe);
 	};
 	const setIframeSrc = (iframe: HTMLIFrameElement, value: string): void => {
 		if (!srcDescriptor.set) {
 			return;
 		}
-		Reflect.apply(
-			srcDescriptor.set as (this: HTMLIFrameElement, value: string) => void,
-			iframe,
-			[value]
-		);
+		(srcDescriptor.set as (this: HTMLIFrameElement, value: string) => void).call(iframe, value);
 	};
 	Object.defineProperty(HTMLIFrameElement.prototype, "src", {
 		configurable: true,

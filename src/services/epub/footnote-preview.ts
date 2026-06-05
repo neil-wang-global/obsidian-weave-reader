@@ -55,7 +55,7 @@ type FootnotePreviewParser = Pick<
 export type FootnotePreviewVisibleFrame = {
 	index: number;
 	href: string;
-	document: Document;
+	frameDocument: Document;
 	frameElement: HTMLElement | null;
 	frame: ReaderFrame;
 };
@@ -905,8 +905,8 @@ export class FootnotePreviewResolver {
 			: [];
 		const documents = [
 			doc,
-			...candidateFrames.map((frame) => frame.document),
-			...visibleFrames.map((frame) => frame.document).filter((frameDoc) => frameDoc !== doc),
+			...candidateFrames.map((frame) => frame.frameDocument),
+			...visibleFrames.map((frame) => frame.frameDocument).filter((frameDoc) => frameDoc !== doc),
 		];
 		for (const frameDoc of documents) {
 			const element = this.findFootnoteTargetInDocument(frameDoc, fragment);

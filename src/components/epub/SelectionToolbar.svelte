@@ -99,7 +99,7 @@
 	}
 
 	function getFrameElement(frame: ReaderFrame | null | undefined): HTMLIFrameElement | null {
-		const iframeWindow = frame?.window || frame?.document?.defaultView;
+		const iframeWindow = frame?.window || frame?.frameDocument?.defaultView;
 		return (iframeWindow?.frameElement as HTMLIFrameElement | null) || null;
 	}
 
@@ -433,7 +433,7 @@
 		stopPositionTracking();
 		activeFrame = frame;
 
-		const iframeWindow = frame.window || frame.document?.defaultView;
+		const iframeWindow = frame.window || frame.frameDocument?.defaultView;
 		const iframeDocument = iframeWindow?.document;
 		const scrollHost = getScrollTrackingHost(frame);
 		const visualViewport = window.visualViewport;
@@ -456,7 +456,7 @@
 
 	async function syncSelection(frame: ReaderFrame, cfiRange?: string) {
 		try {
-			const iframeWindow = frame.window || frame.document?.defaultView;
+			const iframeWindow = frame.window || frame.frameDocument?.defaultView;
 			if (!iframeWindow) {
 				hideToolbar();
 				return;

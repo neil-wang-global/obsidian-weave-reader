@@ -88,7 +88,7 @@ type RenderedFoliateAnnotation = {
 type VisibleFrameWithIndex = {
 	index: number;
 	href: string;
-	document: Document;
+	frameDocument: Document;
 	frameElement: HTMLElement | null;
 	frame: ReaderFrame;
 };
@@ -832,7 +832,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			for (const frame of this.getVisibleFramesWithIndex()) {
 				const range = this.parser.resolveRangeInLoadedSection(
 					target,
-					frame.document,
+					frame.frameDocument,
 					frame.index,
 					options.text
 				);
@@ -980,7 +980,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (visibleFrame) {
 			const liveRange = this.resolveParagraphRangeInDocument(
 				paragraph,
-				visibleFrame.document,
+				visibleFrame.frameDocument,
 				normalizedStart,
 				normalizedEnd
 			);
@@ -1544,7 +1544,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		// iframe (common for TXT). Clear that selection so the excerpt toolbar can open.
 		if (detail?.range) {
 			this.clearSelections();
-		} else if (this.hasActiveReaderSelection(frame?.document)) {
+		} else if (this.hasActiveReaderSelection(frame?.frameDocument)) {
 			return;
 		}
 
@@ -1556,7 +1556,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 				? this.createViewportRectList(frame, detail.range) || undefined
 				: undefined;
 
-		if (!rect && frame?.document) {
+		if (!rect && frame?.frameDocument) {
 			const geometry = this.getCurrentHighlightViewportGeometry(
 				highlight.cfiRange,
 				highlight.text
@@ -1565,10 +1565,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 			rects = geometry?.rects;
 		}
 
-		if (!rect && frame?.document) {
+		if (!rect && frame?.frameDocument) {
 			const resolvedRange = this.parser.resolveRangeInLoadedSection(
 				highlight.cfiRange,
-				frame.document,
+				frame.frameDocument,
 				frame.index,
 				highlight.text
 			);
@@ -1716,7 +1716,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 		const liveRange = this.parser.resolveRangeInLoadedSection(
 			resolved.cfi || "",
-			frame.document,
+			frame.frameDocument,
 			frame.index,
 			textHint || resolved.textHint
 		);
@@ -1837,7 +1837,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private clearSelections(): void {
 		const docs = new Set<Document>([activeDocument]);
 		for (const frame of this.getVisibleFramesWithIndex()) {
-			docs.add(frame.document);
+			docs.add(frame.frameDocument);
 		}
 		for (const doc of docs) {
 			try {
@@ -1927,7 +1927,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return null;
 		}
 		const sourceRange = sourceSelection.getRangeAt(0);
-		const frame = this.getVisibleFramesWithIndex().find((item) => item.document === doc);
+		const frame = this.getVisibleFramesWithIndex().find((item) => item.frameDocument === doc);
 		const primaryRect = frame
 			? this.createViewportRect(frame, sourceRange)
 			: this.createViewportRectFromRange(doc, sourceRange);
@@ -2003,7 +2003,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		doc: Document,
 		range: Range
 	): ReaderFootnotePreviewInfo["rect"] | null {
-		const frame = this.getVisibleFramesWithIndex().find((item) => item.document === doc);
+		const frame = this.getVisibleFramesWithIndex().find((item) => item.frameDocument === doc);
 		if (frame) {
 			return this.createViewportRect(frame, range);
 		}
@@ -2030,7 +2030,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (!fallbackRect) {
 			return null;
 		}
-		const frame = this.getVisibleFramesWithIndex().find((item) => item.document === doc);
+		const frame = this.getVisibleFramesWithIndex().find((item) => item.frameDocument === doc);
 		if (!frame?.frameElement) {
 			return fallbackRect;
 		}
@@ -2352,7 +2352,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 		const range = this.parser.resolveRangeInLoadedSection(
 			canonical,
-			visibleFrame.document,
+			visibleFrame.frameDocument,
 			chapterIndex
 		);
 		if (!range) {
@@ -2395,7 +2395,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		const frames = this.getVisibleFramesWithIndex();
 		const frame =
 			frames.find((item) => item.index === resolved.index) ||
-			frames.find((item) => item.document === resolved.doc) ||
+			frames.find((item) => item.frameDocument === resolved.doc) ||
 			null;
 		if (!frame) {
 			return;
@@ -2406,7 +2406,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			(targetCfi
 				? this.parser.resolveRangeInLoadedSection(
 						targetCfi,
-						frame.document,
+						frame.frameDocument,
 						frame.index,
 						resolved.textHint
 					)
@@ -2654,7 +2654,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			visibleFrames.push({
 				index,
 				href: this.parser.getSectionHrefByIndex(index),
-				document: doc,
+				frameDocument: doc,
 				frameElement: (doc.defaultView.frameElement as HTMLElement | null) || null,
 				frame,
 			});
@@ -2665,7 +2665,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 	private createReaderFrame(doc: Document, index: number): ReaderFrame {
 		return {
-			document: doc,
+			frameDocument: doc,
 			window: doc.defaultView as Window,
 			cfiFromRange: (range: Range) => {
 				try {
@@ -2793,7 +2793,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		const visibleFrame = this.getVisibleFramesWithIndex().find(
 			(frame) => frame.index === chapterIndex
 		);
-		pushCandidate(visibleFrame?.document, chapterIndex, defaultHref, "visible");
+		pushCandidate(visibleFrame?.frameDocument, chapterIndex, defaultHref, "visible");
 
 		const processed = await this.parser.getProcessedDocumentByIndex(chapterIndex);
 		pushCandidate(processed, chapterIndex, defaultHref, "processed");
@@ -4618,7 +4618,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (visibleFrame) {
 			const liveRange = this.resolveParagraphRangeInDocument(
 				paragraph,
-				visibleFrame.document,
+				visibleFrame.frameDocument,
 				startOffset,
 				endOffset
 			);
@@ -4661,7 +4661,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 		const currentRange = this.parser.resolveRangeInLoadedSection(
 			currentCfi,
-			visibleFrame.document,
+			visibleFrame.frameDocument,
 			chapterIndex
 		);
 		if (!currentRange) {
@@ -4669,7 +4669,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}
 
 		for (const [index, paragraph] of paragraphs.entries()) {
-			const paragraphRange = this.resolveParagraphRangeInDocument(paragraph, visibleFrame.document);
+			const paragraphRange = this.resolveParagraphRangeInDocument(paragraph, visibleFrame.frameDocument);
 			if (!paragraphRange) {
 				continue;
 			}
@@ -4684,7 +4684,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		let closestIndex = 0;
 		let closestDistance = Number.POSITIVE_INFINITY;
 		for (const [index, paragraph] of paragraphs.entries()) {
-			const paragraphRange = this.resolveParagraphRangeInDocument(paragraph, visibleFrame.document);
+			const paragraphRange = this.resolveParagraphRangeInDocument(paragraph, visibleFrame.frameDocument);
 			if (!paragraphRange) {
 				continue;
 			}
@@ -4723,7 +4723,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return;
 		}
 
-		const frame = this.getVisibleFramesWithIndex().find((item) => item.document === doc);
+		const frame = this.getVisibleFramesWithIndex().find((item) => item.frameDocument === doc);
 		if (!frame) {
 			return;
 		}
@@ -4821,7 +4821,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		clientY: number,
 		frame: VisibleFrameWithIndex
 	): ReaderHighlight | null {
-		const doc = frame.document;
+		const doc = frame.frameDocument;
 		const caretRange = this.createCaretRangeFromClientPoint(doc, clientX, clientY);
 		if (!caretRange) {
 			return null;
@@ -5299,10 +5299,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return true;
 		}
 		for (const frame of this.getVisibleFramesWithIndex()) {
-			if (frame.document === preferredDoc) {
+			if (frame.frameDocument === preferredDoc) {
 				continue;
 			}
-			if (this.hasNonCollapsedTextSelection(frame.document)) {
+			if (this.hasNonCollapsedTextSelection(frame.frameDocument)) {
 				return true;
 			}
 		}
@@ -5323,7 +5323,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return;
 		}
 
-		const frame = this.getVisibleFramesWithIndex().find((item) => item.document === doc);
+		const frame = this.getVisibleFramesWithIndex().find((item) => item.frameDocument === doc);
 		if (!frame) {
 			return;
 		}
@@ -5446,7 +5446,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		renderer?.setStyles?.(styles);
 		this.applyHostThemeSurface();
 		for (const frame of this.getVisibleFramesWithIndex()) {
-			this.normalizeDocument(frame.document);
+			this.normalizeDocument(frame.frameDocument);
 		}
 		this.schedulePaginatedLayoutRecovery();
 	}
@@ -5533,8 +5533,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 		const narrowestViewportWidth = visibleFrames.reduce((smallest, frame) => {
 			const docWidth = Math.max(
-				frame.document.documentElement?.clientWidth || 0,
-				frame.document.body?.clientWidth || 0
+				frame.frameDocument.documentElement?.clientWidth || 0,
+				frame.frameDocument.body?.clientWidth || 0
 			);
 			if (docWidth <= 0) {
 				return smallest;
@@ -5898,7 +5898,7 @@ body .weave-foliate-concealment {
 		for (const frame of orderedFrames) {
 			const range = this.parser.resolveRangeInLoadedSection(
 				cfiRange,
-				frame.document,
+				frame.frameDocument,
 				frame.index,
 				resolvedTextHint || undefined
 			);
@@ -5948,7 +5948,7 @@ body .weave-foliate-concealment {
 		for (const frame of orderedFrames) {
 			const range = this.parser.resolveRangeInLoadedSection(
 				highlight.cfiRange,
-				frame.document,
+				frame.frameDocument,
 				frame.index,
 				textHint
 			);
@@ -6078,7 +6078,7 @@ body .weave-foliate-concealment {
 		for (const frame of orderedFrames) {
 			const range = this.parser.resolveRangeInLoadedSection(
 				highlight.cfiRange,
-				frame.document,
+				frame.frameDocument,
 				frame.index,
 				textHint
 			);
@@ -6917,7 +6917,7 @@ body .weave-foliate-concealment {
 			if (frame.index !== sectionIndex) {
 				continue;
 			}
-			const precise = resolveInDocument(frame.document, frame.index);
+			const precise = resolveInDocument(frame.frameDocument, frame.index);
 			if (precise) {
 				return precise;
 			}

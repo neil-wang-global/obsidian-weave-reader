@@ -138,7 +138,7 @@ export interface ReaderRemainingTimeEstimate {
 }
 
 export interface ReaderFrame {
-	document: Document;
+	frameDocument: Document;
 	window: Window;
 	cfiFromRange: (range: Range) => string | null;
 }

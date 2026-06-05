@@ -14,7 +14,7 @@ export interface ScreenshotRect {
 }
 
 export interface EpubVisibleFrameLike {
-	document?: Document;
+	frameDocument?: Document;
 	window?: Window;
 }
 
@@ -354,7 +354,7 @@ export class EpubScreenshotService {
 		for (const frameLike of visibleFrames || []) {
 			pushFrame((frameLike.window?.frameElement as HTMLIFrameElement | null) || null);
 			pushFrame(
-				(frameLike.document?.defaultView?.frameElement as HTMLIFrameElement | null) || null
+				(frameLike.frameDocument?.defaultView?.frameElement as HTMLIFrameElement | null) || null
 			);
 		}
 
