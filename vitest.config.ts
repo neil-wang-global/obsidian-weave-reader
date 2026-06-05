@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { svelteTesting } from '@testing-library/svelte/vite';
@@ -66,7 +67,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': '/src',
-      'obsidian': '/src/tests/mocks/obsidian.ts'
+      'obsidian': '/src/tests/mocks/obsidian.ts',
+      'weave-vendor/epubcfi': path.resolve(__dirname, 'vendor/epubcfi.mjs'),
     }
   },
   define: {

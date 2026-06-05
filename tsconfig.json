@@ -11,6 +11,9 @@
 		"sourceMap": true,
 		"strict": true,
 		"moduleResolution": "bundler",
+		"paths": {
+			"weave-vendor/epubcfi": ["./vendor/epubcfi.mjs"]
+		},
 		"target": "ES2022",
 		"verbatimModuleSyntax": false,
 		"types": ["svelte", "node", "bun-types", "vitest/globals", "@testing-library/jest-dom"]

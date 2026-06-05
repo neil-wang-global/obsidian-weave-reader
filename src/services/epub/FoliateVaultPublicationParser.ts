@@ -13,7 +13,7 @@ import {
 } from "./book-format";
 import { EpubError } from "./epub-error";
 import { makePlainTextBook } from "./plain-text-book";
-import * as EpubCfi from "./vendor/epubcfi";
+import * as EpubCfi from "./epub-cfi";
 import type { TocItem } from "./types";
 import type { EpubBookFootnoteEntry, EpubBookFootnotesDraft } from "./reader-engine-types";
 
@@ -1294,20 +1294,21 @@ export class FoliateVaultPublicationParser {
 				return resolved;
 			}
 
-			const parsed = EpubCfi.parse(wrapped) as EpubCfi.ParsedCfi;
+			const parsed = EpubCfi.parse(wrapped);
 			const indexedByPrefix = this.findSectionIndexFromCfiPrefix(wrapped);
 			if (indexedByPrefix !== null) {
 				return {
 					index: indexedByPrefix,
 					anchor: (doc: Document): Range | null => {
-						const rangeUnknown: unknown = EpubCfi.toRange(doc, parsed);
-						return rangeUnknown instanceof Range ? rangeUnknown : null;
+						try {
+							return EpubCfi.toRange(doc, parsed);
+						} catch {
+							return null;
+						}
 					},
 				};
 			}
-			const parentPath = Array.isArray((parsed as EpubCfi.ParsedCfiRange).parent)
-				? [...(parsed as EpubCfi.ParsedCfiRange).parent]
-				: [...(parsed as EpubCfi.ParsedCfiPath)];
+			const parentPath = EpubCfi.getCfiParentPath(parsed);
 			const sectionPart = parentPath.shift();
 			const index = EpubCfi.fake.toIndex(sectionPart);
 			if (typeof index !== "number" || index < 0) {

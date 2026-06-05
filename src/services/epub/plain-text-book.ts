@@ -1,4 +1,4 @@
-import * as EpubCfi from "./vendor/epubcfi";
+import * as EpubCfi from "./epub-cfi";
 import { i18n } from "../../utils/i18n";
 
 type PlainTextBookSection = {
@@ -135,10 +135,8 @@ function resolvePlainTextCfiTarget(
 		if (!wrapped) {
 			return null;
 		}
-		const parsed = EpubCfi.parse(wrapped) as EpubCfi.ParsedCfi;
-		const parentPath = Array.isArray((parsed as EpubCfi.ParsedCfiRange).parent)
-			? [...(parsed as EpubCfi.ParsedCfiRange).parent]
-			: [...(parsed as EpubCfi.ParsedCfiPath)];
+		const parsed = EpubCfi.parse(wrapped);
+		const parentPath = EpubCfi.getCfiParentPath(parsed);
 		const sectionPart = parentPath.shift();
 		const index = EpubCfi.fake.toIndex(sectionPart);
 		if (typeof index !== "number" || index < 0 || index >= sectionCount) {
@@ -147,8 +145,11 @@ function resolvePlainTextCfiTarget(
 		return {
 			index,
 			anchor: (doc: Document): Range | null => {
-				const range = EpubCfi.toRange(doc, parsed) as unknown;
-				return range instanceof Range ? range : null;
+				try {
+					return EpubCfi.toRange(doc, parsed);
+				} catch {
+					return null;
+				}
 			},
 		};
 	} catch {

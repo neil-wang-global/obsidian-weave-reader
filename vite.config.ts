@@ -135,6 +135,10 @@ export default defineConfig(({ mode }) => {
             "src/shims/readable-stream-disabled.js"
           ),
         },
+        {
+          find: /^weave-vendor\/epubcfi$/,
+          replacement: path.resolve(process.cwd(), "vendor/epubcfi.mjs"),
+        },
       ],
       conditions: ["browser", "import", "module", "default"],
       extensions: [".ts", ".tsx", ".svelte", ".mjs", ".js", ".jsx", ".json"],

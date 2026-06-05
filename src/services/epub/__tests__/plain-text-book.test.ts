@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import * as EpubCfi from "../vendor/epubcfi";
+import * as EpubCfi from "../epub-cfi";
 import { makePlainTextBook } from "../plain-text-book";
 
 function buildRangeCfi(sectionIndex: number, doc: Document, element: Element): string {
