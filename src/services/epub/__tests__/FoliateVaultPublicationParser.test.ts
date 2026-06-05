@@ -1,5 +1,6 @@
 import JSZip from "jszip";
 import { TFile } from "obsidian";
+import * as blobUrlText from "../../../utils/blob-url-text";
 import { FoliateVaultPublicationParser } from "../FoliateVaultPublicationParser";
 
 const { makeBookMock } = vi.hoisted(() => ({
@@ -212,10 +213,9 @@ describe("FoliateVaultPublicationParser", () => {
     const readerMarkup =
       '<html><head><style>blockquote{margin:0}</style></head><body><p id="reader">reader-aligned</p></body></html>';
     const load = vi.fn(async () => "blob:reader-aligned-section");
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      text: async () => readerMarkup,
-    } as Response);
+    const readBlobSpy = vi
+      .spyOn(blobUrlText, "readBlobUrlAsText")
+      .mockResolvedValue(readerMarkup);
     parserAny.currentBook = {
       sections: [{ id: 0, load, createDocument }],
     };
@@ -225,7 +225,7 @@ describe("FoliateVaultPublicationParser", () => {
       const doc = await parserAny.getRawDocumentFromGenericSection(0);
 
       expect(load).toHaveBeenCalledTimes(1);
-      expect(fetchSpy).toHaveBeenCalledWith("blob:reader-aligned-section");
+      expect(readBlobSpy).toHaveBeenCalledWith("blob:reader-aligned-section");
       expect(createDocument).not.toHaveBeenCalled();
       expect(doc?.querySelector("#reader")?.textContent).toBe("reader-aligned");
 
@@ -233,7 +233,7 @@ describe("FoliateVaultPublicationParser", () => {
       expect(load).toHaveBeenCalledTimes(1);
       expect(cached).toBe(doc);
     } finally {
-      fetchSpy.mockRestore();
+      readBlobSpy.mockRestore();
     }
   });
 });

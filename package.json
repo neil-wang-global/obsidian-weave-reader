@@ -1,7 +1,7 @@
 {
   "name": "weave-epub-reader",
   "private": true,
-  "version": "0.6.24",
+  "version": "0.6.25",
   "description": "Standalone EPUB reader with bookshelf, deep links, and reading state persistence.",
   "main": "main.js",
   "type": "module",
@@ -48,7 +48,7 @@
     "lint:obsidian:strict": "node scripts/lint-obsidian-strict.cjs",
     "lint:obsidian:community": "node scripts/lint-community-audit.cjs",
     "verify:obsidian-community": "npm run lint:obsidian && npm run lint:obsidian:strict",
-    "verify:community": "npm run verify:obsidian-community && npm test && npm run build",
+    "verify:community": "npm run verify:obsidian-community && npm run lint:obsidian:community && npm test && npm run build",
     "lint:promises": "npm run lint:obsidian",
     "lint:svelte5": "svelte-check --tsconfig ./tsconfig.json",
     "clean": "rimraf dist node_modules/.vite*",

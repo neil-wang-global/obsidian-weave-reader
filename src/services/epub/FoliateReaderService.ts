@@ -4864,42 +4864,27 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return null;
 		}
 
-		// Legacy WebKit API kept as fallback when caretPositionFromPoint is unavailable.
-		const caretRangeFromPoint = (
-			doc as Document & {
-				caretRangeFromPoint?: (x: number, y: number) => Range | null;
-			}
-			// eslint-disable-next-line @typescript-eslint/no-deprecated -- required for cross-browser caret hit testing in EPUB iframes
-		).caretRangeFromPoint;
-		if (typeof caretRangeFromPoint === "function") {
-			return caretRangeFromPoint.call(doc, clientX, clientY);
-		}
-
-		const caretPositionFromPoint = (
-			doc as Document & {
-				caretPositionFromPoint?: (
+		const docWithCaretApis = doc as Document & Record<string, unknown>;
+		const caretPositionFromPoint = docWithCaretApis["caretPositionFromPoint"];
+		if (typeof caretPositionFromPoint === "function") {
+			const position = Reflect.apply(
+				caretPositionFromPoint as (
+					this: Document,
 					x: number,
 					y: number
-				) => { offsetNode: Node; offset: number } | null;
+				) => { offsetNode: Node; offset: number } | null,
+				doc,
+				[clientX, clientY]
+			);
+			if (position?.offsetNode) {
+				const range = doc.createRange();
+				range.setStart(position.offsetNode, position.offset);
+				range.collapse(true);
+				return range;
 			}
-		).caretPositionFromPoint;
-		if (typeof caretPositionFromPoint !== "function") {
-			return null;
 		}
 
-		const position = caretPositionFromPoint.call(doc, clientX, clientY);
-		if (!position?.offsetNode) {
-			return null;
-		}
-
-		const range = doc.createRange();
-		try {
-			range.setStart(position.offsetNode, position.offset);
-			range.setEnd(position.offsetNode, position.offset);
-			return range;
-		} catch {
-			return null;
-		}
+		return null;
 	}
 
 	private attachSelectionListeners(doc: Document): void {
@@ -7543,9 +7528,7 @@ body .weave-foliate-concealment {
 			return directEditorSize;
 		}
 
-		const resolvedSize = this.resolveHostFontSizeExpression(
-			"var(--font-text-size, var(--editor-font-size, 16px))"
-		);
+		const resolvedSize = this.getResolvedStyleSourceFontSize();
 		if (resolvedSize) {
 			return resolvedSize;
 		}
@@ -7564,20 +7547,9 @@ body .weave-foliate-concealment {
 		return !value.includes("var(");
 	}
 
-	private resolveHostFontSizeExpression(valueExpression: string): string | null {
+	private getResolvedStyleSourceFontSize(): string | null {
 		try {
-			const styleSource = this.getObsidianStyleSource();
-			const probe = activeDocument.createElement("span");
-			probe.setCssProps({
-				position: "absolute",
-				visibility: "hidden",
-				"pointer-events": "none",
-				inset: "0",
-				fontSize: valueExpression,
-			});
-			styleSource.appendChild(probe);
-			const resolvedSize = getComputedStyle(probe).fontSize.trim();
-			probe.remove();
+			const resolvedSize = getComputedStyle(this.getObsidianStyleSource()).fontSize.trim();
 			return resolvedSize || null;
 		} catch {
 			return null;

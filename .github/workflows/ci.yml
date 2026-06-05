@@ -53,6 +53,10 @@ jobs:
         run: npm run lint:obsidian
         continue-on-error: false
 
+      - name: Run Obsidian community review gate
+        run: npm run lint:obsidian:community
+        continue-on-error: false
+
       - name: Run Obsidian strict audit
         run: npm run lint:obsidian:strict
         continue-on-error: false

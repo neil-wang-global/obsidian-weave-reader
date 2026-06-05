@@ -6,12 +6,6 @@ import { logger } from "../utils/logger";
  */
 
 import { type App, Platform } from "obsidian";
-import type {
-	NavigatorConnectionExtension,
-	NavigatorDeviceMemoryExtension,
-	ObsidianGlobalApp,
-	WindowWithNodeRequire,
-} from "../types/obsidian-extensions";
 import {
 	CURRENT_PLUGIN_VERSION,
 	LICENSE_PUBLIC_KEY,
@@ -71,146 +65,9 @@ export class LicenseManager {
 	 */
 	private async generateDeviceFingerprint(): Promise<string> {
 		if (!this.app) {
-			// eslint-disable-next-line @typescript-eslint/no-deprecated -- legacy fallback when App is not injected yet
-			return this.generateDeviceFingerprintLegacy();
+			throw new Error("LicenseManager requires App before generating a device fingerprint");
 		}
 		return generateStableDeviceFingerprint(this.app);
-	}
-
-	/** @deprecated 仅作 app 未注入时的兜底 */
-	private async generateDeviceFingerprintLegacy(): Promise<string> {
-		const components = await this.collectDeviceComponents();
-		const fingerprint = components.join("|");
-		return this.sha256(fingerprint);
-	}
-
-	/**
-	 * 收集设备特征信息
-	 */
-	private async collectDeviceComponents(): Promise<string[]> {
-		const components: string[] = [];
-
-		// 基础浏览器信息
-		components.push(getRuntimePlatformLabel());
-		components.push(navigator.language || "unknown");
-		components.push(navigator.languages?.join(",") || "unknown");
-		components.push(Platform.isMobile ? "mobile-ui" : "desktop-ui");
-
-		// 屏幕信息
-		components.push(`${screen.width}x${screen.height}`);
-		components.push(`${screen.colorDepth}bit`);
-		components.push(`${screen.pixelDepth}px`);
-		components.push(`${window.devicePixelRatio || 1}dpr`);
-
-		// 时区和地区信息
-		components.push(new Date().getTimezoneOffset().toString());
-		components.push(Intl.DateTimeFormat().resolvedOptions().timeZone || "unknown");
-
-		// 硬件信息
-		components.push(navigator.hardwareConcurrency?.toString() || "0");
-		components.push(navigator.maxTouchPoints?.toString() || "0");
-
-		// 内存信息（如果可用）
-		const memory = (navigator as NavigatorDeviceMemoryExtension).deviceMemory;
-		if (memory) {
-			components.push(`${memory}GB`);
-		}
-
-		// 网络信息（如果可用）
-		const connection = (navigator as NavigatorConnectionExtension).connection;
-		if (connection) {
-			components.push(connection.effectiveType || "unknown");
-			components.push(connection.downlink?.toString() || "unknown");
-		}
-
-		// Obsidian 特有信息
-		const obsidianApp = (window as Window & { app?: ObsidianGlobalApp }).app;
-		if (obsidianApp) {
-			components.push(obsidianApp.appId || "obsidian");
-			// 移除 vault.adapter.path，避免路径变化触发设备变更
-		}
-
-		// 系统信息（如果可用）
-		try {
-			const windowWithRequire = window as WindowWithNodeRequire;
-			const os = windowWithRequire.require?.("os") as
-				| {
-						platform?: () => string;
-						arch?: () => string;
-						hostname?: () => string;
-				  }
-				| undefined;
-			if (os) {
-				components.push(os.platform?.() || "unknown");
-				components.push(os.arch?.() || "unknown");
-				components.push(os.hostname?.() || "unknown");
-			}
-		} catch {
-			components.push("no-os-info");
-		}
-
-		// Canvas指纹（轻量级）
-		try {
-			const canvas = activeDocument.createElement("canvas");
-			const ctx = canvas.getContext("2d");
-			if (ctx) {
-				ctx.textBaseline = "top";
-				ctx.font = "14px Arial";
-				ctx.fillText("Weave Device Fingerprint", 2, 2);
-				components.push(canvas.toDataURL().substring(0, 50));
-			}
-		} catch {
-			components.push("no-canvas");
-		}
-
-		// WebGL信息（如果可用）
-		try {
-			const canvas = activeDocument.createElement("canvas");
-			const gl = canvas.getContext("webgl");
-			if (gl) {
-				const rendererUnknown: unknown = gl.getParameter(gl.RENDERER);
-				const vendorUnknown: unknown = gl.getParameter(gl.VENDOR);
-				components.push(typeof rendererUnknown === "string" ? rendererUnknown : "unknown-renderer");
-				components.push(typeof vendorUnknown === "string" ? vendorUnknown : "unknown-vendor");
-			}
-		} catch {
-			components.push("no-webgl");
-		}
-
-		// 音频上下文指纹（轻量级）
-		try {
-			const AudioContextCtor =
-				window.AudioContext ||
-				(window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-			if (!AudioContextCtor) {
-				throw new Error("AudioContext unavailable");
-			}
-			const audioContext = new AudioContextCtor();
-			const oscillator = audioContext.createOscillator();
-			const analyser = audioContext.createAnalyser();
-			const gainNode = audioContext.createGain();
-
-			oscillator.connect(analyser);
-			analyser.connect(gainNode);
-			gainNode.connect(audioContext.destination);
-
-			components.push(audioContext.sampleRate.toString());
-			components.push(analyser.frequencyBinCount.toString());
-
-			void audioContext.close();
-		} catch {
-			components.push("no-audio");
-		}
-
-		// 插件和扩展检测（基础）
-		// eslint-disable-next-line @typescript-eslint/no-deprecated -- legacy browser fingerprint component for device id fallback
-		const plugins = Array.from(navigator.plugins || [])
-			// eslint-disable-next-line @typescript-eslint/no-deprecated -- plugin name is part of the legacy fingerprint hash
-			.map((p) => p.name)
-			.slice(0, 5);
-		components.push(plugins.join(",") || "no-plugins");
-
-		return components.filter((_c) => _c && _c !== "undefined");
 	}
 
 	/**

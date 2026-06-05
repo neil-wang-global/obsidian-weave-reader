@@ -42,6 +42,7 @@ export default defineConfig([
       "src/types/license.ts",
       "src/types/utility-types.ts",
       "src/utils/card-export-utils.ts",
+      "src/utils/blob-url-text.ts",
       "src/utils/dom-instance-of.ts",
       "src/utils/obsidian-workspace-utils.ts",
       "src/utils/electron-screenshot-access.ts",
@@ -119,7 +120,7 @@ export default defineConfig([
       "@typescript-eslint/no-unnecessary-type-assertion": "warn",
       "@typescript-eslint/no-unsafe-enum-comparison": "warn",
       "@typescript-eslint/await-thenable": "warn",
-      "@typescript-eslint/no-deprecated": "warn",
+      "@typescript-eslint/no-deprecated": "error",
     },
   },
   {

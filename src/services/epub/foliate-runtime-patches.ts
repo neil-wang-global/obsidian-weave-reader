@@ -134,14 +134,10 @@ export function installMobileBlobIframePatch(onLoadError: (error: unknown) => vo
 	}
 	const getIframeSrc = (iframe: HTMLIFrameElement): string =>
 		srcDescriptor.get
-			? (
-					// eslint-disable-next-line @typescript-eslint/unbound-method -- Reflect.apply needs the original getter reference
-					Reflect.apply(srcDescriptor.get as (this: HTMLIFrameElement) => string, iframe, [])
-			  )
+			? Reflect.apply(srcDescriptor.get as (this: HTMLIFrameElement) => string, iframe, [])
 			: iframe.getAttribute("src") || "";
 	const setIframeSrc = (iframe: HTMLIFrameElement, value: string): void => {
 		Reflect.apply(
-			// eslint-disable-next-line @typescript-eslint/unbound-method -- Reflect.apply needs the original setter reference
 			srcDescriptor.set as (this: HTMLIFrameElement, value: string) => void,
 			iframe,
 			[value]

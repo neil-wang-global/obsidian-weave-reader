@@ -278,6 +278,10 @@ scripts/*
 !scripts/obsidian-lint-targets.cjs
 !scripts/run-obsidian-lint.cjs
 !scripts/lint-obsidian-strict.cjs
+!scripts/lint-community-audit.cjs
+!scripts/run-obsidian-community-lint.cjs
+!scripts/check-forbidden-eslint-disables.cjs
+!scripts/sync-obsidian-community-version.cjs
 !scripts/check-mojibake.cjs
 !scripts/verify-no-dynamic-script.cjs
 !scripts/set-github-release-title.cjs

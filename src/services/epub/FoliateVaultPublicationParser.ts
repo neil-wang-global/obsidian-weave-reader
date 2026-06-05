@@ -1,5 +1,6 @@
 import JSZip from "jszip";
 import { type App, TFile } from "obsidian";
+import { readBlobUrlAsText } from "../../utils/blob-url-text";
 import { domInstanceOf } from "../../utils/dom-instance-of";
 import { logger } from "../../utils/logger";
 import { readVaultBinaryData } from "./EpubBinaryData";
@@ -1608,13 +1609,7 @@ export class FoliateVaultPublicationParser {
 		if (!url.startsWith("blob:")) {
 			throw new Error(`Unsupported generic section load URL: ${url}`);
 		}
-		// blob: markup is resolved in-process; requestUrl does not apply to object URLs.
-		// eslint-disable-next-line no-restricted-globals -- same-origin blob section payload
-		const response = await fetch(url);
-		if (!response.ok) {
-			throw new Error(`Failed to fetch generic section markup (${response.status})`);
-		}
-		return response.text();
+		return readBlobUrlAsText(url);
 	}
 
 	private parseGenericSectionMarkup(markup: string): Document {

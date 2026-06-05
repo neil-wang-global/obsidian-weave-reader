@@ -19,6 +19,7 @@ const OBSIDIAN_LINT_TARGETS = [
   "src/stores/epub-active-document-store.ts",
   "src/types/license.ts",
   "src/types/utility-types.ts",
+  "src/utils/blob-url-text.ts",
   "src/utils/dom-instance-of.ts",
   "src/utils/obsidian-workspace-utils.ts",
   "src/utils/electron-screenshot-access.ts",

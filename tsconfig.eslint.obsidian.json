@@ -22,6 +22,7 @@
 		"src/types/license.ts",
 		"src/types/utility-types.ts",
 		"src/types/obsidian-extensions.ts",
+		"src/utils/blob-url-text.ts",
 		"src/utils/dom-instance-of.ts",
 		"src/utils/directory-utils.ts",
 		"src/utils/vault-local-storage.ts",
