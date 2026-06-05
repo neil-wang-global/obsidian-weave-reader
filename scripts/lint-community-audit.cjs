@@ -1,6 +1,6 @@
 /**
  * Community review gate: Obsidian recommended rules (errors must be zero).
- * Warnings are reported but do not fail the gate (matches typical bot blocking behavior).
+ * Full recommendedWithLocalesEn mirror: zero errors and zero warnings required.
  */
 const { spawnSync } = require("node:child_process");
 

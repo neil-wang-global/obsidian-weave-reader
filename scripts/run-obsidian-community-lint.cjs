@@ -1,6 +1,5 @@
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
-const { OBSIDIAN_LINT_TARGETS } = require("./obsidian-lint-targets.cjs");
 
 const extraArgs = process.argv.slice(2);
 const eslintPackagePath = require.resolve("eslint/package.json");
@@ -19,10 +18,10 @@ const result = spawnSync(
 	[
 		eslintBinPath,
 		"-c",
-		"eslint.obsidian.community-gate.config.mjs",
-		...OBSIDIAN_LINT_TARGETS.filter((target) => target.endsWith(".ts") || target.includes("/")),
+		"eslint.obsidian.community.config.mjs",
+		"src/**/*.ts",
 		"--max-warnings",
-		"9999",
+		"0",
 		...extraArgs,
 	],
 	{

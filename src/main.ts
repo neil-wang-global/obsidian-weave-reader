@@ -116,7 +116,7 @@ type PersistedStandaloneEpubPluginSettings = Omit<
 	"lastSelectedIRDeckId" | "selectionQuickCreateLastFolder" | "epubMarkdownExportLastFolder"
 >;
 
-export type WeavePlugin = StandaloneEpubPlugin & Record<string, any>;
+export type WeavePlugin = StandaloneEpubPlugin & Record<string, unknown>;
 
 export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapabilities {
 	private workspaceViewsRegistered = false;
@@ -138,7 +138,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			return [];
 		}
 
-		return getInheritedLicensesFromLegacyWeave(this.app as any);
+		return getInheritedLicensesFromLegacyWeave(this.app as unknown);
 	}
 
 	getEffectiveLicenseState(): EffectiveLicenseState {
@@ -454,7 +454,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		}
 
 		const actions = getVisibleSplitActionsFromHost(
-			getCompatibleAISelectedTextPanelHost(this.app as any) ?? this
+			getCompatibleAISelectedTextPanelHost(this.app as unknown) ?? this
 		);
 		const menu = new Menu();
 		if (actions.length > 0) {

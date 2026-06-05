@@ -5,6 +5,7 @@ import { DirectoryUtils } from "../../utils/directory-utils";
 import { safeReadJson } from "../../utils/safe-json-io";
 import { extractBodyContent, parseYAMLFromContent, setCardProperty } from "../../utils/yaml-utils";
 import { logger } from "../../utils/logger";
+import { unknownPlainText } from "../../utils/unknown-plain-text";
 import { getReaderHighlightIdentityKey } from "./highlight/highlight-identity";
 import { EpubLinkService } from "./EpubLinkService";
 import type { EpubStorageService } from "./EpubStorageService";
@@ -1140,7 +1141,7 @@ export class EpubBacklinkHighlightService {
 		}
 		const on = (
 			this.app.vault as typeof this.app.vault & {
-				on?: (event: string, callback: (...args: any[]) => void) => EventRef;
+				on?: (event: string, callback: (...args: unknown[]) => void) => EventRef;
 			}
 		).on;
 		if (typeof on !== "function") {
@@ -1233,7 +1234,7 @@ export class EpubBacklinkHighlightService {
 			new Set(
 				[this.localPluginId, CURRENT_PLUGIN_ID]
 					.map((pluginId) =>
-						normalizePath(String(getPluginPathsById(this.app as any, pluginId).root || "").trim())
+						normalizePath(String(getPluginPathsById(this.app as unknown, pluginId).root || "").trim())
 					)
 					.filter(Boolean)
 			)
@@ -1343,7 +1344,7 @@ export class EpubBacklinkHighlightService {
 				results.push(...this.parseIndexedHighlightsFromCardDataCard(card, sourceFile));
 			}
 			return results;
-		} catch (_error) {
+		} catch {
 			return [];
 		}
 	}
@@ -1392,7 +1393,7 @@ export class EpubBacklinkHighlightService {
 				directHighlights,
 				canvasFileNodeBindings: Array.from(bindingMap.values()),
 			};
-		} catch (_error) {
+		} catch {
 			return {
 				directHighlights: [],
 				canvasFileNodeBindings: [],
@@ -2007,8 +2008,8 @@ export class EpubBacklinkHighlightService {
 				await this.notifyLinkedSourceMutation(sourceFile, "update", sourceRef);
 			}
 			return changed;
-		} catch (_e) {
-			logger.debug("[EpubBacklinkHighlightService] deleteHighlight failed:", _e);
+		} catch (error) {
+logger.debug("[EpubBacklinkHighlightService] deleteHighlight failed:", error);
 			return false;
 		}
 	}
@@ -2055,7 +2056,7 @@ export class EpubBacklinkHighlightService {
 				}
 				return analysis;
 			}
-		} catch (_error) {
+		} catch {
 			return null;
 		}
 
@@ -2116,8 +2117,8 @@ export class EpubBacklinkHighlightService {
 				await this.notifyLinkedSourceMutation(sourceFile, "update", sourceRef);
 			}
 			return changed;
-		} catch (_e) {
-			logger.debug("[EpubBacklinkHighlightService] changeHighlightColor failed:", _e);
+		} catch (error) {
+logger.debug("[EpubBacklinkHighlightService] changeHighlightColor failed:", error);
 			return false;
 		}
 	}
@@ -2170,8 +2171,8 @@ export class EpubBacklinkHighlightService {
 				await this.notifyLinkedSourceMutation(sourceFile, "update", sourceRef);
 			}
 			return changed;
-		} catch (_e) {
-			logger.debug("[EpubBacklinkHighlightService] changeHighlightStyle failed:", _e);
+		} catch (error) {
+logger.debug("[EpubBacklinkHighlightService] changeHighlightStyle failed:", error);
 			return false;
 		}
 	}
@@ -2226,8 +2227,8 @@ export class EpubBacklinkHighlightService {
 				await this.notifyLinkedSourceMutation(sourceFile, "update", sourceRef);
 			}
 			return changed;
-		} catch (_e) {
-			logger.debug("[EpubBacklinkHighlightService] updateHighlightComment failed:", _e);
+		} catch (error) {
+logger.debug("[EpubBacklinkHighlightService] updateHighlightComment failed:", error);
 			return false;
 		}
 	}
@@ -2297,8 +2298,8 @@ export class EpubBacklinkHighlightService {
 			}
 			await this.notifyStructuredCardDataMutation(sourceFile, "update", affectedCardUuids);
 			return true;
-		} catch (_e) {
-			logger.debug("[EpubBacklinkHighlightService] mutateCardDataHighlights failed:", _e);
+		} catch (error) {
+logger.debug("[EpubBacklinkHighlightService] mutateCardDataHighlights failed:", error);
 			return false;
 		}
 	}
@@ -2476,8 +2477,8 @@ export class EpubBacklinkHighlightService {
 				await this.notifyLinkedSourceMutation(sourceFile, "update", sourceRef);
 			}
 			return changed;
-		} catch (_e) {
-			logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCanvas failed:", _e);
+		} catch (error) {
+logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCanvas failed:", error);
 			return false;
 		}
 	}
@@ -2526,8 +2527,8 @@ export class EpubBacklinkHighlightService {
 				await this.notifyLinkedSourceMutation(sourceFile, "update", sourceRef);
 			}
 			return changed;
-		} catch (_e) {
-			logger.debug("[EpubBacklinkHighlightService] changeCanvasHighlightColor failed:", _e);
+		} catch (error) {
+logger.debug("[EpubBacklinkHighlightService] changeCanvasHighlightColor failed:", error);
 			return false;
 		}
 	}
@@ -2578,8 +2579,8 @@ export class EpubBacklinkHighlightService {
 				await this.notifyLinkedSourceMutation(sourceFile, "update", sourceRef);
 			}
 			return changed;
-		} catch (_e) {
-			logger.debug("[EpubBacklinkHighlightService] changeCanvasHighlightStyle failed:", _e);
+		} catch (error) {
+logger.debug("[EpubBacklinkHighlightService] changeCanvasHighlightStyle failed:", error);
 			return false;
 		}
 	}
@@ -2630,8 +2631,8 @@ export class EpubBacklinkHighlightService {
 				await this.notifyLinkedSourceMutation(sourceFile, "update", sourceRef);
 			}
 			return changed;
-		} catch (_e) {
-			logger.debug("[EpubBacklinkHighlightService] changeCanvasHighlightComment failed:", _e);
+		} catch (error) {
+logger.debug("[EpubBacklinkHighlightService] changeCanvasHighlightComment failed:", error);
 			return false;
 		}
 	}
@@ -2711,8 +2712,8 @@ export class EpubBacklinkHighlightService {
 				affectedCardUuids
 			);
 			return true;
-		} catch (_e) {
-			logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:", _e);
+		} catch (error) {
+logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:", error);
 			return false;
 		}
 	}
@@ -3410,7 +3411,7 @@ export class EpubBacklinkHighlightService {
 	}
 
 	private getDiskCachePath(): string {
-		return getPluginPathsById(this.app as any, this.localPluginId).cache.incrementalReading
+		return getPluginPathsById(this.app as unknown, this.localPluginId).cache.incrementalReading
 			.epubBacklinkHighlightsCache;
 	}
 
@@ -3640,7 +3641,7 @@ export class EpubBacklinkHighlightService {
 				.map((key) => `${JSON.stringify(key)}:${this.stableStringify(record[key])}`)
 				.join(",")}}`;
 		}
-		return JSON.stringify(String(value));
+		return JSON.stringify(unknownPlainText(value));
 	}
 
 	private hashString(input: string): string {
@@ -3905,7 +3906,7 @@ export class EpubBacklinkHighlightService {
 
 	private async processVaultJsonFile(
 		sourcePath: string,
-		mutator: (parsed: unknown) => unknown | null
+		mutator: (parsed: unknown) => object | null
 	): Promise<boolean> {
 		const file = this.app.vault.getAbstractFileByPath(sourcePath);
 		if (!(file && this.isTFile(file))) {

@@ -203,7 +203,7 @@ function getRuntimePluginHost(app: App): EpubHostCapabilities | null {
 }
 
 function getLegacyHost(app: App): EpubHostCapabilities | null {
-	const legacyPlugin = getLegacyWeavePlugin(app as any) as Record<string, unknown> | null;
+	const legacyPlugin = getLegacyWeavePlugin(app as unknown) as Record<string, unknown> | null;
 	if (!legacyPlugin) {
 		return null;
 	}

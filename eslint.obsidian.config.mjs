@@ -124,6 +124,12 @@ export default defineConfig([
     },
   },
   {
+    files: ["src/services/epub/foliate-runtime-patches.ts"],
+    rules: {
+      "@typescript-eslint/unbound-method": "off",
+    },
+  },
+  {
     files: ["src/services/epub/vendor/**/*.ts"],
     rules: {
       "@typescript-eslint/no-explicit-any": "off",

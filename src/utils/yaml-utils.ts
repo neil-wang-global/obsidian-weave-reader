@@ -947,7 +947,8 @@ export function migrateSourceFields(content: string): { content: string; migrate
 				(value): value is string => typeof value === "string" && !!parseBlockId(value)
 			)
 		) {
-			const { we_block: _removedWeBlock, ...newYaml } = yaml;
+			const newYaml = { ...yaml };
+			delete newYaml.we_block;
 			return { content: rebuildContent(content, newYaml), migrated: true };
 		}
 
@@ -979,7 +980,8 @@ export function migrateSourceFields(content: string): { content: string; migrate
 		}
 
 		// 更新 YAML
-		const { we_block: _removedWeBlock, ...newYaml } = yaml;
+		const newYaml = { ...yaml };
+		delete newYaml.we_block;
 		if (Array.isArray(yaml.we_source)) {
 			const nextSourceValues: string[] = [...sourceValues];
 			if (firstSourceIndex >= 0) {
@@ -1126,7 +1128,7 @@ export function getCardDeckIds(
 					return result;
 				}
 			}
-		} catch (_e) {
+		} catch {
 			logger.debug("[yaml-utils] 解析 we_decks 失败，尝试回退方案");
 		}
 	}

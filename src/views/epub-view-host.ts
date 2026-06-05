@@ -24,7 +24,7 @@ export function resolveAISelectedTextPanelHost(host: EpubViewHost): AISelectedTe
 		return host;
 	}
 
-	const compatibleHost = getCompatibleAISelectedTextPanelHost(host?.app as any);
+	const compatibleHost = getCompatibleAISelectedTextPanelHost(host?.app as unknown);
 	if (!compatibleHost) {
 		return null;
 	}

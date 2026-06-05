@@ -138,17 +138,38 @@ export function createSafeNotice(message: string, timeout?: number): SafeNotice 
 /**
  * 安全的设置页面打开
  */
-export function safeOpenSettings(app: any, tabId?: string): void {
+interface ObsidianSettingsApi {
+	open: () => void;
+	openTabById?: (tabId: string) => void;
+}
+
+interface ObsidianAppWithSettings {
+	setting?: ObsidianSettingsApi;
+}
+
+function resolveObsidianSettings(app: unknown): ObsidianSettingsApi | null {
+	if (!app || typeof app !== "object" || !("setting" in app)) {
+		return null;
+	}
+	const setting = (app as ObsidianAppWithSettings).setting;
+	if (!setting || typeof setting.open !== "function") {
+		return null;
+	}
+	return setting;
+}
+
+export function safeOpenSettings(app: unknown, tabId?: string): void {
 	try {
 		untrack(() => {
-			if (app?.setting && typeof app.setting.open === "function") {
-				app.setting.open();
+			const setting = resolveObsidianSettings(app);
+			if (setting) {
+				setting.open();
 
-				if (tabId && typeof app.setting.openTabById === "function") {
+				if (tabId && typeof setting.openTabById === "function") {
 					// 延迟打开特定标签，确保设置页面已加载
 					window.setTimeout(() => {
 						try {
-							app.setting.openTabById(tabId);
+							setting.openTabById(tabId);
 						} catch (tabError) {
 							logger.warn("[SafeSettings] 打开标签失败:", tabError);
 						}
@@ -212,8 +233,9 @@ export function cleanupCompatibilityIssues(): void {
 		hiddenNotices.forEach((el) => el.remove());
 
 		// 强制垃圾回收（如果可用）
-		if (typeof window !== "undefined" && (window as any).gc) {
-			(window as any).gc();
+		const windowWithGc = window as Window & { gc?: () => void };
+		if (typeof windowWithGc.gc === "function") {
+			windowWithGc.gc();
 		}
 	} catch (error) {
 		logger.warn("[Cleanup] 清理过程中出现错误:", error);

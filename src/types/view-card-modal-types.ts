@@ -8,12 +8,13 @@ import type { Rating } from "../data/epub-bridge-types";
  * 标签页ID类型
  */
 export type TabId = "info" | "stats" | "curve";
+export type ViewCardModalTab = TabId;
 
 /**
  * 标签页定义
  */
 export interface TabDefinition {
-	id: TabId | string;
+	id: string;
 	label: string;
 	icon: string;
 	disabled?: boolean;

@@ -542,7 +542,7 @@ export class FootnotePreviewResolver {
 			container.appendChild(fragment);
 			container.querySelectorAll(FOOTNOTE_BACKREF_SELECTOR).forEach((element) => element.remove());
 			return this.normalizeFootnotePreviewText(container.textContent);
-		} catch (_error) {
+		} catch {
 			return this.normalizeFootnotePreviewText(range.toString());
 		}
 	}
@@ -569,7 +569,7 @@ export class FootnotePreviewResolver {
 	private normalizeComparableFootnoteLabel(text: string | null | undefined): string {
 		return String(text || "")
 			.replace(/\s+/g, "")
-			.replace(/^[\[(（【〔「『]+/, "")
+			.replace(/^[[(（【〔「『]+/, "")
 			.replace(/[\])）】〕」』.,;:、，。]+$/g, "")
 			.toLowerCase();
 	}
@@ -584,7 +584,7 @@ export class FootnotePreviewResolver {
 		if (comparableText && comparableLabel && comparableText === comparableLabel) {
 			return false;
 		}
-		return !/^[\[(（【〔「『\])）】〕」』*†‡§#\d\s.,;:!?、，。．·‧…-]+$/.test(normalizedText);
+		return !/^[[(（【〔「『\])）】〕」』*†‡§#\d\s.,;:!?、，。．·‧…-]+$/.test(normalizedText);
 	}
 
 	private truncateFootnotePreviewText(text: string): string {
@@ -599,7 +599,7 @@ export class FootnotePreviewResolver {
 		}
 		const escapedLabel = this.escapeRegExp(comparableLabel);
 		const prefixPattern = new RegExp(
-			`^[\\s\\[(（【〔「『<]*${escapedLabel}[\\s\\])）】〕」』>.:：;；、，。．·‧…-]*`,
+			`^[\\s[(（【〔「『<]*${escapedLabel}[\\s\\])）】〕」』>.:：;；、，。．·‧…-]*`,
 			"i"
 		);
 		let cleanedText = normalizedText;
@@ -973,7 +973,7 @@ export class FootnotePreviewResolver {
 		}
 		try {
 			return decodeURIComponent(fragment);
-		} catch (_error) {
+		} catch {
 			return fragment;
 		}
 	}
@@ -1007,7 +1007,7 @@ export class FootnotePreviewResolver {
 					}
 					settled = true;
 					window.clearTimeout(timeoutHandle);
-					reject(error);
+					reject(error instanceof Error ? error : new Error(String(error)));
 				});
 		});
 	}

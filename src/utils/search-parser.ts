@@ -3,6 +3,9 @@
  * 支持基于卡片数据的搜索语法
  */
 
+import type { SearchableCard } from "../data/types";
+import { asSearchableCard } from "../data/types";
+import { unknownPlainText } from "./unknown-plain-text";
 import { TagExtractor } from "./tag-extractor";
 import { parseYAMLFromContent } from "./yaml-utils";
 
@@ -308,15 +311,20 @@ function parseDateRange(raw: string): DateRange | null {
  * @param getCardType 获取卡片题型的函数
  */
 export function matchSearchQuery(
-	card: any,
+	cardInput: unknown,
 	query: SearchQuery,
-	getCardContent: (card: any, side: "front" | "back") => string,
-	getCardDeckNames: (card: any) => string,
-	getCardType: (card: any) => string
+	getCardContent: (card: SearchableCard, side: "front" | "back") => string,
+	getCardDeckNames: (card: SearchableCard) => string,
+	getCardType: (card: SearchableCard) => string
 ): boolean {
 	// 如果查询为空，匹配所有
 	if (!query.raw.trim()) {
 		return true;
+	}
+
+	const card = asSearchableCard(cardInput);
+	if (!card) {
+		return false;
 	}
 
 	let matches = true;
@@ -489,7 +497,7 @@ export function matchSearchQuery(
 
 	// 匹配 YAML 属性
 	if (query.yamlFilters.length > 0) {
-		let yamlData: Record<string, any> = {};
+		let yamlData: Record<string, unknown> = {};
 		try {
 			if (typeof card.content === "string" && card.content) {
 				yamlData = parseYAMLFromContent(card.content);
@@ -503,7 +511,7 @@ export function matchSearchQuery(
 			query.yamlFilters.every((_filter) => {
 				const val = yamlData[_filter.key];
 				if (val === undefined || val === null) return false;
-				const valStr = Array.isArray(val) ? val.join(" ") : String(val);
+				const valStr = unknownPlainText(val);
 				return valStr.toLowerCase().includes(_filter.value.toLowerCase());
 			});
 	}

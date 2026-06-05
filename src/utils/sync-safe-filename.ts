@@ -5,9 +5,23 @@
  * 针对 WebDAV、坚果云、OneDrive 等常见同步方案的兼容性约束。
  */
 
-// ===== Emoji 正则（覆盖常见 Emoji 范围） =====
-const EMOJI_REGEX =
-	/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu;
+// ===== Emoji 正则（覆盖常见 Emoji 范围；ZWJ / 组合符单独检测以避免误导性字符类） =====
+const EMOJI_BASE_REGEX =
+	/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}]/gu;
+const EMOJI_MODIFIER_REGEX = /\u200D|\u20E3|\u{E0020}-\u{E007F}/u;
+const VARIATION_SELECTOR_REGEX = /[\uFE00-\uFE0F]/u;
+
+function containsEmoji(text: string): boolean {
+	if (EMOJI_MODIFIER_REGEX.test(text) || VARIATION_SELECTOR_REGEX.test(text)) {
+		return true;
+	}
+	EMOJI_BASE_REGEX.lastIndex = 0;
+	return EMOJI_BASE_REGEX.test(text);
+}
+
+function resetEmojiRegexLastIndex(): void {
+	EMOJI_BASE_REGEX.lastIndex = 0;
+}
 
 // ===== 全角标点映射 =====
 const FULLWIDTH_MAP: Record<string, string> = {
@@ -56,14 +70,13 @@ export type SyncIssueType =
  * 检测文件/目录名是否包含云同步不兼容字符
  */
 export function hasUnsyncableChars(name: string): boolean {
-	if (EMOJI_REGEX.test(name)) return true;
-	// 重置 lastIndex（全局正则）
-	EMOJI_REGEX.lastIndex = 0;
+	if (containsEmoji(name)) return true;
+	resetEmojiRegexLastIndex();
 
 	if (FULLWIDTH_CHARS_REGEX.test(name)) return true;
 	FULLWIDTH_CHARS_REGEX.lastIndex = 0;
 
-	if (/[\[\]]/.test(name)) return true;
+	if (/[[\]]/.test(name)) return true;
 
 	return false;
 }
@@ -78,8 +91,8 @@ export function hasUnsyncableChars(name: string): boolean {
 export function diagnoseFilename(name: string, isFile = false, fullPathLength = 0): SyncDiagnostic {
 	const issues: SyncIssueType[] = [];
 
-	EMOJI_REGEX.lastIndex = 0;
-	if (EMOJI_REGEX.test(name)) {
+	resetEmojiRegexLastIndex();
+	if (containsEmoji(name)) {
 		issues.push("emoji");
 	}
 
@@ -88,7 +101,7 @@ export function diagnoseFilename(name: string, isFile = false, fullPathLength = 
 		issues.push("fullwidth_punctuation");
 	}
 
-	if (/[\[\]]/.test(name)) {
+	if (/[[\]]/.test(name)) {
 		issues.push("square_brackets");
 	}
 
@@ -138,8 +151,9 @@ export function sanitizeForSync(name: string, maxLength = 100): string {
 	let result = name;
 
 	// 1. 移除 Emoji
-	EMOJI_REGEX.lastIndex = 0;
-	result = result.replace(EMOJI_REGEX, "");
+	result = result.replace(EMOJI_MODIFIER_REGEX, "");
+	EMOJI_BASE_REGEX.lastIndex = 0;
+	result = result.replace(EMOJI_BASE_REGEX, "");
 
 	// 2. 全角标点 → 半角
 	result = result.replace(FULLWIDTH_CHARS_REGEX, (ch) => FULLWIDTH_MAP[ch] || "_");

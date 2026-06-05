@@ -8,6 +8,7 @@ import { generateUniqueVaultFilePath } from "./epub-markdown-path-resolver";
 import { getEpubRuntime } from "./epub-runtime";
 import { normalizeReadingPaceStats } from "./reading-pace";
 import type { EpubBook, ReadingPosition, ReadingStats } from "./types";
+import { errorPlainText, unknownPlainText } from "../../utils/unknown-plain-text";
 
 export const DEFAULT_EPUB_BOOKMARK_FOLDER = "weave/epub-bookmarks";
 /** Vault-visible bookmark / reading-progress note prefix (human-readable, no book id). */
@@ -71,7 +72,7 @@ interface EpubBookmarkFileFrontmatter {
 }
 
 export function normalizeEpubBookmarkFolderPath(value: unknown): string {
-	const normalized = String(value ?? "")
+	const normalized = unknownPlainText(value)
 		.trim()
 		.replace(/\\/g, "/")
 		.replace(/^\/+|\/+$/g, "");
@@ -222,9 +223,9 @@ export function buildLegacyEpubBookmarkTitleIdPrefix(title: string): string | nu
 function isFilesystemNotFoundError(error: unknown): boolean {
 	const code =
 		error && typeof error === "object" && "code" in error
-			? String((error as { code?: string }).code || "")
+			? unknownPlainText((error as { code?: unknown }).code)
 			: "";
-	const message = error instanceof Error ? error.message : String(error || "");
+	const message = errorPlainText(error);
 	return code === "ENOENT" || /no such file or directory/i.test(message);
 }
 
@@ -262,7 +263,7 @@ export class EpubBookmarkService {
 		};
 		const plugin =
 			pluginLookup.plugins?.getPlugin?.(runtimePluginId) ??
-			(getCompatiblePlugin(pluginLookup as any) as { settings?: { bookmarkFolder?: string } } | null);
+			(getCompatiblePlugin(pluginLookup as unknown) as { settings?: { bookmarkFolder?: string } } | null);
 		return (
 			normalizeEpubBookmarkFolderPath(plugin?.settings?.bookmarkFolder) ||
 			DEFAULT_EPUB_BOOKMARK_FOLDER
@@ -891,11 +892,11 @@ export class EpubBookmarkService {
 	private normalizeBookmarkFileFrontmatter(
 		value: Record<string, unknown>
 	): EpubBookmarkFileFrontmatter | null {
-		const format = String(value.format || "").trim();
-		const stableKey = String(value.stableKey || "").trim();
-		const bookId = String(value.bookId || "").trim();
-		const bookPath = normalizePath(String(value.bookPath || "").trim());
-		const bookTitle = String(value.bookTitle || "").trim();
+		const format = unknownPlainText(value.format).trim();
+		const stableKey = unknownPlainText(value.stableKey).trim();
+		const bookId = unknownPlainText(value.bookId).trim();
+		const bookPath = normalizePath(unknownPlainText(value.bookPath).trim());
+		const bookTitle = unknownPlainText(value.bookTitle).trim();
 		if ((format && format !== EPUB_BOOKMARK_FILE_FORMAT) || !stableKey || !bookPath) {
 			return null;
 		}
@@ -972,12 +973,12 @@ export class EpubBookmarkService {
 			return null;
 		}
 		const record = value as Record<string, unknown>;
-		const cfi = EpubLinkService.normalizeCfi(String(record.cfi || "").trim());
+		const cfi = EpubLinkService.normalizeCfi(unknownPlainText(record.cfi).trim());
 		if (!cfi) {
 			return null;
 		}
 		const createdAt = typeof record.createdAt === "number" ? record.createdAt : Date.now();
-		const chapterTitle = String(record.chapterTitle || "").trim();
+		const chapterTitle = unknownPlainText(record.chapterTitle).trim();
 		return {
 			id:
 				typeof record.id === "string" && record.id.trim().length > 0
@@ -1269,6 +1270,6 @@ export class EpubBookmarkService {
 		if (value == null) {
 			return "null";
 		}
-		return JSON.stringify(String(value));
+		return JSON.stringify(unknownPlainText(value));
 	}
 }

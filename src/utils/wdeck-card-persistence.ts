@@ -1,4 +1,5 @@
 import { normalizePath } from "obsidian";
+import { unknownPlainText } from "./unknown-plain-text";
 import { isSupportedBookPath } from "../services/epub/book-format";
 
 export type WDeckPersistenceCardLike = {
@@ -36,7 +37,7 @@ export function readWDeckPersistenceSourcePath(card: WDeckPersistenceCardLike): 
 	const wdeckMeta =
 		wdeckValue && typeof wdeckValue === "object" ? (wdeckValue as { sourcePath?: unknown }) : null;
 	const wdeckSourcePath = normalizePath(
-		String(wdeckMeta?.sourcePath || "").trim()
+		unknownPlainText(wdeckMeta?.sourcePath).trim()
 	);
 	if (wdeckSourcePath && isPersistedCardStorageSourcePath(wdeckSourcePath)) {
 		return wdeckSourcePath;

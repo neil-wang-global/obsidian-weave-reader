@@ -1,4 +1,5 @@
 import { type App, TAbstractFile, TFile } from "obsidian";
+import { errorPlainText, unknownPlainText } from "../../utils/unknown-plain-text";
 import { Platform, normalizePath } from "obsidian";
 import {
 	getPluginPathsById,
@@ -305,14 +306,14 @@ export class EpubStorageService {
 	private getLocalReaderStateRoot(): string {
 		return normalizePath(
 			`${
-				getPluginPathsById(this.app as any, this.localPluginId).state.incrementalReading.readerState
+				getPluginPathsById(this.app as unknown, this.localPluginId).state.incrementalReading.readerState
 			}/epub`
 		);
 	}
 
 	private getUnifiedLocalDataPath(): string {
 		return normalizePath(
-			`${getPluginPathsById(this.app as any, this.localPluginId).state.epubLocalState}`
+			`${getPluginPathsById(this.app as unknown, this.localPluginId).state.epubLocalState}`
 		);
 	}
 
@@ -322,7 +323,7 @@ export class EpubStorageService {
 			new Set([
 				normalizePath(
 					`${
-						getPluginPathsById(this.app as any, this.localPluginId).state.incrementalReading
+						getPluginPathsById(this.app as unknown, this.localPluginId).state.incrementalReading
 							.epubReaderData
 					}`
 				),
@@ -333,7 +334,7 @@ export class EpubStorageService {
 	private getLocalReaderArtifactsRoot(): string {
 		return normalizePath(
 			`${
-				getPluginPathsById(this.app as any, this.localPluginId).cache.incrementalReading
+				getPluginPathsById(this.app as unknown, this.localPluginId).cache.incrementalReading
 					.readerArtifacts
 			}/epub`
 		);
@@ -375,7 +376,7 @@ export class EpubStorageService {
 
 	private getScanIndexPath(): string {
 		return normalizePath(
-			`${getPluginPathsById(this.app as any, this.localPluginId).cache.epubScanIndex}`
+			`${getPluginPathsById(this.app as unknown, this.localPluginId).cache.epubScanIndex}`
 		);
 	}
 
@@ -484,7 +485,7 @@ export class EpubStorageService {
 	private normalizePluginUiMemory(value: unknown): EpubPluginUiMemory {
 		const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 		return {
-			lastSelectedIRDeckId: String(record.lastSelectedIRDeckId || "").trim(),
+			lastSelectedIRDeckId: unknownPlainText(record.lastSelectedIRDeckId).trim(),
 			selectionQuickCreateLastFolder: this.normalizeRememberedFolderPath(
 				typeof record.selectionQuickCreateLastFolder === "string"
 					? record.selectionQuickCreateLastFolder
@@ -971,7 +972,7 @@ export class EpubStorageService {
 				Object.entries(record.canvasBindings as Record<string, unknown>)
 					.map(
 						([bookId, canvasPath]) =>
-							[String(bookId || "").trim(), normalizePath(String(canvasPath || "").trim())] as const
+							[String(bookId || "").trim(), normalizePath(unknownPlainText(canvasPath).trim())] as const
 					)
 					.filter(([bookId, canvasPath]) => Boolean(bookId) && Boolean(canvasPath))
 			);
@@ -1112,8 +1113,8 @@ export class EpubStorageService {
 	private isDestinationFileAlreadyExistsError(error: unknown): boolean {
 		const message =
 			typeof error === "object" && error && "message" in error
-				? String((error as { message?: unknown }).message || "")
-				: String(error || "");
+				? errorPlainText((error as { message?: unknown }).message)
+				: errorPlainText(error);
 		return /destination file already exists/i.test(message);
 	}
 
@@ -1326,7 +1327,7 @@ export class EpubStorageService {
 			if (!nextBookId || !canvasPath) {
 				continue;
 			}
-			nextBindings[nextBookId] = normalizePath(String(canvasPath || "").trim());
+			nextBindings[nextBookId] = normalizePath(unknownPlainText(canvasPath).trim());
 		}
 		return nextBindings;
 	}
@@ -1537,14 +1538,14 @@ export class EpubStorageService {
 		}
 	}
 
-	private async readJsonObjectFromPath(path: string): Promise<unknown | null> {
+	private async readJsonObjectFromPath(path: string): Promise<object | null> {
 		const adapter = this.app.vault.adapter;
 		if (!(await adapter.exists(path))) {
 			return null;
 		}
 
 		try {
-			return JSON.parse(await adapter.read(path));
+			return JSON.parse(await adapter.read(path)) as object;
 		} catch (error) {
 			logger.warn(`[EpubStorageService] Failed to parse JSON from ${path}:`, error);
 			return null;
@@ -1654,7 +1655,7 @@ export class EpubStorageService {
 				Object.entries(parsed as Record<string, unknown>)
 					.map(
 						([bookId, canvasPath]) =>
-							[String(bookId || "").trim(), normalizePath(String(canvasPath || "").trim())] as const
+							[String(bookId || "").trim(), normalizePath(unknownPlainText(canvasPath).trim())] as const
 					)
 					.filter(([bookId, canvasPath]) => Boolean(bookId) && Boolean(canvasPath))
 			);
@@ -3295,10 +3296,10 @@ export class EpubStorageService {
 		}
 
 		await Promise.all([
-			DirectoryUtils.pruneEmptyDirsUnder(adapter as any, this.getLocalReaderStateRoot(), {
+			DirectoryUtils.pruneEmptyDirsUnder(adapter as unknown, this.getLocalReaderStateRoot(), {
 				preserveRoot: false,
 			}),
-			DirectoryUtils.pruneEmptyDirsUnder(adapter as any, this.getLocalReaderArtifactsRoot(), {
+			DirectoryUtils.pruneEmptyDirsUnder(adapter as unknown, this.getLocalReaderArtifactsRoot(), {
 				preserveRoot: false,
 			}),
 		]);
@@ -3508,27 +3509,29 @@ export class EpubStorageService {
 		bookId = await this.resolveCanonicalBookId(bookId);
 		this._pendingProgress = { bookId, position, readingStats };
 		if (this._progressDebounceTimer) return;
-		this._progressDebounceTimer = window.setTimeout(async () => {
-			this._progressDebounceTimer = null;
-			const pending = this._pendingProgress;
-			if (!pending) return;
-			this._pendingProgress = null;
-			try {
-				const book = await this.getBook(pending.bookId);
-				if (book) {
-					book.currentPosition = pending.position;
-					if (pending.readingStats) {
-						book.readingStats = normalizeReadingPaceStats(pending.readingStats);
+		this._progressDebounceTimer = window.setTimeout(() => {
+			void (async () => {
+				this._progressDebounceTimer = null;
+				const pending = this._pendingProgress;
+				if (!pending) return;
+				this._pendingProgress = null;
+				try {
+					const book = await this.getBook(pending.bookId);
+					if (book) {
+						book.currentPosition = pending.position;
+						if (pending.readingStats) {
+							book.readingStats = normalizeReadingPaceStats(pending.readingStats);
+						}
+						book.readingStats.lastReadTime = Date.now();
+						await this.writeBookState(book.id, {
+							currentPosition: book.currentPosition,
+							readingStats: book.readingStats,
+						});
 					}
-					book.readingStats.lastReadTime = Date.now();
-					await this.writeBookState(book.id, {
-						currentPosition: book.currentPosition,
-						readingStats: book.readingStats,
-					});
+				} catch (e) {
+					logger.warn("[EpubStorageService] saveProgress failed:", e);
 				}
-			} catch (e) {
-				logger.warn("[EpubStorageService] saveProgress failed:", e);
-			}
+			})();
 		}, 300);
 	}
 
@@ -3554,8 +3557,8 @@ export class EpubStorageService {
 						readingStats: book.readingStats,
 					});
 				}
-			} catch (_e) {
-				logger.warn("[EpubStorageService] flushPendingProgress failed:", _e);
+			} catch (error) {
+				logger.warn("[EpubStorageService] flushPendingProgress failed:", error);
 			}
 		}
 	}
@@ -4518,16 +4521,16 @@ export class EpubStorageService {
 			}
 
 			await Promise.all([
-				DirectoryUtils.pruneEmptyDirsUnder(this.app.vault.adapter as any, this.basePath, {
+				DirectoryUtils.pruneEmptyDirsUnder(this.app.vault.adapter as unknown, this.basePath, {
 					preserveRoot: false,
 				}),
 				DirectoryUtils.pruneEmptyDirsUnder(
-					this.app.vault.adapter as any,
+					this.app.vault.adapter as unknown,
 					this.getLocalReaderStateRoot(),
 					{ preserveRoot: false }
 				),
 				DirectoryUtils.pruneEmptyDirsUnder(
-					this.app.vault.adapter as any,
+					this.app.vault.adapter as unknown,
 					this.getLocalReaderArtifactsRoot(),
 					{ preserveRoot: false }
 				),
@@ -4556,7 +4559,7 @@ export class EpubStorageService {
 			Object.entries(bindings || {})
 				.map(
 					([bookId, canvasPath]) =>
-						[String(bookId || "").trim(), normalizePath(String(canvasPath || "").trim())] as const
+						[String(bookId || "").trim(), normalizePath(unknownPlainText(canvasPath).trim())] as const
 				)
 				.filter(([bookId, canvasPath]) => Boolean(bookId) && Boolean(canvasPath))
 		);

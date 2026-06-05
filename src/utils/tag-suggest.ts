@@ -125,7 +125,7 @@ function collectVaultTagCounts(app: App): Map<string, number> {
 	for (const markdownFile of app.vault.getMarkdownFiles()) {
 		const cache = metadataCache?.getFileCache?.(markdownFile) ?? null;
 		const tagsInFile = new Set<string>();
-		const frontmatterTags = cache?.frontmatter?.tags;
+		const frontmatterTags: unknown = cache?.frontmatter?.tags;
 
 		if (Array.isArray(frontmatterTags)) {
 			frontmatterTags

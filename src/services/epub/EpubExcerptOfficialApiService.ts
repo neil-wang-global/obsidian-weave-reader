@@ -12,8 +12,8 @@ import { EpubBacklinkHighlightService } from "./EpubBacklinkHighlightService";
 
 type CompatibleWeaveCardStorage = {
 	getCardByUUID?: (uuid: string) => Promise<Card | null | undefined> | Card | null | undefined;
-	saveCard?: (card: Card) => Promise<unknown> | unknown;
-	deleteCard?: (uuid: string) => Promise<{ success?: boolean } | boolean | unknown> | { success?: boolean } | boolean | unknown;
+	saveCard?: (card: Card) => Promise<void> | void;
+	deleteCard?: (uuid: string) => Promise<boolean | { success?: boolean }> | boolean | { success?: boolean };
 };
 
 export class EpubExcerptOfficialApiService implements EpubWeaveOfficialAPI {

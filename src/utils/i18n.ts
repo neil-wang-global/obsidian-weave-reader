@@ -122,7 +122,7 @@ function detectObsidianLanguage(): SupportedLanguage {
 		}
 
 		return defaultConfig.fallbackLanguage;
-	} catch (_e) {
+	} catch {
 		return defaultConfig.fallbackLanguage;
 	}
 }
@@ -262,7 +262,7 @@ export class I18nService {
 	private interpolate(text: string, params?: Record<string, string | number>): string {
 		if (!params) return text;
 
-		return text.replace(/\{(\w+)\}/g, (match, key) => {
+		return text.replace(/\{(\w+)\}/g, (match, key: string) => {
 			return params[key]?.toString() || match;
 		});
 	}

@@ -35,7 +35,7 @@ export function rewriteEpubReferences(
 			if (!remapped || remapped === filePath) {
 				return fullMatch;
 			}
-			const rewrittenAlias = rewriteAlias(alias || "", filePath, remapped);
+			const rewrittenAlias = rewriteAlias(String(alias || ""), filePath, remapped);
 			changed = true;
 			updatedLinks += 1;
 			return `[[${remapped}${hash || ""}${rewrittenAlias}]]`;

@@ -44,16 +44,10 @@ function restoreStyleSnapshot(target: HTMLElement, snapshot: Map<string, string>
 }
 
 function applyLayoutToTarget(target: HTMLElement, layout: VisualViewportLayout) {
-	target.style.position = 'fixed';
-	target.style.top = `${layout.offsetTop}px`;
-	target.style.left = `${layout.offsetLeft}px`;
-	target.style.width = `${layout.width}px`;
-	target.style.height = `${layout.height}px`;
-	target.style.maxHeight = `${layout.height}px`;
-	target.style.right = 'auto';
-	target.style.bottom = 'auto';
-	target.style.overflow = 'hidden';
-	target.style.boxSizing = 'border-box';
+	target.style.setProperty('--epub-reading-vp-top', `${layout.offsetTop}px`);
+	target.style.setProperty('--epub-reading-vp-left', `${layout.offsetLeft}px`);
+	target.style.setProperty('--epub-reading-vp-width', `${layout.width}px`);
+	target.style.setProperty('--epub-reading-vp-height', `${layout.height}px`);
 }
 
 function stabilizeLayoutViewportScroll() {

@@ -201,7 +201,8 @@ export class EpubLinkService {
 			if (!compressed) {
 				return null;
 			}
-			const decompressedUnknown: unknown = inflateRaw(compressed);
+			const inflateRawFn = inflateRaw as (data: Uint8Array) => Uint8Array;
+			const decompressedUnknown: unknown = inflateRawFn(compressed);
 			if (!(decompressedUnknown instanceof Uint8Array)) {
 				return null;
 			}

@@ -39,7 +39,7 @@ function readTextFromResourceUrl(resourceUrl: string): Promise<string> {
 					}
 					resolve(await response.text());
 					return;
-				} catch (_error) {
+				} catch {
 					// Fall through to the shared rejection below.
 				}
 			}
@@ -132,11 +132,20 @@ export function installMobileBlobIframePatch(onLoadError: (error: unknown) => vo
 		mobileBlobIframePatchInstalled = true;
 		return;
 	}
-	const getIframeSrc = (iframe: HTMLIFrameElement): string =>
-		srcDescriptor.get
-			? Reflect.apply(srcDescriptor.get as (this: HTMLIFrameElement) => string, iframe, [])
-			: iframe.getAttribute("src") || "";
+	const getIframeSrc = (iframe: HTMLIFrameElement): string => {
+		if (!srcDescriptor.get) {
+			return iframe.getAttribute("src") || "";
+		}
+		return Reflect.apply(
+			srcDescriptor.get as (this: HTMLIFrameElement) => string,
+			iframe,
+			[]
+		);
+	};
 	const setIframeSrc = (iframe: HTMLIFrameElement, value: string): void => {
+		if (!srcDescriptor.set) {
+			return;
+		}
 		Reflect.apply(
 			srcDescriptor.set as (this: HTMLIFrameElement, value: string) => void,
 			iframe,
@@ -146,10 +155,10 @@ export function installMobileBlobIframePatch(onLoadError: (error: unknown) => vo
 	Object.defineProperty(HTMLIFrameElement.prototype, "src", {
 		configurable: true,
 		enumerable: srcDescriptor?.enumerable ?? true,
-		get() {
+		get(this: HTMLIFrameElement): string {
 			return getIframeSrc(this);
 		},
-		set(value: string) {
+		set(this: HTMLIFrameElement, value: string): void {
 			const normalizedValue = String(value || "");
 			if (!Platform.isMobile || !normalizedValue.startsWith("blob:")) {
 				setIframeSrc(this, normalizedValue);

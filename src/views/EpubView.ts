@@ -11,6 +11,7 @@ import {
 	normalizePath,
 	setIcon,
 } from "obsidian";
+import { unknownPlainText } from "../utils/unknown-plain-text";
 import { domInstanceOf } from "../utils/dom-instance-of";
 import type {
 	EpubExcerptSettings,
@@ -48,8 +49,8 @@ import { PremiumFeatureGuard, PREMIUM_FEATURES } from "../services/premium/Premi
 export const VIEW_TYPE_EPUB = EPUB_RUNTIME.viewTypes.reader;
 
 export class EpubView extends ItemView {
-	private component: any = null;
-	private lockedFormatPreviewComponent: any = null;
+	private component: unknown = null;
+	private lockedFormatPreviewComponent: unknown = null;
 	private plugin: EpubViewHost;
 	private filePath = "";
 	private bookTitle = "";
@@ -65,8 +66,8 @@ export class EpubView extends ItemView {
 	private flowMode: EpubFlowMode = "paginated";
 	private paragraphModeEnabled = false;
 	private lastActiveMarkdownLeaf: WorkspaceLeaf | null = null;
-	private leafChangeHandler: any = null;
-	private layoutChangeHandler: any = null;
+	private leafChangeHandler: unknown = null;
+	private layoutChangeHandler: unknown = null;
 	private premiumUiUnsubscribers: Array<() => void> = [];
 	private linkedCanvasPath: string | null = null;
 	private mounting = false;
@@ -1130,7 +1131,7 @@ export class EpubView extends ItemView {
 		return normalizePath(this.filePath || "");
 	}
 
-	getState(): any {
+	getState(): unknown {
 		return { filePath: this.filePath, file: this.filePath };
 	}
 
@@ -1141,7 +1142,7 @@ export class EpubView extends ItemView {
 			state && typeof state === "object" && !Array.isArray(state)
 				? (state as Record<string, unknown>)
 				: {};
-		const incomingPath = String(viewState.filePath || viewState.file || "").trim();
+		const incomingPath = unknownPlainText(viewState.filePath || viewState.file).trim();
 
 		const incomingPending = pendingLocateFromLegacyState({
 			pendingLocate:
@@ -1545,8 +1546,9 @@ export class EpubView extends ItemView {
 		const title = this.getResolvedHeaderTitle();
 
 		try {
-			if (this.leaf && typeof (this.leaf as any).updateHeader === "function") {
-				(this.leaf as any).updateHeader();
+			const leafWithHeader = this.leaf as WorkspaceLeaf & { updateHeader?: () => void };
+			if (leafWithHeader && typeof leafWithHeader.updateHeader === "function") {
+				leafWithHeader.updateHeader();
 			}
 
 			this.app.workspace.trigger("layout-change");
@@ -1582,7 +1584,7 @@ export class EpubView extends ItemView {
 				const { unmount } = await import("svelte");
 				try {
 					void unmount(this.component);
-				} catch (_e) {
+				} catch {
 					/* ignore */
 				}
 				this.component = null;
@@ -1751,7 +1753,7 @@ export class EpubView extends ItemView {
 			const { unmount } = await import("svelte");
 			try {
 				void unmount(this.component);
-			} catch (_e) {
+			} catch {
 				// ignore
 			}
 			this.component = null;
@@ -1871,7 +1873,7 @@ export class EpubView extends ItemView {
 				if (view instanceof MarkdownView && view.editor) {
 					return this.lastActiveMarkdownLeaf;
 				}
-			} catch (_e) {
+			} catch {
 				// stale reference
 			}
 		}

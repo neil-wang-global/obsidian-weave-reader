@@ -6,7 +6,7 @@ import {
 	normalizeLicenseStore,
 } from "./license-state";
 
-type PluginLookupApp = {
+export type PluginLookupApp = {
 	vault?: unknown;
 	plugins?: {
 		getPlugin?: (pluginId: string) => unknown;
@@ -55,9 +55,9 @@ export type CompatiblePluginSettings = {
 export type CompatibleDataStorage = {
 	getAllCards?: () => unknown[] | Promise<unknown[]>;
 	getDecks?: () => unknown[] | Promise<unknown[]>;
-	getCardByUUID?: (uuid: string) => unknown | Promise<unknown>;
+	getCardByUUID?: (uuid: string) => unknown;
 	saveCard?: (card: unknown) => unknown;
-	deleteCard?: (uuid: string) => unknown | Promise<unknown>;
+	deleteCard?: (uuid: string) => unknown;
 };
 
 export type CompatibleReadingMaterialManager = {

@@ -383,7 +383,7 @@ export class EpubHighlightViewSnapshotService {
 		if (!this.app) {
 			return "";
 		}
-		return getPluginPathsById(this.app as any, CURRENT_PLUGIN_ID).cache.incrementalReading
+		return getPluginPathsById(this.app as unknown, CURRENT_PLUGIN_ID).cache.incrementalReading
 			.epubAnnotationViewSnapshotsCache;
 	}
 

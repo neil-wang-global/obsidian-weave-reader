@@ -4,7 +4,7 @@ import type StandaloneEpubPlugin from "../../main";
 export class EpubSettingsTab extends PluginSettingTab {
 	plugin: StandaloneEpubPlugin;
 
-	constructor(app: any, plugin: StandaloneEpubPlugin) {
+	constructor(app: unknown, plugin: StandaloneEpubPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}

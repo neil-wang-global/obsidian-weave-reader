@@ -97,7 +97,8 @@ export function createEpubLinkPostProcessor(app: App) {
 		const sourcePath = String(ctx?.sourcePath || "").trim();
 		if (sourcePath && !migratedSourcePaths.has(sourcePath)) {
 			migratedSourcePaths.add(sourcePath);
-			queueMicrotask(async () => {
+			queueMicrotask(() => {
+				void (async () => {
 				try {
 					const sourceFile = app.vault.getAbstractFileByPath(sourcePath);
 					if (!(sourceFile instanceof TFile) || sourceFile.extension !== "md") {
@@ -118,6 +119,7 @@ export function createEpubLinkPostProcessor(app: App) {
 				} catch {
 					// ignore background enrichment failures
 				}
+				})();
 			});
 		}
 
@@ -158,9 +160,10 @@ export function createEpubLinkPostProcessor(app: App) {
 				);
 
 				boundLinkEl.__weaveEpubBoundHref = href;
-				boundLinkEl.__weaveEpubClickHandler = async (e: MouseEvent) => {
+				boundLinkEl.__weaveEpubClickHandler = (e: MouseEvent) => {
 					e.preventDefault();
 					e.stopImmediatePropagation();
+					void (async () => {
 					const linkService = new EpubLinkService(app);
 					const sourceMarkdownPath = String(ctx?.sourcePath || "").trim() || undefined;
 					const quoteText =
@@ -183,6 +186,7 @@ export function createEpubLinkPostProcessor(app: App) {
 						undefined,
 						sourceMarkdownPath
 					);
+					})();
 				};
 				linkEl.addEventListener("click", boundLinkEl.__weaveEpubClickHandler);
 				return;
@@ -206,7 +210,7 @@ export function createEpubLinkPostProcessor(app: App) {
 					  ) ||
 					  "Book";
 				styleEpubLink(linkEl, displayText);
-			} catch (_e) {
+			} catch {
 				// skip malformed links
 			}
 		});

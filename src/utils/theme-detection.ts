@@ -52,7 +52,7 @@ export class UnifiedThemeManager {
   }
 
   static getInstance(): UnifiedThemeManager {
-    const w = window as any;
+    const w = window as unknown;
     // 将实例挂到 window 上，避免热更新或重复初始化时重复注册监听器。
     if (w.__weaveThemeManager) {
       return w.__weaveThemeManager as UnifiedThemeManager;
@@ -254,7 +254,7 @@ export class UnifiedThemeManager {
     this.isInitialized = false;
 
     try {
-      const w = window as any;
+      const w = window as unknown;
       if (w.__weaveThemeManager === this) {
         w.__weaveThemeManager = undefined;
       }
@@ -262,7 +262,7 @@ export class UnifiedThemeManager {
       /* ignore */
     }
 
-    UnifiedThemeManager.instance = null as any;
+    UnifiedThemeManager.instance = null as unknown;
   }
 }
 
@@ -271,7 +271,7 @@ export function flushThemeManagerForTests(): void {
   const manager = UnifiedThemeManager.getInstance() as UnifiedThemeManager & {
     scheduleThemeCheck: () => void;
   };
-  manager.scheduleThemeCheck();
+  (manager as { scheduleThemeCheck?: () => void }).scheduleThemeCheck?.();
 }
 
 /** 创建可在组件里复用的响应式主题快照。 */

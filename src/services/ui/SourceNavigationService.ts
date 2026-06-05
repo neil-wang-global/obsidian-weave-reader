@@ -74,7 +74,7 @@ export class SourceNavigationService {
 
 		try {
 			target.scrollTarget.scrollIntoView({ behavior: "auto", block: "center", inline: "nearest" });
-		} catch (_e) {
+		} catch {
 			/* ignore */
 		}
 
@@ -103,7 +103,7 @@ export class SourceNavigationService {
 						return;
 					}
 				}
-			} catch (_e) {
+			} catch {
 				/* ignore */
 			}
 			if (attempt + 1 < this.markdownOverlayMaxAttempts) {
@@ -145,7 +145,7 @@ export class SourceNavigationService {
 				if (attempt + 1 < this.markdownOverlayMaxAttempts) {
 					this.showMarkdownOverlayWithRetry(view, candidates, options, latestTarget, attempt + 1);
 				}
-			} catch (_e) {
+			} catch {
 				if (attempt + 1 < this.markdownOverlayMaxAttempts) {
 					this.showMarkdownOverlayWithRetry(view, candidates, options, fallbackTarget, attempt + 1);
 				}
@@ -168,7 +168,8 @@ export class SourceNavigationService {
 		attempt: number
 	): void {
 		const delay = attempt === 0 ? options.delayMs ?? 220 : this.markdownLocateRetryDelayMs;
-		window.setTimeout(async () => {
+		window.setTimeout(() => {
+			void (async () => {
 			try {
 				const activeView = this.resolveActiveMarkdownView(openedLeaf);
 				const located = activeView
@@ -190,9 +191,10 @@ export class SourceNavigationService {
 				}
 
 				new Notice(i18n.t("epub.reader.sourceOpenedWithoutLocate"));
-			} catch (_e) {
+			} catch {
 				/* ignore */
 			}
+			})();
 		}, delay);
 	}
 
@@ -257,7 +259,7 @@ export class SourceNavigationService {
 
 		try {
 			editor.setCursor(startPos);
-		} catch (_e) {
+		} catch {
 			/* ignore */
 		}
 
@@ -266,11 +268,11 @@ export class SourceNavigationService {
 			window.setTimeout(() => {
 				try {
 					editor.setCursor(startPos);
-				} catch (_e) {
+				} catch {
 					/* ignore */
 				}
 			}, 900);
-		} catch (_e) {
+		} catch {
 			/* ignore */
 		}
 
@@ -297,7 +299,7 @@ export class SourceNavigationService {
 	private safeGetEditorValue(editor: Editor): string {
 		try {
 			return String(editor.getValue() || "");
-		} catch (_e) {
+		} catch {
 			return "";
 		}
 	}
@@ -570,7 +572,7 @@ export class SourceNavigationService {
 						});
 					}, 120);
 				}
-			} catch (_e) {
+			} catch {
 				if (attempt < 5) {
 					this.locateCanvasNodeWithRetry(canvasLeaf, candidates, nodeId, options, attempt + 1);
 				}

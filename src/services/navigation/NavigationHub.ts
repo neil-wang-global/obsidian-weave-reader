@@ -83,7 +83,7 @@ export class NavigationHub {
 					result = await this.navigateCard(intent);
 					break;
 				default:
-					result = { success: false, error: `Unknown navigation kind: ${intent.kind}` };
+					result = { success: false, error: `Unknown navigation kind: ${String((intent as { kind?: string }).kind ?? "unknown")}` };
 			}
 			if (startedAt > 0) {
 				logger.debug(

@@ -31,7 +31,7 @@ export function unflattenTranslationLeafKeys(flat: Record<string, string>): Tran
 
 		let current: TranslationKey = root;
 		for (let index = 0; index < parts.length - 1; index += 1) {
-			const part = parts[index]!;
+			const part = parts[index];
 			const existing = current[part];
 			if (!existing || typeof existing === "string") {
 				current[part] = {};

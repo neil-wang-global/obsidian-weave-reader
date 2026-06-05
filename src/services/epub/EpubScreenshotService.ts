@@ -254,7 +254,7 @@ export class EpubScreenshotService {
 					if (frameText) {
 						extractedFrames.push(frameText);
 					}
-				} catch (_e) {
+				} catch {
 					/* cross-origin or transient frame access */
 				}
 			}

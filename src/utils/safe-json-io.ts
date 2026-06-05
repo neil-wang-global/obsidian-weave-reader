@@ -21,11 +21,11 @@ function getBackupDir(app?: { vault: { configDir: string } }): string {
  * 例: weave/memory/decks.json → .obsidian/plugins/<current-plugin-id>/backups/json-recovery/weave__memory__decks.json
  */
 function toBackupPath(vaultPath: string, app?: { vault: { configDir: string } }): string {
-	const safeName = vaultPath.replace(/[\/\\]/g, "__");
+	const safeName = vaultPath.replace(/[/\\]/g, "__");
 	return `${getBackupDir(app)}/${safeName}`;
 }
 
-export async function readJsonBackup<T = any>(
+export async function readJsonBackup<T = unknown>(
 	adapter: {
 		read: (path: string) => Promise<string>;
 		exists: (path: string) => Promise<boolean>;
@@ -60,7 +60,7 @@ export async function hasValidJsonBackup(
 	}
 }
 
-export async function restoreJsonBackup<T = any>(
+export async function restoreJsonBackup<T = unknown>(
 	adapter: {
 		read: (path: string) => Promise<string>;
 		write: (path: string, data: string) => Promise<void>;
@@ -101,7 +101,7 @@ export async function safeWriteJson(
 			// 只有当前内容是有效 JSON 时才备份（避免备份已损坏的文件）
 			JSON.parse(current);
 			const backupDir = getBackupDir(app);
-			await DirectoryUtils.ensureDirRecursive(adapter as any, backupDir);
+			await DirectoryUtils.ensureDirRecursive(adapter as unknown, backupDir);
 			await adapter.write(toBackupPath(filePath, app), current);
 		}
 	} catch {
@@ -118,7 +118,7 @@ export async function safeWriteJson(
  * @param filePath vault 内文件路径
  * @returns 解析后的对象，若完全无法恢复则返回 null
  */
-export async function safeReadJson<T = any>(
+export async function safeReadJson<T = unknown>(
 	adapter: {
 		read: (path: string) => Promise<string>;
 		exists: (path: string) => Promise<boolean>;

@@ -498,7 +498,9 @@ export function injectMobileBoundsCSSVariables(): void {
 			root.style.removeProperty("--weave-modal-max-height");
 			root.style.removeProperty("--weave-workspace-top-offset");
 			root.style.removeProperty("--weave-workspace-bottom-offset");
-		} catch {}
+		} catch {
+			/* ignore */
+		}
 
 		try {
 			mobileWindow.__weaveMobileBoundsInjected = undefined;
@@ -516,13 +518,17 @@ export function destroyMobileModalAdaptation(): void {
 		if (typeof mobileWindow.__weaveMobileBoundsCleanup === "function") {
 			mobileWindow.__weaveMobileBoundsCleanup();
 		}
-	} catch {}
+	} catch {
+			/* ignore */
+		}
 
 	try {
 		const styleId = "weave-mobile-modal-global-styles";
 		const style = document.getElementById(styleId);
 		style?.remove();
-	} catch {}
+	} catch {
+			/* ignore */
+		}
 
 	try {
 		mobileWindow.__weaveMobileModalAdaptationCleanup = undefined;

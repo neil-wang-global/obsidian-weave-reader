@@ -33,6 +33,16 @@
 /* 批注编辑 + 键盘：将阅读 leaf 钉在 visual viewport，避免正文被整体上推并露出空白占位 */
 .weave-epub-view-content.epub-reading-viewport-locked,
 .workspace-leaf-content[data-type="weave-epub-reader"] > .view-content.epub-reading-viewport-locked {
+	position: fixed;
+	right: auto;
+	bottom: auto;
+	overflow: hidden;
+	box-sizing: border-box;
+	top: var(--epub-reading-vp-top, 0);
+	left: var(--epub-reading-vp-left, 0);
+	width: var(--epub-reading-vp-width, 100%);
+	height: var(--epub-reading-vp-height, 100%);
+	max-height: var(--epub-reading-vp-height, 100%);
 	background: var(--background-primary);
 	z-index: 1;
 }

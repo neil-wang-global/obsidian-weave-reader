@@ -64,7 +64,9 @@ export class DeferredLeafRedirectController {
 
 					this.request();
 				});
-			} catch {}
+			} catch {
+			/* ignore */
+		}
 		}
 
 		this.request();

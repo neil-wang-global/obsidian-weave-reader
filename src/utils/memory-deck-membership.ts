@@ -1,4 +1,5 @@
 import type { Deck } from "../data/epub-bridge-types";
+import { unknownPlainText } from "./unknown-plain-text";
 
 export type DeckIdentifierLookup = Pick<Deck, "id" | "name" | "purpose">;
 
@@ -11,7 +12,7 @@ export interface NormalizedDeckEntry {
 }
 
 function normalizeLookupValue(value: unknown): string {
-	return String(value || "").trim();
+	return unknownPlainText(value).trim();
 }
 
 function buildLookupMaps(decks?: DeckIdentifierLookup[]) {

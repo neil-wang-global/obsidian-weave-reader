@@ -1,4 +1,5 @@
 import JSZip from "jszip";
+import { unknownPlainText } from "../../utils/unknown-plain-text";
 import { type App, TFile } from "obsidian";
 import { readBlobUrlAsText } from "../../utils/blob-url-text";
 import { domInstanceOf } from "../../utils/dom-instance-of";
@@ -1359,7 +1360,7 @@ export class FoliateVaultPublicationParser {
 			return sectionCfi;
 		}
 		const fakeCfiUnknown: unknown = EpubCfi.fake.fromIndex(index);
-		return typeof fakeCfiUnknown === "string" ? fakeCfiUnknown : String(fakeCfiUnknown ?? "");
+		return typeof fakeCfiUnknown === "string" ? fakeCfiUnknown : unknownPlainText(fakeCfiUnknown);
 	}
 
 	private resolveAnchorAsRange(
@@ -1934,7 +1935,7 @@ export class FoliateVaultPublicationParser {
 	}
 
 	private stripCfiAssertions(value: string): string {
-		return String(value || "").replace(/\[[^\]]*]/g, "");
+		return String(value || "").replace(/\[(?:[^\]])*]/g, "");
 	}
 
 	private wrapCfi(value: string): string {
@@ -2877,7 +2878,7 @@ export class FoliateVaultPublicationParser {
 	private normalizeComparableFootnoteExportLabel(text: string | null | undefined): string {
 		return String(text || "")
 			.replace(/\s+/g, "")
-			.replace(/^[\[(（【〔「『]+/, "")
+			.replace(/^[[(（【〔「『]+/, "")
 			.replace(/[\])）】〕」』.,;:、，。]+$/g, "")
 			.toLowerCase();
 	}
@@ -2964,7 +2965,7 @@ export class FoliateVaultPublicationParser {
 			return directId;
 		}
 		const firstLine = String(text || "").split("\n")[0]?.trim() || "";
-		const labelMatch = firstLine.match(/^([\[(（【]?[0-9A-Za-z一二三四五六七八九十百千*†‡§]+[\])）】]?)\s*[.、:：-]?\s*/);
+		const labelMatch = firstLine.match(/^([[(（【]?[0-9A-Za-z一二三四五六七八九十百千*†‡§]+[\])）】]?)\s*[.、:：-]?\s*/u);
 		return labelMatch?.[1]?.trim() || "";
 	}
 
@@ -3788,8 +3789,9 @@ export class FoliateVaultPublicationParser {
 	private blobToDataUrl(blob: Blob): Promise<string> {
 		return new Promise((resolve, reject) => {
 			const reader = new FileReader();
-			reader.onload = () => resolve(String(reader.result || ""));
-			reader.onerror = () => reject(reader.error);
+			reader.onload = () => resolve(unknownPlainText(reader.result));
+			reader.onerror = () =>
+				reject(reader.error instanceof Error ? reader.error : new Error("FileReader failed"));
 			reader.readAsDataURL(blob);
 		});
 	}
@@ -4439,7 +4441,7 @@ function readTextResourceViaXhr(href: string): Promise<string> {
 			try {
 				resolve(await readTextResourceViaFetch(href));
 			} catch (error) {
-				reject(error);
+				reject(error instanceof Error ? error : new Error(String(error)));
 			}
 		};
 		request.send();

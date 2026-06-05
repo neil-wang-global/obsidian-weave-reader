@@ -100,13 +100,17 @@ type FoliateRenderer = HTMLElement & {
 };
 
 type FoliateViewElement = HTMLElement & {
-	open: (...args: unknown[]) => Promise<unknown> | unknown;
+	open: (...args: unknown[]) => unknown;
 	close: () => void;
-	addAnnotation: (...args: unknown[]) => Promise<unknown> | unknown;
-	deleteAnnotation: (...args: unknown[]) => Promise<unknown> | unknown;
+	addAnnotation: (...args: unknown[]) => unknown;
+	deleteAnnotation: (...args: unknown[]) => unknown;
+	goLeft?: () => unknown;
+	goRight?: () => unknown;
+	prev?: () => unknown;
+	next?: () => unknown;
 	addEventListener: HTMLElement["addEventListener"];
 	removeEventListener: HTMLElement["removeEventListener"];
-	[key: string]: any;
+	[key: string]: unknown;
 };
 
 type BridgedHostSelectionPayload = {
@@ -1768,7 +1772,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 					}
 					settled = true;
 					window.clearTimeout(timer);
-					reject(error);
+					reject(error instanceof Error ? error : new Error(String(error)));
 				}
 			);
 		});
@@ -7013,7 +7017,7 @@ body .weave-foliate-concealment {
 		if (normalized.includes("%")) {
 			try {
 				normalized = decodeURIComponent(normalized);
-			} catch (_error) {
+			} catch {
 				// Keep the original string when decoding fails.
 			}
 		}

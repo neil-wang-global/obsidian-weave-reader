@@ -86,12 +86,10 @@ jobs:
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           NOTES_FILE=".github/release-notes/${TAG}.md"
-          NOTES_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/.github/release-notes/${TAG}.md"
 
-          if curl -fsSL "$NOTES_URL" -o /tmp/release-notes.md; then
-            echo "Loaded release notes from main branch"
-          elif [ -f "$NOTES_FILE" ]; then
+          if [ -f "$NOTES_FILE" ]; then
             cp "$NOTES_FILE" /tmp/release-notes.md
+            echo "Loaded release notes from checked-out tag"
           else
             {
               echo "## ${TAG}"

@@ -406,7 +406,9 @@ function getOrCreatePerformanceMonitor(): PerformanceMonitor {
 	w.__weaveConfigPerformanceMonitorCleanup = () => {
 		try {
 			(w.__weaveConfigPerformanceMonitor as PerformanceMonitor | undefined)?.stopMonitoring();
-		} catch {}
+		} catch {
+			/* ignore */
+		}
 		try {
 			w.__weaveConfigPerformanceMonitor = undefined;
 			w.__weaveConfigPerformanceMonitorCleanup = undefined;
