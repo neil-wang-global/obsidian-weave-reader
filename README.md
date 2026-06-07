@@ -1,6 +1,6 @@
 # Weave EPUB Reader
 
-[中文](#中文文档) | [English](#english-documentation) | [日本語](./README.ja.md) | [한국어](./README.ko.md)
+[中文](#中文文档) | [English](#english-documentation) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Русский](./README.ru.md)
 
 <div align="center">
 
@@ -25,6 +25,7 @@
 ## 核心能力
 
 - **支持平台**：桌面端（Windows、macOS、Linux）与移动端（iOS、Android）
+- **界面语言**：简体中文、English、日本語、한국어、Русский（默认跟随 Obsidian，可在阅读器设置中固定）
 - **阅读格式**：Vault 内 EPUB、MOBI、AZW3、FB2、FBZ（`fb2.zip`）、CBZ、TXT 等（名称含 EPUB，但不仅限于 EPUB）
 - **摘录笔记**：五种高亮颜色，以及下划线、删除线、波浪线等样式标注；批注；自动或手动写入 Markdown / Canvas / Weave 牌组；正文回显；笔记删改、改色后书中高亮同步更新
 - **双向溯源与定位**：书籍深链接锚点；笔记跳回原文段落；阅读器内点击高亮反查来源笔记 / Canvas / 牌组
@@ -92,7 +93,7 @@ flowchart LR
 3. 在书中选中文本并摘录 → 带定位的摘录块（含书籍深链接）**自动插入到上一步光标处**。
 4. 保存笔记后，再次打开该书，正文会在对应段落**回显高亮**——你在笔记里记过什么，打开书就能看见。
 
-详见 [自动化摘录流程](./docs/user/zh-CN/03-auto-excerpt-workflow.md)。
+详见上文 [工作流 A](#a-自动-markdown-摘录最常用)。
 
 #### B. Canvas 视觉整理
 
@@ -139,7 +140,7 @@ flowchart LR
 - **多端一致**：书与笔记都在 Vault 里，随 Obsidian 同步策略走；手机读、桌面整理可以同一条链路。
 - **长书与多书有节奏**：章节可进入增量阅读月历，按调度交错阅读，而不是靠意志力硬啃单本。
 
-更完整的操作说明见 [用户手册 · 产品介绍与工作流](./docs/user/zh-CN/00-introduction.md)、[联动与扩展 · 增量阅读](./docs/user/zh-CN/06-integrations.md#weave-主插件可选)。
+更完整的操作说明见上文 [摘录笔记工作流](#摘录笔记工作流) 与 [核心能力](#核心能力)。
 
 ## 基础体验与高级支持
 
@@ -163,7 +164,7 @@ flowchart LR
 - **启用高级支持**：在阅读器设置中使用 EPUB 独立激活码；若已安装并激活 **Weave 主插件**，可继承授权而无需重复输入。
 - **制卡 / 增量阅读 / AI**：不单独占用阅读器高级支持许可，但需安装 Weave；AI 另需自行配置 API Key。
 
-完整对照以 [功能对照表](./docs/user/zh-CN/00-feature-comparison.md) 为准；激活步骤见 [高级版与激活](./docs/user/zh-CN/08-premium-and-activation.md)，条款见 [PREMIUM_TERMS.md](./PREMIUM_TERMS.md)。
+完整对照见上文 [基础体验与高级支持](#基础体验与高级支持)；激活在阅读器设置中完成，条款见 [PREMIUM_TERMS.md](./PREMIUM_TERMS.md)。
 
 ## 安装
 
@@ -237,7 +238,7 @@ flowchart LR
 
 ## 更多文档
 
-- [用户手册（简体中文）](./docs/user/zh-CN/README.md)
+- [插件介绍（简体中文）](#中文文档)
 - [隐私说明](./PRIVACY.md) · [高级支持条款](./PREMIUM_TERMS.md) · [支持](./SUPPORT.md) · [安全](./SECURITY.md)
 
 ## 许可证与作者
@@ -262,6 +263,7 @@ Getting started is light: put an EPUB in your vault, open it from the bookshelf,
 ## Core capabilities
 
 - **Platforms**: Desktop (Windows, macOS, Linux) and mobile (iOS, Android)
+- **Interface languages**: Simplified Chinese, English, Japanese, Korean, Russian (follow Obsidian by default; can be fixed in reader settings)
 - **Formats**: EPUB, MOBI, AZW3, FB2, FBZ (`fb2.zip`), CBZ, TXT, and more in the vault (despite the name, the plugin is not EPUB-only)
 - **Excerpts and notes**: Five highlight colors plus underline, strikethrough, and wavy underline; annotations; auto or manual capture to Markdown, Canvas, or Weave decks; in-body rendering; highlights refresh when notes change
 - **Two-way tracing and anchors**: Book deep links; jump from notes to the original passage; open the source note, Canvas, or deck from a highlight in the reader
@@ -329,7 +331,7 @@ Best when **notes are your primary workspace while reading**:
 3. Select text in the book and excerpt → a located excerpt block (with a book deep link) is **inserted at that cursor**.
 4. After saving the note, reopen the book: matching passages show **highlights in the body**—what you captured in notes is visible in the book.
 
-See [automated excerpt workflow (zh-CN)](./docs/user/zh-CN/03-auto-excerpt-workflow.md).
+See [workflow A](#a-auto-markdown-excerpts-most-common) above.
 
 #### B. Canvas visual mapping
 
@@ -376,7 +378,7 @@ This complements workflow A: **A is where captures go; E is when each chapter ge
 - **Same workflow across devices**—books and notes live in the vault and follow your Obsidian sync setup.
 - **Rhythm for long or multiple books**—chapters enter the incremental reading calendar for scheduled, interleaved progress.
 
-More detail: [introduction and workflows (zh-CN)](./docs/user/zh-CN/00-introduction.md), [integrations · incremental reading (zh-CN)](./docs/user/zh-CN/06-integrations.md#weave-主插件可选).
+More detail: [Excerpt and note workflows](#excerpt-and-note-workflows) and [Core capabilities](#core-capabilities) above.
 
 ## Essential experience and Premium support
 
@@ -400,7 +402,7 @@ More detail: [introduction and workflows (zh-CN)](./docs/user/zh-CN/00-introduct
 - **Enable Premium support**: EPUB-only license in reader settings, or inherit from an activated **Weave** main plugin.
 - **Card making / incremental reading / AI**: No separate EPUB Premium-support license slot, but require Weave; AI also needs your own API key.
 
-Authoritative breakdown: [feature comparison (zh-CN)](./docs/user/zh-CN/00-feature-comparison.md). Activation: [premium guide (zh-CN)](./docs/user/zh-CN/08-premium-and-activation.md). Terms: [PREMIUM_TERMS.md](./PREMIUM_TERMS.md).
+Authoritative breakdown: [Essential experience and Premium support](#essential-experience-and-premium-support) above. Activate in reader settings. Terms: [PREMIUM_TERMS.md](./PREMIUM_TERMS.md).
 
 ## Installation
 
@@ -474,7 +476,7 @@ Plugin ID: `weave-epub-reader` → `.obsidian/plugins/weave-epub-reader/`
 
 ## More documentation
 
-- [User manual (Simplified Chinese)](./docs/user/zh-CN/README.md)
+- [Introduction (Simplified Chinese)](#中文文档)
 - [Privacy](./PRIVACY.md) · [Premium support terms](./PREMIUM_TERMS.md) · [Support](./SUPPORT.md) · [Security](./SECURITY.md)
 
 ## License and author

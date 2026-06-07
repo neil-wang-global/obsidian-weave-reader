@@ -1,6 +1,6 @@
 # Weave EPUB Reader
 
-[中文](./README.zh-CN.md) | [English](./README.en.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md)
+[中文](./README.zh-CN.md) | [English](./README.md#english-documentation) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Русский](./README.ru.md)
 
 <div align="center">
 
@@ -23,6 +23,7 @@
 ## 핵심 기능
 
 - **지원 플랫폼**: 데스크톱(Windows, macOS, Linux) 및 모바일(iOS, Android)
+- **UI 언어**: 简体中文, English, 日本語, 한국어, Русский(기본은 Obsidian 따름; 리더 설정에서 고정 가능)
 - **지원 형식**: Vault 내 EPUB, MOBI, AZW3, FB2, FBZ(`fb2.zip`), CBZ, TXT 등(이름은 EPUB이지만 EPUB 전용은 아님)
 - **발췌 및 노트**: 5색 하이라이트, 밑줄·취소선·물결선 등 스타일, 주석, Markdown / Canvas / Weave 덱 자동 또는 수동 기록, 본문 반영, 노트 변경 시 하이라이트 동기화
 - **양방향 추적 및 앵커**: 도서 딥링크, 노트에서 원문 단락으로 이동, 리더 내 하이라이트에서 소스 노트 / Canvas / 덱으로
@@ -90,7 +91,7 @@ flowchart LR
 3. 책에서 텍스트를 선택해 발췌 → 위치 정보가 있는 발췌 블록(도서 딥링크 포함)이 **해당 커서 위치에 자동 삽입**됩니다.
 4. 노트를 저장한 뒤 같은 책을 다시 열면, 해당 단락에 **본문 하이라이트가 표시**됩니다——노트에 기록한 내용이 책을 열면 보입니다.
 
-자세히: [자동 발췌 워크플로(简体中文)](./docs/user/zh-CN/03-auto-excerpt-workflow.md).
+자세히: [README(简体中文) · 워크플로 A](./README.md#a-自动-markdown-摘录最常用).
 
 #### B. Canvas 시각 정리
 
@@ -137,7 +138,7 @@ flowchart LR
 - **기기 간 동일 워크플로**: 책과 노트는 Vault에 있으며 Obsidian 동기화 설정을 따름.
 - **장편·여러 권에 리듬**: 챕터를 점진적 읽기 캘린더에 넣어 일정에 맞춰 교차 진행.
 
-더 자세히: [소개 및 워크플로(简体中文)](./docs/user/zh-CN/00-introduction.md), [연동 및 확장 · 점진적 읽기(简体中文)](./docs/user/zh-CN/06-integrations.md#weave-主插件可选).
+더 자세히: [README(简体中文) · 발췌 워크플로](./README.md#摘录笔记工作流), [핵심 기능](./README.md#核心能力).
 
 ## 기본 체험과 프리미엄 지원
 
@@ -161,7 +162,7 @@ flowchart LR
 - **프리미엄 지원 활성화**: 리더 설정에서 EPUB 전용 라이선스 사용, 또는 **Weave** 메인 플러그인이 활성화되어 있으면 라이선스 상속 가능.
 - **카드 만들기 / 점진적 읽기 / AI**: EPUB 프리미엄 라이선스 슬롯은 별도로 필요 없지만 Weave 필요; AI는 자체 API 키 필요.
 
-공식 대조표: [기능 대조표(简体中文)](./docs/user/zh-CN/00-feature-comparison.md). 활성화: [프리미엄 가이드(简体中文)](./docs/user/zh-CN/08-premium-and-activation.md). 약관: [PREMIUM_TERMS.md](./PREMIUM_TERMS.md).
+공식 대조표: [README(简体中文) · 기능 대조](./README.md#基础体验与高级支持). 리더 설정에서 활성화. 약관: [PREMIUM_TERMS.md](./PREMIUM_TERMS.md).
 
 ## 설치
 
@@ -235,7 +236,7 @@ flowchart LR
 
 ## 추가 문서
 
-- [사용자 매뉴얼(简体中文)](./docs/user/zh-CN/README.md)
+- [플러그인 소개(简体中文)](./README.md#中文文档)
 - [개인정보](./PRIVACY.md) · [프리미엄 지원 약관](./PREMIUM_TERMS.md) · [지원](./SUPPORT.md) · [보안](./SECURITY.md)
 
 ## 라이선스 및 작성자

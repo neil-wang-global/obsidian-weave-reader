@@ -6,6 +6,7 @@
 
 ## 其他语言
 
-- **English:** [README.en.md](./README.en.md) · [README.md](./README.md#english-documentation)
+- **English:** [README.md](./README.md#english-documentation)
 - **日本語:** [README.ja.md](./README.ja.md)
 - **한국어:** [README.ko.md](./README.ko.md)
+- **Русский:** [README.ru.md](./README.ru.md)

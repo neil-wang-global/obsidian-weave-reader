@@ -1,6 +1,6 @@
 # Weave EPUB Reader
 
-[中文](./README.zh-CN.md) | [English](./README.en.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md)
+[中文](./README.zh-CN.md) | [English](./README.md#english-documentation) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Русский](./README.ru.md)
 
 <div align="center">
 
@@ -23,6 +23,7 @@
 ## 主な機能
 
 - **対応プラットフォーム**：デスクトップ（Windows、macOS、Linux）とモバイル（iOS、Android）
+- **UI 言語**：简体中文、English、日本語、한국어、Русский（既定は Obsidian に追従；リーダー設定で固定可能）
 - **対応形式**：Vault 内の EPUB、MOBI、AZW3、FB2、FBZ（`fb2.zip`）、CBZ、TXT など（名称は EPUB ですが、EPUB 専用ではありません）
 - **抜粋とノート**：5 色のハイライト、下線・取り消し線・波線などのスタイル、批注、Markdown / Canvas / Weave デッキへの自動または手動書き込み、本文への反映、ノート変更時のハイライト同期
 - **双方向トレースとアンカー**：書籍のディープリンク、ノートから原文段落へジャンプ、リーダー内のハイライトからソースノート / Canvas / デッキへ
@@ -90,7 +91,7 @@ flowchart LR
 3. 書籍内でテキストを選択して抜粋 → 位置情報付きの抜粋ブロック（書籍ディープリンク付き）が **そのカーソル位置に自動挿入** されます。
 4. ノートを保存した後、同じ本を再度開くと、該当段落に **本文ハイライトが表示** されます——ノートに記録した内容が、本を開けば見えます。
 
-詳細は [自動抜粋ワークフロー（简体中文）](./docs/user/zh-CN/03-auto-excerpt-workflow.md) を参照。
+詳細は [README（简体中文）· ワークフロー A](./README.md#a-自动-markdown-摘录最常用) を参照。
 
 #### B. Canvas 視覚整理
 
@@ -137,7 +138,7 @@ flowchart LR
 - **端末をまたいで同じワークフロー**：本とノートは Vault 内にあり、Obsidian の同期設定に従います。
 - **長編・複数書籍にリズム**：章を増分読書カレンダーに入れ、スケジュールに沿って交互に進められます。
 
-詳細：[製品紹介とワークフロー（简体中文）](./docs/user/zh-CN/00-introduction.md)、[連携と拡張 · 増分読書（简体中文）](./docs/user/zh-CN/06-integrations.md#weave-主插件可选)。
+詳細：[README（简体中文）· 抜粋ワークフロー](./README.md#摘录笔记工作流)、[コア機能](./README.md#核心能力)。
 
 ## 基本体験とプレミアムサポート
 
@@ -161,7 +162,7 @@ flowchart LR
 - **プレミアムサポートの有効化**：リーダー設定で EPUB 専用ライセンスを使用、または **Weave** メインプラグインが有効化済みならライセンスを継承可能。
 - **カード作成 / 増分読書 / AI**：EPUB プレミアムライセンス枠は別途不要ですが Weave が必要；AI は独自の API キーが必要。
 
-正式な対照表：[機能対照表（简体中文）](./docs/user/zh-CN/00-feature-comparison.md)。有効化手順：[プレミアムガイド（简体中文）](./docs/user/zh-CN/08-premium-and-activation.md)。条項：[PREMIUM_TERMS.md](./PREMIUM_TERMS.md)。
+正式な対照表：[README（简体中文）· 機能対照](./README.md#基础体验与高级支持)。有効化はリーダー設定から。条項：[PREMIUM_TERMS.md](./PREMIUM_TERMS.md)。
 
 ## インストール
 
@@ -235,7 +236,7 @@ flowchart LR
 
 ## その他のドキュメント
 
-- [ユーザーマニュアル（简体中文）](./docs/user/zh-CN/README.md)
+- [プラグイン紹介（简体中文）](./README.md#中文文档)
 - [プライバシー](./PRIVACY.md) · [プレミアムサポート条項](./PREMIUM_TERMS.md) · [サポート](./SUPPORT.md) · [セキュリティ](./SECURITY.md)
 
 ## ライセンスと作者

@@ -1,8 +1,0 @@
-# Weave EPUB Reader
-
-This file is a short pointer. The canonical plugin introduction is:
-
-- **English:** [README.md](./README.md#english-documentation)
-- **简体中文:** [README.zh-CN.md](./README.zh-CN.md)
-- **日本語:** [README.ja.md](./README.ja.md)
-- **한국어:** [README.ko.md](./README.ko.md)
