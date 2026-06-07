@@ -524,13 +524,6 @@ export class LicenseManager {
 	}
 
 	/**
-	 * 计算设备指纹相似度
-	 * 注意：此方法已废弃，因为对SHA256哈希进行相似度计算无意义
-	 * 保留此方法仅用于向后兼容，实际不再使用
-	 * Compatibility note: 使用简单的匹配/不匹配判断代替
-	 */
-
-	/**
 	 * 定期验证许可证状态
 	 */
 	async performPeriodicValidation(licenseInfo: LicenseInfo): Promise<{

@@ -28,6 +28,7 @@
 		surfaceStyle?: EpubParagraphModeSurfaceStyle;
 		transitionStyle?: EpubParagraphModeTransitionStyle;
 		immersive?: boolean;
+		randomReadingActive?: boolean;
 		currentIndex?: number;
 		totalCount?: number;
 		onFontScaleChange?: (scale: number) => void | Promise<void>;
@@ -48,6 +49,7 @@
 		}) => void;
 		onFootnoteDismiss?: (options?: { unpin?: boolean }) => void;
 		onToggleImmersive?: () => void;
+		onRandomParagraph?: () => void | Promise<void>;
 		onClose?: () => void;
 		onSelectionChange?: (info: OverlaySelectionInfo | null) => void;
 		onNavMetricsChange?: (metrics: { bottomDockOffset: number }) => void;
@@ -60,6 +62,7 @@
 		surfaceStyle = 'spotlight',
 		transitionStyle = 'settle',
 		immersive = false,
+		randomReadingActive = false,
 		currentIndex = 0,
 		totalCount = 0,
 		onFontScaleChange,
@@ -71,6 +74,7 @@
 		onHighlightActivate,
 		onFootnoteDismiss,
 		onToggleImmersive,
+		onRandomParagraph,
 		onClose,
 		onSelectionChange,
 		onNavMetricsChange,
@@ -656,10 +660,20 @@
 				<span class="epub-paragraph-overlay__chapter">{paragraph.chapterTitle}</span>
 			</div>
 			<div class="epub-paragraph-overlay__tools">
+				<button
+					type="button"
+					class={`clickable-icon epub-paragraph-overlay__random ${randomReadingActive ? 'is-active' : ''}`}
+					title={t('epub.reader.paragraphMode.randomReading')}
+					aria-label={t('epub.reader.paragraphMode.randomReading')}
+					aria-pressed={randomReadingActive}
+					onclick={() => void onRandomParagraph?.()}
+				>
+					<span use:icon={'shuffle'}></span>
+				</button>
 				<div class="epub-paragraph-overlay__settings-control">
 					<button
 						type="button"
-						class={`epub-paragraph-overlay__settings-toggle ${settingsPanelOpen ? 'is-active' : ''}`}
+						class={`clickable-icon epub-paragraph-overlay__settings-toggle ${settingsPanelOpen ? 'is-active' : ''}`}
 						title={t('epub.reader.paragraphMode.settingsLabel')}
 						aria-label={t('epub.reader.paragraphMode.settingsLabel')}
 						aria-expanded={settingsPanelOpen}
@@ -714,7 +728,7 @@
 								<label class="epub-paragraph-overlay__font-slider" aria-label={t('epub.reader.paragraphMode.fontScaleLabel')}>
 									<button
 										type="button"
-										class="epub-paragraph-overlay__font-step"
+										class="clickable-icon epub-paragraph-overlay__font-step"
 										title={t('epub.reader.paragraphMode.fontScaleDecrease')}
 										aria-label={t('epub.reader.paragraphMode.fontScaleDecrease')}
 										onclick={() => void onFontScaleChange?.(clampFontScale(fontScale - 5))}
@@ -736,7 +750,7 @@
 									<div class="epub-paragraph-overlay__font-scale-value">{fontScale}%</div>
 									<button
 										type="button"
-										class="epub-paragraph-overlay__font-step"
+										class="clickable-icon epub-paragraph-overlay__font-step"
 										title={t('epub.reader.paragraphMode.fontScaleIncrease')}
 										aria-label={t('epub.reader.paragraphMode.fontScaleIncrease')}
 										onclick={() => void onFontScaleChange?.(clampFontScale(fontScale + 5))}
@@ -750,7 +764,7 @@
 				</div>
 				<button
 					type="button"
-					class="epub-paragraph-overlay__close"
+					class="clickable-icon epub-paragraph-overlay__close"
 					title={immersive ? t('epub.reader.paragraphMode.immersiveExit') : t('epub.reader.paragraphMode.immersiveEnter')}
 					aria-label={immersive ? t('epub.reader.paragraphMode.immersiveExit') : t('epub.reader.paragraphMode.immersiveEnter')}
 					onclick={() => onToggleImmersive?.()}
@@ -759,7 +773,7 @@
 				</button>
 				<button
 					type="button"
-					class="epub-paragraph-overlay__close"
+					class="clickable-icon epub-paragraph-overlay__close"
 					title={t('epub.reader.paragraphMode.close')}
 					aria-label={t('epub.reader.paragraphMode.close')}
 					onclick={() => {
@@ -811,7 +825,7 @@
 
 		<div class="epub-paragraph-overlay__nav-slot" bind:this={navSlotEl}>
 			<div class="epub-paragraph-overlay__nav">
-				<button type="button" class="epub-paragraph-overlay__nav-btn" onclick={() => {
+				<button type="button" class="clickable-icon epub-paragraph-overlay__nav-btn" onclick={() => {
 					void navigateWithinParagraph(-1).then((handled) => {
 						if (!handled) {
 							clearSelection();
@@ -823,7 +837,7 @@
 					<span>{t('epub.reader.paragraphMode.previous')}</span>
 				</button>
 				<div class="epub-paragraph-overlay__status" aria-live="polite">{getProgressLabel()}</div>
-				<button type="button" class="epub-paragraph-overlay__nav-btn" onclick={() => {
+				<button type="button" class="clickable-icon epub-paragraph-overlay__nav-btn" onclick={() => {
 					void navigateWithinParagraph(1).then((handled) => {
 						if (!handled) {
 							clearSelection();

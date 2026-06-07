@@ -1,26 +1,23 @@
+import * as blobUrlText from "../../../utils/blob-url-text";
 import { FoliateVaultPublicationParser } from "../FoliateVaultPublicationParser";
 
 describe("FoliateVaultPublicationParser stylesheet normalization", () => {
 	afterEach(() => {
+		vi.restoreAllMocks();
 		vi.unstubAllGlobals();
 	});
 
 	it("inlines blob stylesheets into style tags instead of data URLs", async () => {
 		const parser = new FoliateVaultPublicationParser({} as any);
-		const fetchMock = vi.fn(async (input: string | URL | Request) => {
-			const href = String(input);
+		vi.spyOn(blobUrlText, "readBlobUrlAsText").mockImplementation(async (href: string) => {
 			if (href === "blob:chapter.css") {
-				return new Response(
-					'@import "blob:nested.css"; @import url("https://fonts.googleapis.com/css2?family=Noto+Sans"); body { color: red; }',
-					{ status: 200 }
-				);
+				return '@import "blob:nested.css"; @import url("https://fonts.googleapis.com/css2?family=Noto+Sans"); body { color: red; }';
 			}
 			if (href === "blob:nested.css") {
-				return new Response("p { margin: 0; }", { status: 200 });
+				return "p { margin: 0; }";
 			}
-			throw new Error(`Unexpected fetch for ${href}`);
+			throw new Error(`Unexpected blob read for ${href}`);
 		});
-		vi.stubGlobal("fetch", fetchMock);
 
 		const transformed = await (parser as any).inlineFoliateBlobStylesheets(
 			`<html xmlns="http://www.w3.org/1999/xhtml">
@@ -42,21 +39,19 @@ describe("FoliateVaultPublicationParser stylesheet normalization", () => {
 		const inlineStyle = doc.querySelector('style[data-weave-inline-stylesheet="true"]');
 		expect(inlineStyle).toBeTruthy();
 		expect(inlineStyle?.getAttribute("media")).toBe("screen");
-		expect(inlineStyle?.textContent).toContain("body { color: red; }");
-		expect(inlineStyle?.textContent).toContain("p { margin: 0; }");
+		expect(inlineStyle?.textContent).not.toContain("color: red");
+		expect(inlineStyle?.textContent).toContain("margin: 0");
 		expect(inlineStyle?.textContent).not.toContain("@import");
 	});
 
 	it("strips remote font sources from existing style elements", async () => {
 		const parser = new FoliateVaultPublicationParser({} as any);
-		const fetchMock = vi.fn(async (input: string | URL | Request) => {
-			const href = String(input);
+		vi.spyOn(blobUrlText, "readBlobUrlAsText").mockImplementation(async (href: string) => {
 			if (href === "blob:theme.css") {
-				return new Response("h1 { letter-spacing: 0.1em; }", { status: 200 });
+				return "h1 { letter-spacing: 0.1em; }";
 			}
-			throw new Error(`Unexpected fetch for ${href}`);
+			throw new Error(`Unexpected blob read for ${href}`);
 		});
-		vi.stubGlobal("fetch", fetchMock);
 
 		const transformed = await (parser as any).inlineFoliateBlobStylesheets(
 			`<html>
@@ -80,8 +75,38 @@ describe("FoliateVaultPublicationParser stylesheet normalization", () => {
 		const doc = new DOMParser().parseFromString(transformed, "text/html");
 		const style = doc.querySelector("style");
 		expect(style?.textContent).toContain('local("Arial")');
-		expect(style?.textContent).toContain("h1 { letter-spacing: 0.1em; }");
+		expect(style?.textContent).toContain("letter-spacing: 0.1em");
 		expect(style?.textContent).not.toContain("https://");
+	});
+
+	it("strips author color declarations from inline and linked stylesheets", async () => {
+		const parser = new FoliateVaultPublicationParser({} as any);
+		vi.spyOn(blobUrlText, "readBlobUrlAsText").mockImplementation(async (href: string) => {
+			if (href === "blob:chapter.css") {
+				return "body { color: #111 !important; background-color: #fff; }";
+			}
+			throw new Error(`Unexpected blob read for ${href}`);
+		});
+
+		const transformed = await (parser as any).inlineFoliateBlobStylesheets(
+			`<html>
+				<head>
+					<link rel="stylesheet" href="blob:chapter.css"/>
+				</head>
+				<body>
+					<p style="color: #222; margin: 1em;">hello</p>
+					<p bgcolor="#ffffff" color="#000000">legacy</p>
+				</body>
+			</html>`,
+			"text/html"
+		);
+
+		const doc = new DOMParser().parseFromString(transformed, "text/html");
+		expect(doc.querySelector("style")?.textContent).not.toMatch(/\bcolor\s*:/);
+		expect(doc.querySelector("style")?.textContent).not.toMatch(/\bbackground-color\s*:/);
+		expect(doc.querySelector("p")?.getAttribute("style")).toBe("margin: 1em");
+		expect(doc.querySelectorAll("p")[1]?.getAttribute("bgcolor")).toBeNull();
+		expect(doc.querySelectorAll("p")[1]?.getAttribute("color")).toBeNull();
 	});
 
 	it("removes scripted epub content while preserving readable markup", async () => {

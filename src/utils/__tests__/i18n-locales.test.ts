@@ -18,6 +18,7 @@ import { getEpubPremiumFeaturePreviewContent } from "../../services/epub/epub-pr
 import enTemplate from "../i18n/flat-locales/en-US.template.json";
 import jaOverlay from "../i18n/overlays/ja-JP.json";
 import koOverlay from "../i18n/overlays/ko-KR.json";
+import ruOverlay from "../i18n/overlays/ru-RU.json";
 
 const zhSnapshot = JSON.parse(
 	readFileSync(resolve("scripts/curated-overlay-data/zh-CN.snapshot.json"), "utf8")
@@ -34,43 +35,53 @@ const bookshelfModalKeys = Object.keys(enTemplate).filter(
 );
 
 describe("i18n locales", () => {
-	it("detects Japanese and Korean from locale tags", () => {
+	it("detects Japanese, Korean, and Russian locale tags", () => {
 		initI18n();
 		currentLanguage.set("ja-JP");
 		expect(get(currentLanguage)).toBe("ja-JP");
 		currentLanguage.set("ko-KR");
 		expect(get(currentLanguage)).toBe("ko-KR");
+		currentLanguage.set("ru-RU");
+		expect(get(currentLanguage)).toBe("ru-RU");
 	});
 
-	it("ships full bookshelf modal overlays for ja-JP and ko-KR", () => {
+	it("ships full bookshelf modal overlays for ja-JP, ko-KR, and ru-RU", () => {
 		for (const key of bookshelfModalKeys) {
 			const english = (enTemplate as Record<string, string>)[key];
 			const japanese = (jaOverlay as Record<string, string>)[key];
 			const korean = (koOverlay as Record<string, string>)[key];
+			const russian = (ruOverlay as Record<string, string>)[key];
 			const chinese = zhSnapshot[key];
 
 			expect(japanese, key).toBeTruthy();
 			expect(korean, key).toBeTruthy();
+			expect(russian, key).toBeTruthy();
 			expect(japanese).not.toBe(english);
 			expect(korean).not.toBe(english);
+			expect(russian).not.toBe(english);
 			expect(isAcceptableCuratedTranslation("ko-KR", korean, english, chinese)).toBe(true);
+			expect(isAcceptableCuratedTranslation("ru-RU", russian, english, chinese)).toBe(true);
 			if (chinese && chinese !== english) {
 				expect(korean).not.toBe(chinese);
+				expect(russian).not.toBe(chinese);
 			}
 		}
 	});
 
-	it("ships full premium overlays for ja-JP and ko-KR", () => {
+	it("ships full premium overlays for ja-JP, ko-KR, and ru-RU", () => {
 		for (const key of premiumKeys) {
 			const english = (enTemplate as Record<string, string>)[key];
 			const japanese = (jaOverlay as Record<string, string>)[key];
 			const korean = (koOverlay as Record<string, string>)[key];
+			const russian = (ruOverlay as Record<string, string>)[key];
 			const chinese = zhSnapshot[key];
 
 			expect(japanese, key).toBeTruthy();
 			expect(korean, key).toBeTruthy();
+			expect(russian, key).toBeTruthy();
 			expect(isAcceptableCuratedTranslation("ja-JP", japanese, english, chinese)).toBe(true);
 			expect(isAcceptableCuratedTranslation("ko-KR", korean, english, chinese)).toBe(true);
+			expect(isAcceptableCuratedTranslation("ru-RU", russian, english, chinese)).toBe(true);
 		}
 	});
 
@@ -124,7 +135,7 @@ describe("i18n locales", () => {
 		).toEqual([]);
 	});
 
-	it("keeps ja/ko catalogs the same shape as English", () => {
+	it("keeps ja/ko/ru catalogs the same shape as English", () => {
 		const enLeafCount = Object.keys(
 			flattenTranslationLeafKeys(translationCatalog["en-US"])
 		).length;
@@ -134,8 +145,12 @@ describe("i18n locales", () => {
 		const koLeafCount = Object.keys(
 			flattenTranslationLeafKeys(translationCatalog["ko-KR"])
 		).length;
+		const ruLeafCount = Object.keys(
+			flattenTranslationLeafKeys(translationCatalog["ru-RU"])
+		).length;
 
 		expect(jaLeafCount).toBe(enLeafCount);
 		expect(koLeafCount).toBe(enLeafCount);
+		expect(ruLeafCount).toBe(enLeafCount);
 	});
 });

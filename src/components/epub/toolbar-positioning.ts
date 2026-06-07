@@ -47,6 +47,37 @@ export interface ToolbarPositionOptions {
 export const TOOLBAR_EDGE_MARGIN = 12;
 export const TOOLBAR_GAP = 12;
 export const TOOLBAR_ARROW_PADDING = 18;
+export const NATIVE_SELECTION_MENU_HEIGHT = 48;
+export const MOBILE_FLOATING_BOTTOM_BASE_INSET = 16;
+
+export type NativeSelectionMenuSide = "above" | "below";
+
+export function resolveMobileFloatingInsetBottom(mobileDockBottomOffset = 0): number {
+	return mobileDockBottomOffset + MOBILE_FLOATING_BOTTOM_BASE_INSET;
+}
+
+/** Mirrors iOS/Android behavior: native menu prefers above the selection when space allows. */
+export function estimateNativeSelectionMenuSide(
+	anchorRect: ToolbarRect,
+	containerHeight: number,
+	edgeMargin = TOOLBAR_EDGE_MARGIN,
+	nativeMenuHeight = NATIVE_SELECTION_MENU_HEIGHT
+): NativeSelectionMenuSide {
+	const spaceAbove = anchorRect.top - edgeMargin;
+	const spaceBelow = containerHeight - anchorRect.bottom - edgeMargin;
+
+	if (spaceAbove >= nativeMenuHeight) {
+		return "above";
+	}
+	if (spaceBelow >= nativeMenuHeight) {
+		return "below";
+	}
+	return spaceAbove >= spaceBelow ? "above" : "below";
+}
+
+export function mirrorFloatingSide(nativeMenuSide: NativeSelectionMenuSide): "top" | "bottom" {
+	return nativeMenuSide === "above" ? "bottom" : "top";
+}
 
 function clamp(value: number, min: number, max: number) {
 	if (max < min) {
@@ -225,12 +256,59 @@ function computeFloatingPlacement({
 	};
 }
 
+function mobileMirrorSideHasRoom(
+	side: "top" | "bottom",
+	anchorRect: ToolbarRect,
+	containerHeight: number,
+	toolbarHeight: number,
+	gap: number,
+	edgeMargin: number,
+	insetTop: number,
+	insetBottom: number
+): boolean {
+	if (side === "bottom") {
+		const availableBelow =
+			containerHeight - insetBottom - anchorRect.bottom - gap - edgeMargin;
+		return availableBelow >= toolbarHeight;
+	}
+
+	const availableAbove = anchorRect.top - gap - edgeMargin - insetTop;
+	return availableAbove >= toolbarHeight;
+}
+
+function toolbarOverlapsNativeMenu(
+	top: number,
+	toolbarHeight: number,
+	anchorRect: ToolbarRect,
+	nativeMenuSide: NativeSelectionMenuSide,
+	gap: number,
+	nativeMenuHeight = NATIVE_SELECTION_MENU_HEIGHT
+): boolean {
+	const toolbarBottom = top + toolbarHeight;
+	if (nativeMenuSide === "above") {
+		const nativeZoneBottom = anchorRect.top - gap;
+		const nativeZoneTop = nativeZoneBottom - nativeMenuHeight;
+		return toolbarBottom > nativeZoneTop && top < nativeZoneBottom;
+	}
+
+	const nativeZoneTop = anchorRect.bottom + gap;
+	const nativeZoneBottom = nativeZoneTop + nativeMenuHeight;
+	return toolbarBottom > nativeZoneTop && top < nativeZoneBottom;
+}
+
 function shouldUseMobileDockedFallback(
 	floating: ToolbarPositionResult,
 	toolbarHeight: number,
 	anchorRect: ToolbarRect,
+	nativeMenuSide: NativeSelectionMenuSide,
 	gap: number
 ): boolean {
+	const ourSide = floating.isBelowAnchor ? "bottom" : "top";
+	const nativeOccupiedSide = nativeMenuSide === "above" ? "top" : "bottom";
+	if (ourSide === nativeOccupiedSide) {
+		return true;
+	}
+
 	if (
 		!floatingClearsAnchor(
 			floating.top,
@@ -243,7 +321,17 @@ function shouldUseMobileDockedFallback(
 		return true;
 	}
 
-	return toolbarOverlapsAnchor(floating.top, toolbarHeight, anchorRect, gap);
+	if (toolbarOverlapsAnchor(floating.top, toolbarHeight, anchorRect, gap)) {
+		return true;
+	}
+
+	return toolbarOverlapsNativeMenu(
+		floating.top,
+		toolbarHeight,
+		anchorRect,
+		nativeMenuSide,
+		gap
+	);
 }
 
 export function computeToolbarPosition({
@@ -279,17 +367,24 @@ export function computeToolbarPosition({
 		sideSelectionBounds.width = sideSelectionBounds.right - sideSelectionBounds.left;
 		sideSelectionBounds.height = sideSelectionBounds.bottom - sideSelectionBounds.top;
 	}
-	const resolvedPreferredSide: FloatingSidePreference = mobile ? "auto" : preferredSide;
-	const side = chooseFloatingSide(
-		sideSelectionBounds,
-		containerHeight,
-		toolbarHeight,
-		gap,
-		edgeMargin,
-		insetTop,
-		insetBottom,
-		resolvedPreferredSide
-	);
+	const nativeMenuSide = mobile
+		? estimateNativeSelectionMenuSide(sideSelectionBounds, containerHeight, edgeMargin)
+		: null;
+	const resolvedPreferredSide: FloatingSidePreference = mobile
+		? mirrorFloatingSide(nativeMenuSide!)
+		: preferredSide;
+	const side = mobile
+		? resolvedPreferredSide
+		: chooseFloatingSide(
+			sideSelectionBounds,
+			containerHeight,
+			toolbarHeight,
+			gap,
+			edgeMargin,
+			insetTop,
+			insetBottom,
+			resolvedPreferredSide
+		);
 	const activeAnchorRect = chooseAnchorRectForSide(normalizedRects, side, anchorPoint);
 	const anchorX = getAnchorX(activeAnchorRect, anchorPoint, align);
 	const minLeft = edgeMargin;
@@ -300,6 +395,22 @@ export function computeToolbarPosition({
 			? anchorX - toolbarWidth
 			: anchorX;
 	const left = clamp(idealLeft, minLeft, maxLeft);
+
+	if (
+		mobile &&
+		!mobileMirrorSideHasRoom(
+			side,
+			sideSelectionBounds,
+			containerHeight,
+			toolbarHeight,
+			gap,
+			edgeMargin,
+			insetTop,
+			insetBottom
+		)
+	) {
+		return createDockedPosition(left, activeAnchorRect);
+	}
 
 	const floating = computeFloatingPlacement({
 		activeAnchorRect,
@@ -320,7 +431,15 @@ export function computeToolbarPosition({
 		return floating;
 	}
 
-	if (shouldUseMobileDockedFallback(floating, toolbarHeight, activeAnchorRect, gap)) {
+	if (
+		shouldUseMobileDockedFallback(
+			floating,
+			toolbarHeight,
+			activeAnchorRect,
+			nativeMenuSide!,
+			gap
+		)
+	) {
 		return createDockedPosition(left, activeAnchorRect);
 	}
 
@@ -353,4 +472,34 @@ export function createEventBinder() {
 
 export function isEventOutsideToolbar(toolbarEl: HTMLElement | undefined, event: Event): boolean {
 	return Boolean(toolbarEl && !toolbarEl.contains(event.target as Node));
+}
+
+const OBSIDIAN_FLOATING_UI_SELECTOR =
+	".menu, .modal-container, .modal, .popover, .suggestion-container, .dropdown-menu";
+
+export function isEventInsideObsidianFloatingUi(event: Event): boolean {
+	const target = event.target;
+	if (!(target instanceof Node)) {
+		return false;
+	}
+	const element = target instanceof Element ? target : target.parentElement;
+	return Boolean(element?.closest(OBSIDIAN_FLOATING_UI_SELECTOR));
+}
+
+/** True when a pointer event should dismiss the selection toolbar (outside toolbar and floating UI). */
+export function shouldDismissToolbarOnPointerDown(
+	toolbarEl: HTMLElement | undefined,
+	event: Event
+): boolean {
+	const target = event.target;
+	if (!(target instanceof Node)) {
+		return false;
+	}
+	if (toolbarEl?.contains(target)) {
+		return false;
+	}
+	if (isEventInsideObsidianFloatingUi(event)) {
+		return false;
+	}
+	return true;
 }

@@ -42,15 +42,6 @@ export function buildEpubHighlightSyncSnapshot(card: EpubSavedCardSnapshot): Epu
 	};
 }
 
-/**
- * @deprecated Use `buildEpubHighlightSyncSnapshot` — does not rewrite semantic `sourceFile`.
- */
-export function withEpubHighlightPersistenceSource(
-	card: EpubSavedCardSnapshot
-): EpubSavedCardSnapshot {
-	return buildEpubHighlightSyncSnapshot(card);
-}
-
 export interface EpubHighlightSyncRequestDetail {
 	epubFilePath?: string;
 	card?: EpubSavedCardSnapshot;

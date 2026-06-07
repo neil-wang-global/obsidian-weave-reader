@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { setIcon, Platform } from 'obsidian';
+	import { setIcon, Platform, Menu } from 'obsidian';
 	import type { App } from 'obsidian';
 	import { onMount, tick, untrack } from 'svelte';
 	import { PREMIUM_FEATURES } from '../../services/premium/PremiumFeatureGuard';
@@ -14,7 +14,20 @@
 		ReaderFrame,
 		ReaderViewportRect,
 	} from '../../services/epub';
-	import { computeToolbarPosition, createEventBinder, isEventOutsideToolbar } from './toolbar-positioning';
+	import type { BuiltinWebTranslationProviderDefinition } from '../../config/web-translation-providers';
+	import { openObsidianVaultSearch } from '../../services/obsidian/obsidian-vault-search';
+	import { openObsidianWebSearch } from '../../services/obsidian/obsidian-web-search';
+	import {
+		listActiveWebTranslationProviders,
+		openWebTranslationProvider,
+	} from '../../services/obsidian/obsidian-web-translate';
+	import { showNotification } from '../../utils/notifications';
+	import {
+		computeToolbarPosition,
+		createEventBinder,
+		isEventInsideObsidianFloatingUi,
+		resolveMobileFloatingInsetBottom,
+	} from './toolbar-positioning';
 
 	type ExternalSelectionState = {
 		text: string;
@@ -84,6 +97,7 @@
 	let pendingSyncFrame: number | null = null;
 	let activeClearSelection: (() => void) | null = null;
 	let pendingExternalSelectionHideFrame: number | null = null;
+	let activeToolbarMenu: Menu | null = null;
 
 	const isMobileToolbar = Platform.isMobile || document.body.classList.contains('is-mobile');
 
@@ -221,7 +235,19 @@
 		activeFrame = null;
 	}
 
+	function dismissActiveToolbarMenu(): void {
+		if (!activeToolbarMenu) {
+			return;
+		}
+		activeToolbarMenu.hide();
+		if (typeof activeToolbarMenu.close === 'function') {
+			activeToolbarMenu.close();
+		}
+		activeToolbarMenu = null;
+	}
+
 	function hideToolbar() {
+		dismissActiveToolbarMenu();
 		clearPendingExternalSelectionHide();
 		isVisible = false;
 		isBelowSelection = false;
@@ -325,13 +351,116 @@
 		clearAndHide();
 	}
 
-	function handleSearch() {
+	function handleVaultSearch() {
 		if (!selectedText) return;
-		const searchPlugin = (app as any).internalPlugins?.getPluginById?.('global-search');
-		if (searchPlugin?.instance) {
-			searchPlugin.instance.openGlobalSearch(selectedText);
+		if (!openObsidianVaultSearch(app, selectedText)) {
+			showNotification(t('epub.selectionToolbar.vaultSearchUnavailable'), 'warning');
 		}
 		clearAndHide();
+	}
+
+	async function runWebSearch(): Promise<void> {
+		if (!selectedText.trim()) {
+			return;
+		}
+		const opened = await openObsidianWebSearch(app, selectedText);
+		if (!opened) {
+			showNotification(t('epub.selectionToolbar.webSearchUnavailable'), 'warning');
+		}
+	}
+
+	function resolveBuiltinTranslationLabel(
+		provider: BuiltinWebTranslationProviderDefinition
+	): string {
+		return t(`epub.translationProviders.${provider.nameKey}`);
+	}
+
+	function listActiveTranslationProviders() {
+		return listActiveWebTranslationProviders({
+			app,
+			resolveBuiltinLabel: resolveBuiltinTranslationLabel,
+		});
+	}
+
+	function resolveSelectionToolbarSubmenu(item: unknown, fallbackMenu: Menu): Menu {
+		const candidate = item as { setSubmenu?: () => Menu };
+		if (typeof candidate.setSubmenu === 'function') {
+			return candidate.setSubmenu();
+		}
+		return fallbackMenu;
+	}
+
+	function handleOpenMoreMenu(event: MouseEvent) {
+		event.stopPropagation();
+		const text = selectedText.trim();
+		if (!text) {
+			return;
+		}
+
+		dismissActiveToolbarMenu();
+		const translationProviders = listActiveTranslationProviders();
+		const menu = new Menu();
+		activeToolbarMenu = menu;
+
+		menu.addItem((item) => {
+			item.setTitle(t('epub.selectionToolbar.webSearch'));
+			item.setIcon('globe');
+			item.onClick(async () => {
+				await runWebSearch();
+				clearAndHide();
+			});
+		});
+
+		menu.addItem((item) => {
+			item.setTitle(t('epub.selectionToolbar.translate'));
+			item.setIcon('languages');
+			const translateMenu = resolveSelectionToolbarSubmenu(item, menu);
+			if (translationProviders.length === 0) {
+				translateMenu.addItem((subItem) => {
+					subItem.setTitle(t('epub.selectionToolbar.translateUnavailable'));
+					subItem.setIcon('info');
+					subItem.setDisabled(true);
+				});
+				return;
+			}
+			for (const provider of translationProviders) {
+				translateMenu.addItem((subItem) => {
+					subItem.setTitle(provider.label);
+					subItem.setIcon(provider.icon);
+					subItem.onClick(async () => {
+						const opened = await openWebTranslationProvider(app, provider, text);
+						if (!opened) {
+							showNotification(t('epub.selectionToolbar.translateOpenFailed'), 'warning');
+						}
+						clearAndHide();
+					});
+				});
+			}
+		});
+
+		menu.showAtMouseEvent(event);
+	}
+
+	function handlePointerDownOutside(event: Event) {
+		const target = event.target;
+		if (!(target instanceof Node)) {
+			return;
+		}
+
+		if (isEventInsideObsidianFloatingUi(event)) {
+			return;
+		}
+
+		const insideToolbar = Boolean(toolbarEl?.contains(target));
+		if (insideToolbar) {
+			dismissActiveToolbarMenu();
+			return;
+		}
+
+		dismissActiveToolbarMenu();
+		if (isVisible) {
+			clearAndHide();
+		}
 	}
 
 	function getSelectionRect(selection: Selection): DOMRect | null {
@@ -406,6 +535,9 @@
 			toolbarWidth: toolbarEl.offsetWidth || 296,
 			toolbarHeight: toolbarEl.offsetHeight || 78,
 			mobile: isMobileToolbar,
+			insetBottom: isMobileToolbar
+				? resolveMobileFloatingInsetBottom(mobileDockBottomOffset)
+				: 0,
 		});
 
 		toolbarMode = position.mode;
@@ -442,8 +574,10 @@
 		binder.bind(scrollHost, 'scroll', scheduleActiveSync, { passive: true });
 		binder.bind(iframeWindow, 'scroll', scheduleActiveSync, { passive: true });
 		binder.bind(iframeWindow, 'resize', scheduleActiveSync);
-		binder.bind(iframeDocument, 'mousedown', handleClickOutside);
-		binder.bind(iframeDocument, 'touchstart', handleClickOutside, { passive: true });
+		binder.bind(iframeDocument, 'mousedown', handlePointerDownOutside);
+		binder.bind(iframeDocument, 'touchstart', handlePointerDownOutside, { passive: true });
+		binder.bind(document, 'mousedown', handlePointerDownOutside, { capture: true });
+		binder.bind(document, 'touchstart', handlePointerDownOutside, { capture: true, passive: true });
 		binder.bind(window, 'resize', scheduleActiveSync);
 		binder.bind(window, 'orientationchange', scheduleActiveSync);
 		binder.bind(visualViewport, 'resize', scheduleActiveSync);
@@ -502,12 +636,6 @@
 			await positionToolbar(geometry.rect, viewportEl, geometry.rects, geometry.anchorPoint);
 		} catch (e) {
 			logger.warn('[SelectionToolbar] Failed to sync selection:', e);
-			hideToolbar();
-		}
-	}
-
-	function handleClickOutside(e: Event) {
-		if (isVisible && isEventOutsideToolbar(toolbarEl, e)) {
 			hideToolbar();
 		}
 	}
@@ -589,11 +717,11 @@
 	});
 
 	onMount(() => {
-		document.addEventListener('mousedown', handleClickOutside);
-		document.addEventListener('touchstart', handleClickOutside);
+		document.addEventListener('mousedown', handlePointerDownOutside, { capture: true });
+		document.addEventListener('touchstart', handlePointerDownOutside, { capture: true, passive: true });
 		return () => {
-			document.removeEventListener('mousedown', handleClickOutside);
-			document.removeEventListener('touchstart', handleClickOutside);
+			document.removeEventListener('mousedown', handlePointerDownOutside, { capture: true });
+			document.removeEventListener('touchstart', handlePointerDownOutside, { capture: true });
 			teardownReaderTracking?.();
 			teardownReaderTracking = null;
 			stopPositionTracking();
@@ -624,13 +752,13 @@
 
 					<div class="selection-style-shell">
 						<div class="toolbar-row selection-style-row">
-							<button class="action-item icon-only style-action-item" onclick={() => handleHighlight('yellow', 'underline')} title={t('epub.selectionToolbar.underline')} aria-label={t('epub.selectionToolbar.underline')}>
+							<button class="clickable-icon action-item icon-only style-action-item" onclick={() => handleHighlight('yellow', 'underline')} title={t('epub.selectionToolbar.underline')} aria-label={t('epub.selectionToolbar.underline')}>
 								<span class="action-icon style-icon underline-style-icon" use:icon={'underline'}></span>
 							</button>
-							<button class="action-item icon-only style-action-item" onclick={() => handleHighlight('yellow', 'strikethrough')} title={t('epub.selectionToolbar.strikethrough')} aria-label={t('epub.selectionToolbar.strikethrough')}>
+							<button class="clickable-icon action-item icon-only style-action-item" onclick={() => handleHighlight('yellow', 'strikethrough')} title={t('epub.selectionToolbar.strikethrough')} aria-label={t('epub.selectionToolbar.strikethrough')}>
 								<span class="action-icon style-icon strikethrough-style-icon" use:icon={'strikethrough'}></span>
 							</button>
-							<button class="action-item icon-only style-action-item" onclick={() => handleHighlight('yellow', 'wavy')} title={t('epub.selectionToolbar.wavy')} aria-label={t('epub.selectionToolbar.wavy')}>
+							<button class="clickable-icon action-item icon-only style-action-item" onclick={() => handleHighlight('yellow', 'wavy')} title={t('epub.selectionToolbar.wavy')} aria-label={t('epub.selectionToolbar.wavy')}>
 								<span class="action-icon style-icon wavy-style-icon" use:icon={'pen-tool'}></span>
 							</button>
 						</div>
@@ -641,14 +769,14 @@
 		<div class="selection-actions-shell">
 			<div class="toolbar-row actions-row selection-actions-row">
 				{#if canUseExcerptNotes || canPreviewLockedExcerptFeature()}
-					<button class="action-item" onclick={handleInsertToNote} title={autoInsert ? t('epub.selectionToolbar.insert') : t('epub.selectionToolbar.copy')} aria-label={autoInsert ? t('epub.selectionToolbar.insert') : t('epub.selectionToolbar.copy')}>
+					<button class="clickable-icon action-item" onclick={handleInsertToNote} title={autoInsert ? t('epub.selectionToolbar.insert') : t('epub.selectionToolbar.copy')} aria-label={autoInsert ? t('epub.selectionToolbar.insert') : t('epub.selectionToolbar.copy')}>
 						<span class="action-icon" use:icon={autoInsert ? 'clipboard-paste' : 'clipboard-copy'}></span>
 						<span class="action-label">{autoInsert ? t('epub.selectionToolbar.insert') : t('epub.selectionToolbar.copy')}</span>
 					</button>
 				{/if}
-				<button class="action-item" onclick={handleSearch} title={t('epub.selectionToolbar.search')} aria-label={t('epub.selectionToolbar.search')}>
+				<button class="clickable-icon action-item" onclick={handleVaultSearch} title={t('epub.selectionToolbar.vaultSearchTitle')} aria-label={t('epub.selectionToolbar.vaultSearch')}>
 					<span class="action-icon" use:icon={'search'}></span>
-					<span class="action-label">{t('epub.selectionToolbar.search')}</span>
+					<span class="action-label">{t('epub.selectionToolbar.vaultSearch')}</span>
 				</button>
 
 				{#if onExtractToCard && (canUseExcerptNotes || canPreviewLockedExcerptFeature())}
@@ -656,24 +784,33 @@
 				{/if}
 
 				{#if onExtractToCard}
-					<button class="action-item accent" onclick={handleExtractToCard} title={t('epub.selectionToolbar.createCardTitle')} aria-label={t('epub.selectionToolbar.createCardTitle')}>
+					<button class="clickable-icon action-item accent" onclick={handleExtractToCard} title={t('epub.selectionToolbar.createCardTitle')} aria-label={t('epub.selectionToolbar.createCardTitle')}>
 						<span class="action-icon" use:icon={'scissors'}></span>
 						<span class="action-label">{t('epub.selectionToolbar.createCard')}</span>
 					</button>
 				{/if}
 
 				{#if onCreateReadingPoint}
-					<button class="action-item accent" onclick={handleCreateReadingPoint} title={t('epub.selectionToolbar.readingPointTitle')} aria-label={t('epub.selectionToolbar.readingPointTitle')}>
+					<button class="clickable-icon action-item accent" onclick={handleCreateReadingPoint} title={t('epub.selectionToolbar.readingPointTitle')} aria-label={t('epub.selectionToolbar.readingPointTitle')}>
 						<span class="action-icon" use:icon={'book-plus'}></span>
 						<span class="action-label">{t('epub.selectionToolbar.readingPoint')}</span>
 					</button>
 				{/if}
 				{#if canUseAiSplit}
-					<button class="action-item ai" onclick={handleOpenAIMenu} title="AI" aria-label="AI">
+					<button class="clickable-icon action-item ai" onclick={handleOpenAIMenu} title="AI" aria-label="AI">
 						<span class="action-icon" use:icon={'sparkles'}></span>
 						<span class="action-label">AI</span>
 					</button>
 				{/if}
+				<button
+					class="clickable-icon action-item selection-actions-more"
+					onclick={handleOpenMoreMenu}
+					title={t('epub.selectionToolbar.moreMenuTitle')}
+					aria-label={t('epub.selectionToolbar.moreMenu')}
+				>
+					<span class="action-icon" use:icon={'more-horizontal'}></span>
+					<span class="action-label">{t('epub.selectionToolbar.moreMenu')}</span>
+				</button>
 			</div>
 		</div>
 	</div>

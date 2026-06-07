@@ -1989,7 +1989,7 @@ export class EpubBacklinkHighlightService {
 
 		try {
 			const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
-			const deletionLocator = await this.resolveDeletionLocator(
+			const mutationLocator = await this.resolveMutationLocator(
 				sourceFile,
 				cfiRange,
 				epubFilePath,
@@ -1998,9 +1998,9 @@ export class EpubBacklinkHighlightService {
 			const changed = await this.processVaultTextFile(sourceFile, (content) =>
 				this.removeCalloutForDeletion(
 					content,
-					deletionLocator.cfiRange,
+					mutationLocator.cfiRange,
 					targetIdentity,
-					deletionLocator.excerptId,
+					mutationLocator.excerptId,
 					sourceFile
 				)
 			);
@@ -2110,8 +2110,21 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlight failed:", error);
 
 		try {
 			const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
+			const mutationLocator = await this.resolveMutationLocator(
+				sourceFile,
+				cfiRange,
+				epubFilePath,
+				excerptId
+			);
 			const changed = await this.processVaultTextFile(sourceFile, (content) =>
-				this.updateCalloutColor(content, cfiRange, targetIdentity, newColor, excerptId, sourceFile)
+				this.updateCalloutColor(
+					content,
+					mutationLocator.cfiRange,
+					targetIdentity,
+					newColor,
+					mutationLocator.excerptId,
+					sourceFile
+				)
 			);
 			if (changed) {
 				await this.notifyLinkedSourceMutation(sourceFile, "update", sourceRef);
@@ -2155,14 +2168,20 @@ logger.debug("[EpubBacklinkHighlightService] changeHighlightColor failed:", erro
 
 		try {
 			const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
+			const mutationLocator = await this.resolveMutationLocator(
+				sourceFile,
+				cfiRange,
+				epubFilePath,
+				excerptId
+			);
 			const changed = await this.processVaultTextFile(sourceFile, (content) =>
 				this.updateCalloutAppearance(
 					content,
-					cfiRange,
+					mutationLocator.cfiRange,
 					targetIdentity,
 					undefined,
 					newStyle,
-					excerptId,
+					mutationLocator.excerptId,
 					true,
 					sourceFile
 				)
@@ -2212,13 +2231,19 @@ logger.debug("[EpubBacklinkHighlightService] changeHighlightStyle failed:", erro
 
 		try {
 			const targetIdentity = await this.resolveTargetIdentity(epubFilePath);
+			const mutationLocator = await this.resolveMutationLocator(
+				sourceFile,
+				cfiRange,
+				epubFilePath,
+				excerptId
+			);
 			const changed = await this.processVaultTextFile(sourceFile, (content) =>
 				this.updateCalloutComment(
 					content,
-					cfiRange,
+					mutationLocator.cfiRange,
 					targetIdentity,
 					commentText,
-					excerptId,
+					mutationLocator.excerptId,
 					hasCommentDivider,
 					sourceFile
 				)
@@ -3653,7 +3678,7 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 		return `fnv1a:${(hash >>> 0).toString(16).padStart(8, "0")}`;
 	}
 
-	private async resolveDeletionLocator(
+	private async resolveMutationLocator(
 		sourceFile: string,
 		cfiRange: string,
 		epubFilePath: string,
@@ -3872,7 +3897,11 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 		if (excerptId && resolvedLink.excerptId) {
 			return resolvedLink.excerptId === excerptId;
 		}
-		return EpubLinkService.normalizeCfi(resolvedLink.cfi) === normalizedTargetCfi;
+		const normalizedStoredCfi = EpubLinkService.normalizeCfi(resolvedLink.cfi);
+		if (normalizedStoredCfi === normalizedTargetCfi) {
+			return true;
+		}
+		return this.cfisReferToSameHighlightRegion(resolvedLink.cfi, normalizedTargetCfi);
 	}
 
 	private normalizeCanvasSourceRef(sourceRef?: string): string | undefined {

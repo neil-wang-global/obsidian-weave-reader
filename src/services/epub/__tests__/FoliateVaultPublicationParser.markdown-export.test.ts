@@ -1,11 +1,13 @@
 import JSZip from "jszip";
 import { TFile } from "obsidian";
+import * as blobUrlText from "../../../utils/blob-url-text";
 import { FoliateVaultPublicationParser } from "../FoliateVaultPublicationParser";
 
 const SAMPLE_PNG_BASE64 =
 	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wn0K2sAAAAASUVORK5CYII=";
 
 afterEach(() => {
+	vi.restoreAllMocks();
 	vi.unstubAllGlobals();
 });
 
@@ -128,19 +130,16 @@ describe("FoliateVaultPublicationParser markdown export", () => {
 
 	it("assetizes runtime blob image URLs during markdown export for generic loader content", async () => {
 		const parser = new FoliateVaultPublicationParser({} as any);
-		const fetchMock = vi.fn(async (input: string | URL | Request) => {
-			const href = String(input);
+		const pngBytes = Uint8Array.from(Buffer.from(SAMPLE_PNG_BASE64, "base64"));
+		vi.spyOn(blobUrlText, "readBlobUrlAsArrayBuffer").mockImplementation(async (href: string) => {
 			if (href === "blob:chapter-image") {
-				return new Response(new Blob([Buffer.from(SAMPLE_PNG_BASE64, "base64")], { type: "image/png" }), {
-					status: 200,
-					headers: {
-						"content-type": "image/png",
-					},
-				});
+				return {
+					bytes: pngBytes,
+					mimeType: "image/png",
+				};
 			}
-			throw new Error(`Unexpected fetch for ${href}`);
+			throw new Error(`Unexpected blob read for ${href}`);
 		});
-		vi.stubGlobal("fetch", fetchMock);
 
 		const doc = new DOMParser().parseFromString(
 			`<html><body><p>Lead text</p><figure><img src="blob:chapter-image" alt="Blob figure" /><figcaption>Blob caption</figcaption></figure></body></html>`,

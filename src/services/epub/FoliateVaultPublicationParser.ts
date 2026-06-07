@@ -1,8 +1,18 @@
 import JSZip from "jszip";
 import { unknownPlainText } from "../../utils/unknown-plain-text";
 import { type App, TFile } from "obsidian";
-import { readBlobUrlAsText } from "../../utils/blob-url-text";
+import {
+	isBlobResourceUrl,
+	readBlobUrlAsArrayBuffer,
+	readBlobUrlAsText,
+	shouldPreferFetchForResourceUrl,
+} from "../../utils/blob-url-text";
 import { domInstanceOf } from "../../utils/dom-instance-of";
+import {
+	sanitizeLegacyAuthorColorAttributes,
+	stripAuthorColorDeclarations,
+	stripInlineAuthorColorStyles,
+} from "../../utils/epub-author-color-sanitizer";
 import { logger } from "../../utils/logger";
 import { readVaultBinaryData } from "./EpubBinaryData";
 import {
@@ -787,6 +797,10 @@ export class FoliateVaultPublicationParser {
 		if (!resolved) {
 			return undefined;
 		}
+		return this.resolvePageNumberForResolvedTarget(resolved);
+	}
+
+	resolvePageNumberForResolvedTarget(resolved: FoliateResolvedTarget): number | undefined {
 		return this.resolveResolvedTargetPageNumber(resolved);
 	}
 
@@ -1695,6 +1709,9 @@ export class FoliateVaultPublicationParser {
 			linkElement.replaceWith(this.createInlineStylesheetElement(doc, inlinedCss, linkElement));
 		}
 
+		await this.inlineFoliateBlobImages(doc);
+		await this.inlineFoliateBlobInlineStyles(doc);
+
 		return parserType === "text/html"
 			? doc.documentElement.outerHTML
 			: new XMLSerializer().serializeToString(doc);
@@ -1729,28 +1746,18 @@ export class FoliateVaultPublicationParser {
 			}
 		}
 
-		// Remove problematic inline color styles that conflict with dark mode
 		this.sanitizeInlineColorStyles(doc);
+		sanitizeLegacyAuthorColorAttributes(doc);
 	}
 
 	private sanitizeInlineColorStyles(doc: Document): void {
-		const textElements = doc.querySelectorAll(
-			"p, div, span, li, dd, dt, blockquote, figcaption, h1, h2, h3, h4, h5, h6, td, th, caption, label, legend"
-		);
-
-		for (const element of Array.from(textElements)) {
+		for (const element of Array.from(doc.querySelectorAll("[style]"))) {
 			const style = element.getAttribute("style");
 			if (!style) {
 				continue;
 			}
 
-			// Remove color and background-color from inline styles
-			// This allows our reader styles to take precedence
-			const sanitized = style
-				.replace(/\bcolor\s*:\s*[^;]+;?/gi, "")
-				.replace(/\bbackground-color\s*:\s*[^;]+;?/gi, "")
-				.trim();
-
+			const sanitized = stripInlineAuthorColorStyles(style);
 			if (sanitized) {
 				element.setAttribute("style", sanitized);
 			} else {
@@ -1760,8 +1767,71 @@ export class FoliateVaultPublicationParser {
 	}
 
 	private async normalizeFoliateCssText(cssText: string): Promise<string> {
-		const inlinedCss = await this.inlineBlobCssImports(cssText);
-		return this.stripUnsupportedExternalCss(inlinedCss);
+		const importedCss = await this.inlineBlobCssImports(cssText);
+		const inlinedUrls = await this.inlineBlobCssUrls(importedCss);
+		const withoutRemoteResources = this.stripUnsupportedExternalCss(inlinedUrls);
+		return stripAuthorColorDeclarations(withoutRemoteResources);
+	}
+
+	private async inlineFoliateBlobImages(doc: Document): Promise<void> {
+		for (const imageElement of Array.from(doc.querySelectorAll("img[src]"))) {
+			const href = imageElement.getAttribute("src") || "";
+			if (!href.startsWith("blob:")) {
+				continue;
+			}
+			const dataUrl = await this.readBlobResourceAsDataUrl(href);
+			if (dataUrl) {
+				imageElement.setAttribute("src", dataUrl);
+			}
+		}
+	}
+
+	private async inlineFoliateBlobInlineStyles(doc: Document): Promise<void> {
+		for (const element of Array.from(doc.querySelectorAll("[style]"))) {
+			const styleValue = element.getAttribute("style");
+			if (!styleValue || !/blob:/i.test(styleValue)) {
+				continue;
+			}
+			const inlinedStyle = await this.inlineBlobCssUrls(styleValue);
+			if (inlinedStyle.trim()) {
+				element.setAttribute("style", inlinedStyle);
+			} else {
+				element.removeAttribute("style");
+			}
+		}
+	}
+
+	private async inlineBlobCssUrls(
+		cssText: string,
+		visited = new Set<string>()
+	): Promise<string> {
+		const urlPattern = /url\(\s*(['"]?)(blob:[^'")]+)\1\s*\)/gi;
+		let output = cssText;
+		for (const match of Array.from(cssText.matchAll(urlPattern))) {
+			const blobHref = (match[2] || "").trim();
+			if (!blobHref.startsWith("blob:") || visited.has(blobHref)) {
+				continue;
+			}
+			visited.add(blobHref);
+			const dataUrl = await this.readBlobResourceAsDataUrl(blobHref);
+			if (!dataUrl) {
+				continue;
+			}
+			output = output.replace(match[0], `url("${dataUrl}")`);
+		}
+		return output;
+	}
+
+	private async readBlobResourceAsDataUrl(href: string): Promise<string | null> {
+		const binary = await this.readBinaryResource(href);
+		if (!binary || binary.bytes.length === 0) {
+			return null;
+		}
+		return this.blobToDataUrl(
+			new Blob([binary.bytes], {
+				type: binary.mimeType || "application/octet-stream",
+			})
+		);
 	}
 
 	private async inlineBlobCssImports(
@@ -1833,12 +1903,17 @@ export class FoliateVaultPublicationParser {
 
 	private async readTextResource(href: string): Promise<string> {
 		try {
+			if (isBlobResourceUrl(href)) {
+				return await readBlobUrlAsText(href);
+			}
 			return await readTextResourceViaXhr(href);
 		} catch (error) {
-			logger.warn("[FoliateVaultPublicationParser] Failed to read transformed resource:", {
-				href,
-				error,
-			});
+			if (!isBlobResourceUrl(href)) {
+				logger.warn("[FoliateVaultPublicationParser] Failed to read transformed resource:", {
+					href,
+					error,
+				});
+			}
 			return "";
 		}
 	}
@@ -1847,12 +1922,20 @@ export class FoliateVaultPublicationParser {
 		href: string
 	): Promise<{ bytes: Uint8Array; mimeType: string } | null> {
 		try {
+			if (isBlobResourceUrl(href)) {
+				return await readBlobUrlAsArrayBuffer(href);
+			}
 			return await readBinaryResourceViaFetch(href);
 		} catch (error) {
-			logger.warn("[FoliateVaultPublicationParser] Failed to read transformed binary resource:", {
-				href,
-				error,
-			});
+			if (!isBlobResourceUrl(href)) {
+				logger.warn(
+					"[FoliateVaultPublicationParser] Failed to read transformed binary resource:",
+					{
+						href,
+						error,
+					}
+				);
+			}
 			return null;
 		}
 	}
@@ -4419,6 +4502,9 @@ export class FoliateVaultPublicationParser {
 }
 
 function readTextResourceViaXhr(href: string): Promise<string> {
+	if (isBlobResourceUrl(href)) {
+		return readBlobUrlAsText(href);
+	}
 	if (shouldPreferFetchForResourceUrl(href) && typeof window.fetch === "function") {
 		return readTextResourceViaFetch(href);
 	}
@@ -4439,6 +4525,10 @@ function readTextResourceViaXhr(href: string): Promise<string> {
 			);
 		};
 		request.onerror = async () => {
+			if (isBlobResourceUrl(href)) {
+				reject(new Error("Failed to read blob URL"));
+				return;
+			}
 			try {
 				resolve(await readTextResourceViaFetch(href));
 			} catch (error) {
@@ -4464,6 +4554,9 @@ async function readTextResourceViaFetch(href: string): Promise<string> {
 async function readBinaryResourceViaFetch(
 	href: string
 ): Promise<{ bytes: Uint8Array; mimeType: string }> {
+	if (isBlobResourceUrl(href)) {
+		return readBlobUrlAsArrayBuffer(href);
+	}
 	if (typeof window.fetch !== "function") {
 		throw new Error("Failed to load binary resource");
 	}
@@ -4479,12 +4572,4 @@ async function readBinaryResourceViaFetch(
 			.trim()
 			.toLowerCase(),
 	};
-}
-
-function shouldPreferFetchForResourceUrl(resourceUrl: string): boolean {
-	const protocolMatch = /^[a-z][a-z0-9+.-]*:/i.exec(String(resourceUrl || "").trim());
-	if (!protocolMatch) {
-		return false;
-	}
-	return !/^https?:$/i.test(protocolMatch[0]);
 }

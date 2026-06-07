@@ -36,6 +36,7 @@ export interface SearchQuery {
 	formats: string[];
 	colors: string[];
 	comments: string[];
+	chapters: string[];
 
 	statuses: string[];
 	states: string[];
@@ -78,6 +79,7 @@ export function parseSearchQuery(query: string): SearchQuery {
 		formats: [],
 		colors: [],
 		comments: [],
+		chapters: [],
 		statuses: [],
 		states: [],
 		accuracies: [],
@@ -153,6 +155,10 @@ export function parseSearchQuery(query: string): SearchQuery {
 
 	execAll(/comment:"([^"]+)"|comment:(\S+)/g, (m) => {
 		result.comments.push(m[1] || m[2]);
+	});
+
+	execAll(/chapter:"([^"]+)"|chapter:(\S+)/g, (m) => {
+		result.chapters.push(m[1] || m[2]);
 	});
 
 	execAll(/status:(\S+)/g, (m) => {

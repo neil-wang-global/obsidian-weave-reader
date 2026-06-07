@@ -1,6 +1,6 @@
 import { type EventRef, ItemView, WorkspaceLeaf } from "obsidian";
 import { EPUB_RUNTIME } from "../services/epub";
-import { i18n, syncI18nWithObsidianLanguage } from "../utils/i18n";
+import { i18n, syncI18nLanguage } from "../utils/i18n";
 import { logger } from "../utils/logger";
 import { getViewSurfaceTokens } from "../utils/view-location-utils";
 import type { EpubViewHost } from "./epub-view-host";
@@ -30,7 +30,7 @@ export class EpubSidebarView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
-		syncI18nWithObsidianLanguage();
+		syncI18nLanguage();
 		this.contentEl.empty();
 		this.contentEl.addClass("weave-epub-sidebar-view", "weave-epub-global-sidebar-view");
 		this.applySurfaceContext();

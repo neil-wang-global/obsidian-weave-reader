@@ -52,7 +52,7 @@
 			<div class="epub-tutorial-title-wrap">
 				<span class="epub-tutorial-title-text">{t('epub.reader.tutorial.title')}</span>
 			</div>
-			<button class="epub-tutorial-close" onclick={onClose} aria-label={t('epub.reader.tutorial.close')}>
+			<button type="button" class="clickable-icon epub-tutorial-close" onclick={onClose} aria-label={t('epub.reader.tutorial.close')}>
 				<span use:icon={'x'}></span>
 			</button>
 		</div>
@@ -60,6 +60,8 @@
 		<div class="epub-tutorial-tabs">
 			{#each tutorialTabs as tab}
 				<button
+					type="button"
+					class="clickable-icon"
 					class:active={activeTab === tab.id}
 					onclick={() => switchTab(tab.id)}
 				>

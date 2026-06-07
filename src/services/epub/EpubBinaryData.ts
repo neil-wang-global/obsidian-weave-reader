@@ -1,5 +1,6 @@
 import type { App, TFile } from "obsidian";
 import JSZip from "jszip";
+import { shouldPreferFetchForResourceUrl } from "../../utils/blob-url-text";
 import { logger } from "../../utils/logger";
 
 type ByteArrayLike = ArrayLike<number> & { [index: number]: number };
@@ -84,14 +85,6 @@ type ReadVaultBinaryOptions = {
 	requireZipSignature?: boolean;
 	failureLabel?: string;
 };
-
-function shouldPreferFetchForResourceUrl(resourceUrl: string): boolean {
-	const protocolMatch = /^[a-z][a-z0-9+.-]*:/i.exec(String(resourceUrl || "").trim());
-	if (!protocolMatch) {
-		return false;
-	}
-	return !/^https?:$/i.test(protocolMatch[0]);
-}
 
 export function hasZipSignature(bytes: Uint8Array): boolean {
 	return (

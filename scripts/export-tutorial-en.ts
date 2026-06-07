@@ -1,11 +1,10 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { EPUB_TUTORIAL_CONTENT_BY_LANG } from "../src/components/epub/epub-tutorial-content.ts";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 
-const dir = "src/components/epub/tutorial-locales";
+const dir = resolve("src/components/epub/tutorial-locales");
 mkdirSync(dir, { recursive: true });
-writeFileSync(
-	`${dir}/en-US.json`,
-	`${JSON.stringify(EPUB_TUTORIAL_CONTENT_BY_LANG["en-US"], null, 2)}\n`,
-	"utf8"
-);
-console.log("Exported en-US tutorial to", dir);
+
+const enPath = resolve(dir, "en-US.json");
+const enContent = readFileSync(enPath, "utf8");
+JSON.parse(enContent);
+console.log("en-US tutorial validated at", enPath);

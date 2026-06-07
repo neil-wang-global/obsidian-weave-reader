@@ -1,14 +1,14 @@
 import { Platform } from "obsidian";
-
-function shouldPreferFetchForResourceUrl(resourceUrl: string): boolean {
-	const protocolMatch = /^[a-z][a-z0-9+.-]*:/i.exec(String(resourceUrl || "").trim());
-	if (!protocolMatch) {
-		return false;
-	}
-	return !/^https?:$/i.test(protocolMatch[0]);
-}
+import {
+	isBlobResourceUrl,
+	readBlobUrlAsText,
+	shouldPreferFetchForResourceUrl,
+} from "../../utils/blob-url-text";
 
 function readTextFromResourceUrl(resourceUrl: string): Promise<string> {
+	if (isBlobResourceUrl(resourceUrl)) {
+		return readBlobUrlAsText(resourceUrl);
+	}
 	if (shouldPreferFetchForResourceUrl(resourceUrl) && typeof window.fetch === "function") {
 		return window.fetch(resourceUrl).then(async (response) => {
 			if (!response.ok) {
@@ -30,6 +30,10 @@ function readTextFromResourceUrl(resourceUrl: string): Promise<string> {
 			reject(new Error(`HTTP ${request.status} ${request.statusText || "Unknown error"}`));
 		};
 		request.onerror = async () => {
+			if (isBlobResourceUrl(resourceUrl)) {
+				reject(new Error(`Failed to load resource: ${resourceUrl}`));
+				return;
+			}
 			const fetchFn = window.fetch;
 			if (typeof fetchFn === "function") {
 				try {
@@ -93,8 +97,8 @@ export function normalizeDesktopFoliateSandboxValue(
 }
 
 let desktopFoliateIframeSandboxPatchInstalled = false;
-let mobileBlobIframePatchInstalled = false;
-let mobileBlobIframeLoadTokens = new WeakMap<HTMLIFrameElement, number>();
+let foliateBlobIframePatchInstalled = false;
+let foliateBlobIframeLoadTokens = new WeakMap<HTMLIFrameElement, number>();
 
 export function installDesktopFoliateIframeSandboxPatch(): void {
 	if (desktopFoliateIframeSandboxPatchInstalled || typeof HTMLIFrameElement === "undefined") {
@@ -123,13 +127,13 @@ export function installDesktopFoliateIframeSandboxPatch(): void {
 	desktopFoliateIframeSandboxPatchInstalled = true;
 }
 
-export function installMobileBlobIframePatch(onLoadError: (error: unknown) => void): void {
-	if (mobileBlobIframePatchInstalled || typeof HTMLIFrameElement === "undefined") {
+export function installFoliateBlobIframePatch(onLoadError: (error: unknown) => void): void {
+	if (foliateBlobIframePatchInstalled || typeof HTMLIFrameElement === "undefined") {
 		return;
 	}
 	const srcDescriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, "src");
 	if (!srcDescriptor?.set) {
-		mobileBlobIframePatchInstalled = true;
+		foliateBlobIframePatchInstalled = true;
 		return;
 	}
 	const getIframeSrc = (iframe: HTMLIFrameElement): string => {
@@ -152,15 +156,15 @@ export function installMobileBlobIframePatch(onLoadError: (error: unknown) => vo
 		},
 		set(this: HTMLIFrameElement, value: string): void {
 			const normalizedValue = String(value || "");
-			if (!Platform.isMobile || !normalizedValue.startsWith("blob:")) {
+			if (!normalizedValue.startsWith("blob:")) {
 				setIframeSrc(this, normalizedValue);
 				return;
 			}
-			const loadToken = (mobileBlobIframeLoadTokens.get(this) || 0) + 1;
-			mobileBlobIframeLoadTokens.set(this, loadToken);
+			const loadToken = (foliateBlobIframeLoadTokens.get(this) || 0) + 1;
+			foliateBlobIframeLoadTokens.set(this, loadToken);
 			void readTextFromResourceUrl(normalizedValue)
 				.then((html) => {
-					if (mobileBlobIframeLoadTokens.get(this) !== loadToken) {
+					if (foliateBlobIframeLoadTokens.get(this) !== loadToken) {
 						return;
 					}
 					this.srcdoc = html;
@@ -175,10 +179,16 @@ export function installMobileBlobIframePatch(onLoadError: (error: unknown) => vo
 				});
 		},
 	});
-	mobileBlobIframePatchInstalled = true;
+	foliateBlobIframePatchInstalled = true;
 }
 
-export function resetMobileBlobIframePatchStateForTests(): void {
-	mobileBlobIframePatchInstalled = false;
-	mobileBlobIframeLoadTokens = new WeakMap<HTMLIFrameElement, number>();
+/** @deprecated Use installFoliateBlobIframePatch */
+export const installMobileBlobIframePatch = installFoliateBlobIframePatch;
+
+export function resetFoliateBlobIframePatchStateForTests(): void {
+	foliateBlobIframePatchInstalled = false;
+	foliateBlobIframeLoadTokens = new WeakMap<HTMLIFrameElement, number>();
 }
+
+/** @deprecated Use resetFoliateBlobIframePatchStateForTests */
+export const resetMobileBlobIframePatchStateForTests = resetFoliateBlobIframePatchStateForTests;

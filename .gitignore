@@ -92,6 +92,7 @@ vitest-*.json
 .dev-watch.lock.json
 .mobile-watch.lock.json
 .lint-obsidian.json
+.cursor-lint-*.json
 .tmp-*.json
 .tmp-*.txt
 stdout

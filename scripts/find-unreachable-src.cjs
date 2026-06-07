@@ -47,6 +47,9 @@ const ENTRY_FILES = [
 	"types/ir-types.ts",
 	"types/view-card-modal-types.ts",
 	"types/obsidian-extensions.ts",
+	"types/foliate-js.d.ts",
+	"types/weave-vendor-epubcfi.d.ts",
+	"utils/i18n/locale-policy.ts",
 	"shims/readable-stream-disabled.js",
 ];
 
@@ -74,6 +77,9 @@ const TEST_GLOBS = [
 	"utils/__tests__/mobile-floating-viewport.test.ts",
 	"utils/__tests__/mobile-reading-viewport-lock.test.ts",
 	"utils/__tests__/epub-reader-keyboard-guards.test.ts",
+	"utils/__tests__/dom-instance-of.test.ts",
+	"utils/__tests__/blob-url-text.test.ts",
+	"utils/__tests__/i18n-locales.test.ts",
 ];
 
 const UI_COMPONENTS_FOR_TESTS = [

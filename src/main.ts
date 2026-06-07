@@ -2,7 +2,7 @@ import "./utils/group-by-compat";
 import { Menu, Notice, Plugin, TAbstractFile, TFile, normalizePath } from "obsidian";
 import { domInstanceOf } from "./utils/dom-instance-of";
 
-import { EpubSettingsTab } from "./components/settings/EpubSettingsTab";
+import { EpubDataManagementModalObsidian } from "./components/epub/EpubDataManagementModalObsidian";
 import { isSupportedBookFile, isSupportedBookPath } from "./services/epub/book-format";
 import {
 	DEFAULT_EPUB_BOOKMARK_FOLDER,
@@ -67,13 +67,26 @@ import {
 import { registerLicenseSyncBridge } from "./utils/license-sync-bridge";
 import { licenseManager } from "./utils/licenseManager";
 import { logger } from "./utils/logger";
-import { initI18n, i18n, syncI18nWithObsidianLanguage } from "./utils/i18n";
+import {
+	initI18n,
+	i18n,
+	normalizeInterfaceLanguagePreference,
+	setInterfaceLanguagePreference,
+	syncI18nLanguage,
+	type InterfaceLanguagePreference,
+} from "./utils/i18n";
+import { vaultStorage } from "./utils/vault-local-storage";
 import type { AIConfig } from "./types/plugin-settings";
 import {
 	DEFAULT_BOOKSHELF_DISPLAY_MODE,
 	normalizeBookshelfDisplayMode,
 	type BookshelfDisplayMode,
 } from "./services/epub/bookshelf-display-mode";
+import {
+	DEFAULT_SELECTION_TRANSLATION_SETTINGS,
+	normalizeSelectionTranslationSettings,
+	type SelectionTranslationSettings,
+} from "./config/selection-translation-settings";
 
 interface StandaloneEpubPluginSettings {
 	license: LicenseInfo;
@@ -91,6 +104,8 @@ interface StandaloneEpubPluginSettings {
 	selectionQuickCreateLastFolder: string;
 	epubMarkdownExportLastFolder: string;
 	sourceNavigationOpenInNewTab: boolean;
+	interfaceLanguage: InterfaceLanguagePreference;
+	selectionTranslation: SelectionTranslationSettings;
 }
 
 const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
@@ -109,6 +124,8 @@ const DEFAULT_STANDALONE_EPUB_SETTINGS: StandaloneEpubPluginSettings = {
 	selectionQuickCreateLastFolder: "",
 	epubMarkdownExportLastFolder: "",
 	sourceNavigationOpenInNewTab: true,
+	interfaceLanguage: "auto",
+	selectionTranslation: DEFAULT_SELECTION_TRANSLATION_SETTINGS,
 };
 
 type PersistedStandaloneEpubPluginSettings = Omit<
@@ -155,6 +172,13 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 
 	openEpubPremiumSettings(): void {
 		safeOpenSettings(this.app, this.manifest.id);
+	}
+
+	/** Weave 宿主可通过 `app.plugins.getPlugin("weave-epub-reader")` 调用 */
+	openDataManagementModal(): void {
+		new EpubDataManagementModalObsidian(this.app, {
+			plugin: this,
+		}).open();
 	}
 
 	async refreshPremiumState(): Promise<void> {
@@ -319,7 +343,12 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.syncPremiumPreviewSettings();
 		this.syncBookshelfDisplaySettings();
 		this.syncReadingPositionAutoSaveSettings();
+		this.syncSelectionTranslationSettings();
 		this.settings.sourceNavigationOpenInNewTab = this.settings.sourceNavigationOpenInNewTab !== false;
+		this.settings.interfaceLanguage = normalizeInterfaceLanguagePreference(
+			this.settings.interfaceLanguage
+		);
+		setInterfaceLanguagePreference(this.settings.interfaceLanguage);
 		if (licenseSettingsChanged || this.hasLegacyRememberedUiKeys(loadedData)) {
 			if (this.hasLegacyRememberedUiKeys(loadedData)) {
 				await this.getEpubStorageService().savePluginUiMemory(this.getRememberedUiMemory());
@@ -330,11 +359,17 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 
 	async saveSettings(): Promise<void> {
 		this.syncLicenseSettings();
+		this.settings.interfaceLanguage = normalizeInterfaceLanguagePreference(
+			this.settings.interfaceLanguage
+		);
+		setInterfaceLanguagePreference(this.settings.interfaceLanguage);
+		syncI18nLanguage();
 
 		this.syncDebugSettings();
 		this.syncPremiumPreviewSettings();
 		this.syncBookshelfDisplaySettings();
 		this.syncReadingPositionAutoSaveSettings();
+		this.syncSelectionTranslationSettings();
 		this.settings.bookmarkFolder =
 			normalizeEpubBookmarkFolderPath(this.settings.bookmarkFolder) || DEFAULT_EPUB_BOOKMARK_FOLDER;
 		this.settings.selectionQuickCreateLastFolder = this.normalizeRememberedFolder(
@@ -347,6 +382,12 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		await this.getEpubStorageService().savePluginUiMemory(this.getRememberedUiMemory());
 		await this.persistSettingsData();
 		await this.refreshPremiumState();
+	}
+
+	private syncSelectionTranslationSettings(): void {
+		this.settings.selectionTranslation = normalizeSelectionTranslationSettings(
+			this.settings.selectionTranslation
+		);
 	}
 
 	private normalizeRememberedFolder(folderPath?: string | null): string {
@@ -540,7 +581,8 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
-		initI18n();
+		await vaultStorage.initialize(this.app);
+		initI18n(this.settings.interfaceLanguage);
 		licenseManager.initializeCloud(this.app);
 		registerEpubHost(this.app, this);
 		configureNavigationHub(this.app, {
@@ -552,6 +594,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			getEnableDebugMode: () => this.settings.enableDebugMode === true,
 		});
 		aiConfigStore.initialize(this as WeavePlugin);
+		const { EpubSettingsTab } = await import("./components/settings/EpubSettingsTab");
 		this.addSettingTab(new EpubSettingsTab(this.app, this));
 		await PremiumFeatureGuard.getInstance().initializeForProduct({
 			product: this.getLicensedProductId(),
@@ -581,14 +624,14 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			}
 		);
 		this.registerEvent(this.app.workspace.on("layout-change", () => {
-			syncI18nWithObsidianLanguage();
+			syncI18nLanguage();
 		}));
 		this.registerDomEvent(window, "focus", () => {
-			syncI18nWithObsidianLanguage();
+			syncI18nLanguage();
 		});
 		this.registerDomEvent(activeDocument, "visibilitychange", () => {
 			if (!activeDocument.hidden) {
-				syncI18nWithObsidianLanguage();
+				syncI18nLanguage();
 			}
 		});
 		this.addRibbonIcon("library", i18n.t("views.epubBookshelfSidebar.title"), () => {

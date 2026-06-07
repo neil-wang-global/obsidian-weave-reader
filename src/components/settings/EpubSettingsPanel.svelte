@@ -16,9 +16,22 @@
   import { showNotification } from "../../utils/notifications";
   import { CURRENT_PLUGIN_DISPLAY_VERSION, CURRENT_PLUGIN_NAME } from "../../config/plugin-runtime";
   import { PremiumFeatureGuard, PREMIUM_FEATURES } from "../../services/premium/PremiumFeatureGuard";
-  import { tr } from "../../utils/i18n";
+  import {
+    tr,
+    type InterfaceLanguagePreference,
+    normalizeInterfaceLanguagePreference,
+    setInterfaceLanguagePreference,
+  } from "../../utils/i18n";
   import { getEpubBacklinkHighlightService } from "../../services/epub/epub-backlink-highlight-access";
   import { scheduleEpubAnnotationIndexWarmup } from "../../services/epub/epub-annotation-index";
+  import {
+    createCustomTranslationProvider,
+    isBuiltinTranslationEnabled,
+    normalizeSelectionTranslationSettings,
+    type CustomWebTranslationProvider,
+    type SelectionTranslationSettings,
+  } from "../../config/selection-translation-settings";
+  import { BUILTIN_WEB_TRANSLATION_PROVIDERS } from "../../config/web-translation-providers";
 
   interface Props {
     plugin: any;
@@ -31,9 +44,23 @@
 
   let activeTab = $state<EpubSettingsTabId>("basic");
   let stateVersion = $state(0);
+  let interfaceSettingsHost = $state<HTMLDivElement | null>(null);
   let premiumPreviewSettingsHost = $state<HTMLDivElement | null>(null);
   let readingSettingsHost = $state<HTMLDivElement | null>(null);
+  let selectionTranslationSettingsHost = $state<HTMLDivElement | null>(null);
   let diagnosticsSettingsHost = $state<HTMLDivElement | null>(null);
+
+  const interfaceLanguageOptions: Array<{
+    value: InterfaceLanguagePreference;
+    labelKey: string;
+  }> = [
+    { value: "auto", labelKey: "epub.settings.basic.interfaceLanguageAuto" },
+    { value: "zh-CN", labelKey: "epub.settings.basic.interfaceLanguageZhCN" },
+    { value: "en-US", labelKey: "epub.settings.basic.interfaceLanguageEnUS" },
+    { value: "ja-JP", labelKey: "epub.settings.basic.interfaceLanguageJaJP" },
+    { value: "ko-KR", labelKey: "epub.settings.basic.interfaceLanguageKoKR" },
+    { value: "ru-RU", labelKey: "epub.settings.basic.interfaceLanguageRuRU" },
+  ];
   const premiumGuard = PremiumFeatureGuard.getInstance();
 
   let tabs = $derived.by<Array<{ id: EpubSettingsTabId; label: string; icon: string }>>(() => [
@@ -114,6 +141,16 @@
     return plugin.settings?.showPremiumFeaturesPreview === true;
   });
 
+  let interfaceLanguageValue = $derived.by(() => {
+    stateVersion;
+    return normalizeInterfaceLanguagePreference(plugin.settings?.interfaceLanguage);
+  });
+
+  let selectionTranslationSettings = $derived.by(() => {
+    stateVersion;
+    return normalizeSelectionTranslationSettings(plugin.settings?.selectionTranslation);
+  });
+
   let bookmarkFolderInput = $state("");
   let continuousReadingPositionAutoSavePagesInput = $state("");
 
@@ -141,7 +178,77 @@
     showNotification(t("epub.settings.notifications.bookmarkFolderUpdated"), "success");
   }
 
-	async function updatePremiumPreview(enabled: boolean): Promise<void> {
+  async function updateInterfaceLanguage(value: InterfaceLanguagePreference): Promise<void> {
+    const normalizedValue = normalizeInterfaceLanguagePreference(value);
+    if (interfaceLanguageValue === normalizedValue) {
+      return;
+    }
+
+    plugin.settings.interfaceLanguage = normalizedValue;
+    setInterfaceLanguagePreference(normalizedValue);
+    await save();
+    showNotification(t("epub.settings.notifications.interfaceLanguageUpdated"), "success");
+  }
+
+  function getSelectionTranslationSettings(): SelectionTranslationSettings {
+    return normalizeSelectionTranslationSettings(plugin.settings?.selectionTranslation);
+  }
+
+  async function persistSelectionTranslationSettings(
+    next: SelectionTranslationSettings
+  ): Promise<void> {
+    plugin.settings.selectionTranslation = next;
+    await save();
+  }
+
+  async function setBuiltinTranslationProviderEnabled(
+    providerId: string,
+    enabled: boolean
+  ): Promise<void> {
+    const current = getSelectionTranslationSettings();
+    const disabled = new Set(current.disabledBuiltinIds);
+    if (enabled) {
+      disabled.delete(providerId);
+    } else {
+      disabled.add(providerId);
+    }
+    await persistSelectionTranslationSettings({
+      ...current,
+      disabledBuiltinIds: [...disabled],
+    });
+  }
+
+  async function addCustomTranslationProvider(): Promise<void> {
+    const current = getSelectionTranslationSettings();
+    await persistSelectionTranslationSettings({
+      ...current,
+      customProviders: [...current.customProviders, createCustomTranslationProvider()],
+    });
+  }
+
+  async function updateCustomTranslationProvider(
+    index: number,
+    patch: Partial<CustomWebTranslationProvider>
+  ): Promise<void> {
+    const current = getSelectionTranslationSettings();
+    const customProviders = current.customProviders.map((provider, providerIndex) =>
+      providerIndex === index ? { ...provider, ...patch } : provider
+    );
+    await persistSelectionTranslationSettings({
+      ...current,
+      customProviders,
+    });
+  }
+
+  async function removeCustomTranslationProvider(index: number): Promise<void> {
+    const current = getSelectionTranslationSettings();
+    await persistSelectionTranslationSettings({
+      ...current,
+      customProviders: current.customProviders.filter((_, providerIndex) => providerIndex !== index),
+    });
+  }
+
+  async function updatePremiumPreview(enabled: boolean): Promise<void> {
 		if (premiumPreviewEnabled === enabled) {
 			return;
 		}
@@ -251,22 +358,40 @@
   $effect(() => {
     if (
       activeTab !== "basic"
+      || !interfaceSettingsHost
       || !premiumPreviewSettingsHost
       || !readingSettingsHost
+      || !selectionTranslationSettingsHost
       || !diagnosticsSettingsHost
     ) {
       return;
     }
 
     const clearBasicSettingsHosts = () => {
+      interfaceSettingsHost?.replaceChildren();
       premiumPreviewSettingsHost?.replaceChildren();
       readingSettingsHost?.replaceChildren();
+      selectionTranslationSettingsHost?.replaceChildren();
       diagnosticsSettingsHost?.replaceChildren();
     };
 
     clearBasicSettingsHosts();
 
     const cleanupFns: Array<() => void> = [];
+
+    new Setting(interfaceSettingsHost)
+      .setName(t("epub.settings.basic.interfaceLanguage"))
+      .setDesc(t("epub.settings.basic.interfaceLanguageDesc"))
+      .setClass("epub-interface-language-setting")
+      .addDropdown((dropdown) => {
+        for (const option of interfaceLanguageOptions) {
+          dropdown.addOption(option.value, t(option.labelKey));
+        }
+        dropdown.setValue(interfaceLanguageValue);
+        dropdown.onChange(async (value) => {
+          await updateInterfaceLanguage(value as InterfaceLanguagePreference);
+        });
+      });
 
 		new Setting(premiumPreviewSettingsHost)
 			.setName(t("epub.settings.basic.showPremiumPreview"))
@@ -394,6 +519,74 @@
       cleanupFns.push(() => inputEl.removeEventListener("keydown", handleKeydown));
     });
 
+    for (const builtin of BUILTIN_WEB_TRANSLATION_PROVIDERS) {
+      const builtinEnabled = isBuiltinTranslationEnabled(selectionTranslationSettings, builtin.id);
+      new Setting(selectionTranslationSettingsHost)
+        .setName(t(`epub.translationProviders.${builtin.nameKey}`))
+        .setClass("epub-selection-translation-builtin-setting")
+        .addToggle((toggle) => {
+          toggle.setValue(builtinEnabled);
+          toggle.onChange(async (value) => {
+            await setBuiltinTranslationProviderEnabled(builtin.id, value);
+          });
+        });
+    }
+
+    new Setting(selectionTranslationSettingsHost)
+      .setName(t("epub.settings.basic.customTranslationProviders"))
+      .setDesc(t("epub.settings.basic.customTranslationUrlHint"))
+      .setClass("epub-selection-translation-custom-heading");
+
+    selectionTranslationSettings.customProviders.forEach((customProvider, index) => {
+      const nameSetting = new Setting(selectionTranslationSettingsHost)
+        .setName(t("epub.settings.basic.customTranslationName"))
+        .setClass("epub-selection-translation-custom-setting");
+
+      nameSetting.addText((text) => {
+        text.setValue(customProvider.name);
+        text.setPlaceholder(t("epub.settings.basic.customTranslationNamePlaceholder"));
+        text.onChange((value) => {
+          void updateCustomTranslationProvider(index, { name: value });
+        });
+      });
+
+      nameSetting.addToggle((toggle) => {
+        toggle.setValue(customProvider.enabled);
+        toggle.onChange(async (value) => {
+          await updateCustomTranslationProvider(index, { enabled: value });
+        });
+      });
+
+      const urlSetting = new Setting(selectionTranslationSettingsHost)
+        .setName(t("epub.settings.basic.customTranslationUrl"))
+        .setClass("epub-selection-translation-custom-url-setting");
+
+      urlSetting.addText((text) => {
+        text.setValue(customProvider.urlTemplate);
+        text.setPlaceholder("https://example.com/search?q={query}");
+        text.onChange((value) => {
+          void updateCustomTranslationProvider(index, { urlTemplate: value });
+        });
+      });
+
+      urlSetting.addButton((button) => {
+        button.setButtonText(t("epub.settings.basic.removeCustomTranslationProvider"));
+        button.setWarning();
+        button.onClick(async () => {
+          await removeCustomTranslationProvider(index);
+        });
+      });
+    });
+
+    new Setting(selectionTranslationSettingsHost)
+      .setClass("epub-selection-translation-add-custom-setting")
+      .addButton((button) => {
+        button.setButtonText(t("epub.settings.basic.addCustomTranslationProvider"));
+        button.onClick(async () => {
+          await addCustomTranslationProvider();
+        });
+      });
+
     new Setting(diagnosticsSettingsHost)
       .setName(t("epub.settings.basic.sourceNavigationOpenInNewTab"))
       .setDesc(t("epub.settings.basic.sourceNavigationOpenInNewTabDesc"))
@@ -465,6 +658,13 @@
       <section class="epub-settings-section epub-settings-section--compact">
         <div class="epub-settings-group epub-settings-group--panel epub-settings-group--preview-first">
           <div class="epub-settings-group-header">
+            <h3 class="epub-settings-group-title with-accent-bar accent-cyan">{t("epub.settings.groups.interface")}</h3>
+          </div>
+          <div bind:this={interfaceSettingsHost} class="epub-native-settings-host"></div>
+        </div>
+
+        <div class="epub-settings-group epub-settings-group--panel">
+          <div class="epub-settings-group-header">
             <h3 class="epub-settings-group-title with-accent-bar accent-purple">{t("epub.settings.groups.premiumPreview")}</h3>
           </div>
           <div bind:this={premiumPreviewSettingsHost} class="epub-native-settings-host"></div>
@@ -476,6 +676,15 @@
           </div>
 
           <div bind:this={readingSettingsHost} class="epub-native-settings-host"></div>
+        </div>
+
+        <div class="epub-settings-group epub-settings-group--panel">
+          <div class="epub-settings-group-header">
+            <h3 class="epub-settings-group-title with-accent-bar accent-cyan">{t("epub.settings.groups.selectionTranslation")}</h3>
+            <p class="epub-settings-group-description">{t("epub.settings.basic.selectionTranslationDesc")}</p>
+          </div>
+
+          <div bind:this={selectionTranslationSettingsHost} class="epub-native-settings-host"></div>
         </div>
 
         <div class="epub-settings-group epub-settings-group--panel">

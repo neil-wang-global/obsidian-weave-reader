@@ -25,7 +25,7 @@ import {
 	resolveSupportedBookFile,
 	resolveSupportedBookFilePath as resolveCanonicalSupportedBookFilePath,
 } from "./epub-vault-path";
-import { EpubBookmarkService } from "./EpubBookmarkService";
+import { EpubBookmarkService, type EpubBookmarkReadingState } from "./EpubBookmarkService";
 import { normalizeReadingPaceStats } from "./reading-pace";
 import type {
 	BookMetadata,
@@ -554,6 +554,57 @@ export class EpubStorageService {
 			title: typeof bookmark.title === "string" ? bookmark.title : "",
 			preview: typeof bookmark.preview === "string" ? bookmark.preview : "",
 			savedAt: typeof bookmark.savedAt === "number" ? bookmark.savedAt : 0,
+		};
+	}
+
+	private lastOpenBookmarkFromReadingState(
+		state: EpubBookmarkReadingState | null | undefined,
+		titleHint?: string
+	): EpubLastOpenBookmark | null {
+		const cfi = String(state?.currentPosition?.cfi || "").trim();
+		if (!cfi) {
+			return null;
+		}
+
+		const chapterIndex =
+			typeof state?.currentPosition?.chapterIndex === "number"
+				? state.currentPosition.chapterIndex
+				: 0;
+		const percent =
+			typeof state?.currentPosition?.percent === "number" ? state.currentPosition.percent : 0;
+		const savedAt =
+			typeof state?.readingStats?.lastReadTime === "number" && state.readingStats.lastReadTime > 0
+				? state.readingStats.lastReadTime
+				: Date.now();
+		const title =
+			String(titleHint || "").trim() ||
+			(chapterIndex > 0 ? `章节 ${chapterIndex}` : "阅读位置");
+
+		return {
+			chapterIndex,
+			cfi,
+			percent,
+			title,
+			preview: title,
+			savedAt,
+		};
+	}
+
+	private readingStateFromLastOpenBookmark(
+		bookmark: EpubLastOpenBookmark,
+		readingStats?: ReadingStats
+	): EpubBookmarkReadingState {
+		const savedAt = bookmark.savedAt > 0 ? bookmark.savedAt : Date.now();
+		return {
+			currentPosition: {
+				chapterIndex: bookmark.chapterIndex,
+				cfi: bookmark.cfi,
+				percent: bookmark.percent,
+			},
+			readingStats: normalizeReadingPaceStats({
+				...(readingStats || { totalReadTime: 0, lastReadTime: 0, createdTime: 0 }),
+				lastReadTime: savedAt,
+			}),
 		};
 	}
 
@@ -2028,6 +2079,7 @@ export class EpubStorageService {
 				try {
 					await this.getBookmarkService().writeReadingState(book, payload);
 					await this.clearUnifiedBookState(bookId);
+					await this.clearUnifiedLastOpenBookmark(bookId);
 					return;
 				} catch (error) {
 					logger.warn(
@@ -2078,6 +2130,68 @@ export class EpubStorageService {
 				delete localData.books[bookId];
 			}
 		});
+	}
+
+	private async readUnifiedLastOpenBookmark(bookId: string): Promise<EpubLastOpenBookmark | null> {
+		const unifiedData = await this.readUnifiedLocalReaderData();
+		const bookRecord = unifiedData.books?.[bookId];
+		if (
+			(await this.hasUnifiedLocalDataFile()) &&
+			bookRecord &&
+			Object.prototype.hasOwnProperty.call(bookRecord, "lastOpenBookmark")
+		) {
+			return bookRecord.lastOpenBookmark ?? null;
+		}
+		return null;
+	}
+
+	private async clearUnifiedLastOpenBookmark(bookId: string): Promise<void> {
+		await this.updateUnifiedLocalReaderData((localData) => {
+			const current = localData.books?.[bookId];
+			if (!current || !Object.prototype.hasOwnProperty.call(current, "lastOpenBookmark")) {
+				return;
+			}
+			const nextRecord = { ...current };
+			delete nextRecord.lastOpenBookmark;
+			if (this.hasRetainedLocalBookData(nextRecord)) {
+				localData.books = localData.books || {};
+				localData.books[bookId] = nextRecord;
+				return;
+			}
+			if (localData.books) {
+				delete localData.books[bookId];
+			}
+		});
+	}
+
+	private async migrateLastOpenBookmarkToBookmarkFile(
+		book: EpubBook,
+		bookmark: EpubLastOpenBookmark
+	): Promise<void> {
+		const normalized = this.normalizeLastOpenBookmark(bookmark);
+		if (!normalized?.cfi) {
+			return;
+		}
+
+		const existing = await this.getBookmarkService().readReadingState(book);
+		if (existing?.currentPosition?.cfi) {
+			await this.clearUnifiedLastOpenBookmark(book.id);
+			return;
+		}
+
+		const payload = this.readingStateFromLastOpenBookmark(normalized, book.readingStats);
+		try {
+			await this.getBookmarkService().writeReadingState(book, payload);
+			book.currentPosition = payload.currentPosition;
+			book.readingStats = payload.readingStats;
+			await this.clearUnifiedBookState(book.id);
+			await this.clearUnifiedLastOpenBookmark(book.id);
+		} catch (error) {
+			logger.warn(
+				"[EpubStorageService] Failed to migrate last-open bookmark into bookmark file:",
+				error
+			);
+		}
 	}
 
 	async hydrateBookState(bookId: string): Promise<void> {
@@ -3686,27 +3800,61 @@ export class EpubStorageService {
 
 	async loadLastOpenBookmark(bookId: string): Promise<EpubLastOpenBookmark | null> {
 		bookId = await this.resolveCanonicalBookId(bookId);
-		const unifiedData = await this.readUnifiedLocalReaderData();
-		const bookRecord = unifiedData.books?.[bookId];
-		if (
-			(await this.hasUnifiedLocalDataFile()) &&
-			bookRecord &&
-			Object.prototype.hasOwnProperty.call(bookRecord, "lastOpenBookmark")
-		) {
-			return bookRecord.lastOpenBookmark ?? null;
+		await this.hydrateBookState(bookId);
+		const book = await this.getBook(bookId);
+
+		if (book?.currentPosition?.cfi) {
+			const fromBookmarkFile = this.lastOpenBookmarkFromReadingState(
+				{
+					currentPosition: book.currentPosition,
+					readingStats: book.readingStats,
+				},
+				book.metadata?.title
+			);
+			if (fromBookmarkFile) {
+				await this.clearUnifiedLastOpenBookmark(bookId);
+				return fromBookmarkFile;
+			}
 		}
 
-		return await this.readLegacyLastOpenBookmark(bookId);
+		const fromUnified = await this.readUnifiedLastOpenBookmark(bookId);
+		if (fromUnified?.cfi) {
+			if (book) {
+				await this.migrateLastOpenBookmarkToBookmarkFile(book, fromUnified);
+			}
+			return fromUnified;
+		}
+
+		const fromLegacy = await this.readLegacyLastOpenBookmark(bookId);
+		if (fromLegacy?.cfi && book) {
+			await this.migrateLastOpenBookmarkToBookmarkFile(book, fromLegacy);
+			return fromLegacy;
+		}
+		return fromLegacy;
 	}
 
 	async saveLastOpenBookmark(bookId: string, bookmark: EpubLastOpenBookmark): Promise<void> {
 		bookId = await this.resolveCanonicalBookId(bookId);
+		const normalized = this.normalizeLastOpenBookmark(bookmark);
+		if (!normalized?.cfi) {
+			return;
+		}
+
+		const book = await this.getBook(bookId);
+		if (book) {
+			const payload = this.readingStateFromLastOpenBookmark(normalized, book.readingStats);
+			book.currentPosition = payload.currentPosition;
+			book.readingStats = payload.readingStats;
+			await this.writeBookState(bookId, payload);
+			return;
+		}
+
 		await this.updateUnifiedLocalReaderData((localData) => {
 			localData.books = localData.books || {};
 			const current = localData.books[bookId] || {};
 			localData.books[bookId] = {
 				...current,
-				lastOpenBookmark: this.normalizeLastOpenBookmark(bookmark),
+				lastOpenBookmark: normalized,
 			};
 		});
 	}

@@ -1,5 +1,6 @@
 {
   "epub.settings.license.title": "ライセンスと有効化",
+  "epub.settings.license.purchaseLink": "永久ライセンスを購入",
   "epub.settings.license.description": "独立した EPUB 用アクティベーションコードに対応し、インストール済み Weave の有効なプレミアムライセンスを引き継ぐこともできます。",
   "epub.settings.license.noSavableCode": "現在のライセンスに保存できるアクティベーションコードがありません",
   "epub.settings.license.codeCopied": "アクティベーションコードをクリップボードにコピーしました。大切に保管してください。",

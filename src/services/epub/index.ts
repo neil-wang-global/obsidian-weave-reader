@@ -20,6 +20,7 @@ export type {
 	ReaderParagraph,
 	ReaderParagraphLocation,
 	ReaderParagraphSelectionResolution,
+	ReaderRandomParagraphPick,
 	ReaderRenderOptions,
 	ReaderSelectionChange,
 	ReaderViewportGeometry,

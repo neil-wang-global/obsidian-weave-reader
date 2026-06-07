@@ -7,6 +7,7 @@ import {
 	normalizeDesktopFoliateSandboxValue,
 	resetMobileBlobIframePatchStateForTests,
 } from "../foliate-runtime-patches";
+import * as blobUrlText from "../../../utils/blob-url-text";
 import { logger } from "../../../utils/logger";
 import { flushThemeManagerForTests } from "../../../utils/theme-detection";
 
@@ -1039,6 +1040,22 @@ describe("FoliateReaderService", () => {
 		}
 	});
 
+	it("skips annotation sync on relocate when visible sections are unchanged", async () => {
+		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
+		try {
+			const syncSpy = vi.spyOn(service as any, "syncAnnotationsWithView").mockResolvedValue(undefined);
+			vi.spyOn(service as any, "getVisibleFramesWithIndex").mockReturnValue([{ index: 2 }]);
+			(service as any).lastSyncedVisibleSectionKey = "2";
+
+			(service as any).scheduleAnnotationSyncAfterRelocate();
+			await Promise.resolve();
+
+			expect(syncSpy).not.toHaveBeenCalled();
+		} finally {
+			service.destroy();
+		}
+	});
+
 	it("ignores stale relocate events from a previously destroyed foliate view", async () => {
 		const service = new FoliateReaderService(createMockApp(await createSampleEpubBuffer()) as any);
 		try {
@@ -1309,7 +1326,10 @@ describe("FoliateReaderService", () => {
 			expect((service as any).resolveHighlightTint("yellow")).toBe("rgb(255, 222, 89)");
 			expect(darkStyles).toContain("--overlayer-highlight-opacity: 0.68");
 			expect(darkStyles).toContain("--overlayer-highlight-blend-mode: normal");
+			expect(darkStyles).toContain('html[data-weave-host-scheme="dark"] body :is(article');
+			expect(darkStyles).toContain("-webkit-text-fill-color: currentColor !important");
 		} finally {
+			document.body.classList.remove("theme-dark");
 			service.destroy();
 		}
 	});
@@ -2208,6 +2228,22 @@ describe("FoliateReaderService", () => {
 		}
 	});
 
+	it("picks a random readable paragraph from the loaded book", async () => {
+		const service = new FoliateReaderService(createMockApp(await createSampleEpubBuffer()) as any);
+		try {
+			await service.loadEpub("Books/foliate-sample.epub", "foliate-book");
+			const pick = await service.pickRandomParagraph?.();
+			expect(pick?.paragraph?.cfiRange).toBeTruthy();
+			expect(pick?.chapterParagraphs.length).toBeGreaterThan(0);
+			expect(pick?.paragraphIndex).toBeGreaterThanOrEqual(0);
+			expect(
+				pick?.chapterParagraphs[pick.paragraphIndex]?.id
+			).toBe(pick?.paragraph.id);
+		} finally {
+			service.destroy();
+		}
+	});
+
 	it("exposes paragraph html revisions so the overlay can force a rerender after highlight changes", async () => {
 		const service = new FoliateReaderService(createMockApp(await createSampleEpubBuffer()) as any);
 		try {
@@ -3063,15 +3099,11 @@ describe("FoliateReaderService", () => {
 		const service = new FoliateReaderService(createMockApp(await createSampleEpubBuffer()) as any);
 		try {
 			await withPlatformIsMobile(true, async () => {
-				const fetchSpy = vi
-					.spyOn(globalThis, "fetch")
-					.mockResolvedValue({
-						ok: true,
-						status: 200,
-						statusText: "OK",
-						text: async () =>
-							"<html><body><p>mobile iframe fallback content</p></body></html>",
-					} as Response);
+				const readBlobSpy = vi
+					.spyOn(blobUrlText, "readBlobUrlAsText")
+					.mockResolvedValue(
+						"<html><body><p>mobile iframe fallback content</p></body></html>"
+					);
 
 				await service.loadEpub("Books/foliate-sample.epub", "foliate-book");
 				const container = document.createElement("div");
@@ -3087,7 +3119,7 @@ describe("FoliateReaderService", () => {
 				await vi.waitFor(() => {
 					expect(iframe.srcdoc).toContain("mobile iframe fallback content");
 				});
-				expect(fetchSpy).toHaveBeenCalledWith("blob:weave-mobile-epub");
+				expect(readBlobSpy).toHaveBeenCalledWith("blob:weave-mobile-epub");
 			});
 		} finally {
 			service.destroy();
@@ -3119,15 +3151,9 @@ describe("FoliateReaderService", () => {
 		const service = new FoliateReaderService(createMockApp(await createSampleEpubBuffer()) as any);
 		try {
 			await withPlatformIsMobile(true, async () => {
-				const fetchSpy = vi
-					.spyOn(globalThis, "fetch")
-					.mockResolvedValue({
-						ok: true,
-						status: 200,
-						statusText: "OK",
-						text: async () =>
-							"<html><body><p>mobile iframe srcdoc only</p></body></html>",
-					} as Response);
+				const readBlobSpy = vi
+					.spyOn(blobUrlText, "readBlobUrlAsText")
+					.mockResolvedValue("<html><body><p>mobile iframe srcdoc only</p></body></html>");
 
 				await service.loadEpub("Books/foliate-sample.epub", "foliate-book");
 				const container = document.createElement("div");
@@ -3142,7 +3168,7 @@ describe("FoliateReaderService", () => {
 					expect(iframe.srcdoc).toContain("mobile iframe srcdoc only");
 				});
 				expect(nativeSetterCalls).toBe(0);
-				expect(fetchSpy).toHaveBeenCalledWith("blob:weave-mobile-srcdoc-only");
+				expect(readBlobSpy).toHaveBeenCalledWith("blob:weave-mobile-srcdoc-only");
 			});
 		} finally {
 			service.destroy();

@@ -1,9 +1,19 @@
-import { computeToolbarPosition, createEventBinder, isEventOutsideToolbar } from './toolbar-positioning';
+import {
+	computeToolbarPosition,
+	createEventBinder,
+	estimateNativeSelectionMenuSide,
+	isEventInsideObsidianFloatingUi,
+	isEventOutsideToolbar,
+	mirrorFloatingSide,
+	resolveMobileFloatingInsetBottom,
+	shouldDismissToolbarOnPointerDown,
+} from './toolbar-positioning';
 
 describe('toolbar-positioning', () => {
-	it('floats mobile toolbars beside the selection when space allows', () => {
+	it('floats mobile toolbars below the selection when the native menu stays above', () => {
+		const anchorRect = { top: 80, left: 40, bottom: 96, right: 96, width: 56, height: 16 };
 		const result = computeToolbarPosition({
-			anchorRect: { top: 20, left: 40, bottom: 36, right: 96, width: 56, height: 16 },
+			anchorRect,
 			containerWidth: 320,
 			containerHeight: 480,
 			toolbarWidth: 280,
@@ -11,16 +21,18 @@ describe('toolbar-positioning', () => {
 			mobile: true,
 		});
 
+		expect(estimateNativeSelectionMenuSide(anchorRect, 480)).toBe('above');
 		expect(result.mode).toBe('floating');
 		expect(result.isBelowAnchor).toBe(true);
-		expect(result.top).toBe(48);
+		expect(result.top).toBe(108);
 		expect(result.left).toBe(12);
-		expect(result.anchorRect).toEqual({ top: 20, left: 40, bottom: 36, right: 96, width: 56, height: 16 });
+		expect(result.anchorRect).toEqual(anchorRect);
 	});
 
-	it('anchors floating mobile toolbars to the selection center when space allows', () => {
+	it('floats mobile toolbars below the selection when the native menu stays above', () => {
+		const anchorRect = { top: 120, left: 140, bottom: 144, right: 204, width: 64, height: 24 };
 		const result = computeToolbarPosition({
-			anchorRect: { top: 120, left: 140, bottom: 144, right: 204, width: 64, height: 24 },
+			anchorRect,
 			containerWidth: 390,
 			containerHeight: 720,
 			toolbarWidth: 220,
@@ -28,10 +40,28 @@ describe('toolbar-positioning', () => {
 			mobile: true,
 		});
 
+		expect(estimateNativeSelectionMenuSide(anchorRect, 720)).toBe('above');
+		expect(mirrorFloatingSide('above')).toBe('bottom');
 		expect(result.mode).toBe('floating');
-		expect(result.isBelowAnchor).toBe(false);
-		expect(result.top).toBe(36);
+		expect(result.isBelowAnchor).toBe(true);
+		expect(result.top).toBe(156);
 		expect(result.left).toBe(62);
+	});
+
+	it('docks mobile toolbars when the native menu flips below near the top edge', () => {
+		const anchorRect = { top: 8, left: 40, bottom: 24, right: 96, width: 56, height: 16 };
+		const result = computeToolbarPosition({
+			anchorRect,
+			containerWidth: 320,
+			containerHeight: 480,
+			toolbarWidth: 220,
+			toolbarHeight: 72,
+			mobile: true,
+		});
+
+		expect(estimateNativeSelectionMenuSide(anchorRect, 480)).toBe('below');
+		expect(mirrorFloatingSide('below')).toBe('top');
+		expect(result.mode).toBe('docked');
 	});
 
 	it('docks mobile toolbars when floating would overlap the selection', () => {
@@ -48,6 +78,22 @@ describe('toolbar-positioning', () => {
 		expect(result.top).toBe(0);
 		expect(result.left).toBe(12);
 		expect(result.arrowOffset).toBe(0);
+	});
+
+	it('docks mobile toolbars when the mirrored side lacks room', () => {
+		const anchorRect = { top: 360, left: 40, bottom: 376, right: 96, width: 56, height: 16 };
+		const result = computeToolbarPosition({
+			anchorRect,
+			containerWidth: 320,
+			containerHeight: 400,
+			toolbarWidth: 220,
+			toolbarHeight: 72,
+			mobile: true,
+			insetBottom: resolveMobileFloatingInsetBottom(56),
+		});
+
+		expect(estimateNativeSelectionMenuSide(anchorRect, 400)).toBe('above');
+		expect(result.mode).toBe('docked');
 	});
 
 	it('places floating toolbars above the anchor when space is available', () => {
@@ -172,5 +218,45 @@ describe('toolbar-positioning', () => {
 		expect(isEventOutsideToolbar(toolbar, outsideEvent)).toBe(true);
 
 		expect(isEventOutsideToolbar(undefined, outsideEvent)).toBe(false);
+	});
+
+	it('treats Obsidian menus as inside floating UI', () => {
+		const menu = document.createElement('div');
+		menu.className = 'menu';
+		const item = document.createElement('div');
+		menu.appendChild(item);
+		document.body.appendChild(menu);
+
+		const menuEvent = new MouseEvent('mousedown', { bubbles: true });
+		Object.defineProperty(menuEvent, 'target', { value: item });
+		expect(isEventInsideObsidianFloatingUi(menuEvent)).toBe(true);
+	});
+
+	it('dismisses toolbar on outside pointer down but not on menu clicks', () => {
+		const toolbar = document.createElement('div');
+		const button = document.createElement('button');
+		toolbar.appendChild(button);
+		document.body.appendChild(toolbar);
+
+		const menu = document.createElement('div');
+		menu.className = 'menu';
+		const menuItem = document.createElement('div');
+		menu.appendChild(menuItem);
+		document.body.appendChild(menu);
+
+		const outside = document.createElement('div');
+		document.body.appendChild(outside);
+
+		const toolbarEvent = new MouseEvent('mousedown', { bubbles: true });
+		Object.defineProperty(toolbarEvent, 'target', { value: button });
+		expect(shouldDismissToolbarOnPointerDown(toolbar, toolbarEvent)).toBe(false);
+
+		const menuEvent = new MouseEvent('mousedown', { bubbles: true });
+		Object.defineProperty(menuEvent, 'target', { value: menuItem });
+		expect(shouldDismissToolbarOnPointerDown(toolbar, menuEvent)).toBe(false);
+
+		const outsideEvent = new MouseEvent('mousedown', { bubbles: true });
+		Object.defineProperty(outsideEvent, 'target', { value: outside });
+		expect(shouldDismissToolbarOnPointerDown(toolbar, outsideEvent)).toBe(true);
 	});
 });

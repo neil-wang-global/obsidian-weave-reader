@@ -1,10 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { App } from 'obsidian';
+	import { Menu, Notice } from 'obsidian';
 	import { tr } from '../../utils/i18n';
+	import { showObsidianConfirm } from '../../utils/obsidian-confirm';
 	import { logger } from '../../utils/logger';
 	import { parseSearchQuery, type DateRange, type SearchQuery } from '../../utils/search-parser';
-	import type { EpubBook, EpubDisplayHighlight, EpubHighlightViewSnapshotService, EpubReaderEngine } from '../../services/epub';
+	import type { EpubBook, EpubHighlightViewSnapshotService, EpubReaderEngine } from '../../services/epub';
+	import {
+		buildEpubDisplayHighlightSelectionKey,
+		type EpubDisplayHighlight,
+	} from '../../services/epub/EpubHighlightViewSnapshotService';
 	import { getEpubAnnotationIndexService } from '../../services/epub';
 	import type { EpubAnnotationService } from '../../services/epub';
 	import type { EpubBacklinkHighlightService } from '../../services/epub/EpubBacklinkHighlightService';
@@ -17,6 +23,7 @@
 		availableCommentStates: string[];
 		availableNoteTypes: string[];
 		availableHighlightColors: string[];
+		availableChapters: string[];
 		matchCount: number;
 		totalCount: number;
 	}
@@ -31,6 +38,10 @@
 		filePath?: string;
 		highlightRevision?: number;
 		showStrikethroughHighlights?: boolean;
+		currentChapterTitle?: string;
+		currentChapterIndex?: number;
+		onDeleteHighlight?: (highlight: EpubDisplayHighlight) => Promise<boolean>;
+		onExportHighlights?: (selectionKeys: string[]) => Promise<void>;
 		searchQuery?: string;
 		searchMeta?: HighlightSearchMeta;
 		onNavigate?: (
@@ -55,6 +66,10 @@
 		filePath,
 		highlightRevision = 0,
 		showStrikethroughHighlights = false,
+		currentChapterTitle = '',
+		currentChapterIndex = -1,
+		onDeleteHighlight,
+		onExportHighlights,
 		searchQuery = $bindable(''),
 		searchMeta = $bindable<HighlightSearchMeta>({
 			availableTags: [],
@@ -62,6 +77,7 @@
 			availableCommentStates: [],
 			availableNoteTypes: [],
 			availableHighlightColors: [],
+			availableChapters: [],
 			matchCount: 0,
 			totalCount: 0,
 		}),
@@ -72,6 +88,9 @@
 	let highlights = $state<EpubDisplayHighlight[]>([]);
 	let preparing = $state(false);
 	let syncing = $state(false);
+	let selectionMode = $state(false);
+	let selectedKeys = $state<Set<string>>(new Set());
+	let batchDeleting = $state(false);
 	let annotationLoadToken = 0;
 	let panelDisposed = false;
 	let lastLoadContextKey = '';
@@ -221,6 +240,67 @@
 		}
 	}
 
+	function getHighlightSelectionKey(highlight: EpubDisplayHighlight): string {
+		return buildEpubDisplayHighlightSelectionKey(highlight);
+	}
+
+	function getHighlightChapterLabel(highlight: EpubDisplayHighlight): string {
+		const chapterTitle = String(highlight.chapterTitle || '').trim();
+		if (chapterTitle) {
+			return chapterTitle;
+		}
+		if (typeof highlight.chapterIndex === 'number' && highlight.chapterIndex >= 0) {
+			return t('epub.bookmarks.chapterFallback', { chapter: highlight.chapterIndex + 1 });
+		}
+		return '';
+	}
+
+	function matchesChapterValues(
+		highlight: EpubDisplayHighlight,
+		values: string[],
+		currentTitle: string,
+		currentIndex: number
+	): boolean {
+		if (values.length === 0) {
+			return true;
+		}
+
+		const chapterLabel = getHighlightChapterLabel(highlight);
+		const normalizedChapterLabel = normalizeSearchText(chapterLabel);
+		const normalizedPageLabel = normalizeSearchText(highlight.pageLabel);
+
+		return values.some((value) => {
+			const normalizedValue = normalizeSearchText(value);
+			if (!normalizedValue) {
+				return false;
+			}
+
+			if (['@current', 'current', '当前', '当前章节', '当前章'].includes(normalizedValue)) {
+				if (currentIndex >= 0 && typeof highlight.chapterIndex === 'number') {
+					return highlight.chapterIndex === currentIndex;
+				}
+				const normalizedCurrentTitle = normalizeSearchText(currentTitle);
+				return Boolean(
+					normalizedCurrentTitle &&
+					(normalizedChapterLabel.includes(normalizedCurrentTitle) ||
+						normalizedCurrentTitle.includes(normalizedChapterLabel))
+				);
+			}
+
+			if (/^\d+$/.test(normalizedValue)) {
+				const chapterNumber = Number.parseInt(normalizedValue, 10);
+				if (Number.isFinite(chapterNumber) && typeof highlight.chapterIndex === 'number') {
+					return highlight.chapterIndex + 1 === chapterNumber;
+				}
+			}
+
+			return (
+				normalizedChapterLabel.includes(normalizedValue) ||
+				normalizedPageLabel.includes(normalizedValue)
+			);
+		});
+	}
+
 	function matchesCommentValues(highlight: EpubDisplayHighlight, values: string[]): boolean {
 		if (values.length === 0) {
 			return true;
@@ -259,6 +339,7 @@
 			&& matchesCommentValues(highlight, query.comments)
 			&& matchesFieldValues(noteTypeSearchTarget, query.types)
 			&& matchesFieldValues(colorSearchTarget, query.colors)
+			&& matchesChapterValues(highlight, query.chapters, currentChapterTitle, currentChapterIndex)
 			&& matchesDateRanges(highlight.createdTime, query.dateRanges);
 	}
 
@@ -288,6 +369,14 @@
 		buildUniqueSortedValues(highlights.map((highlight) => highlight.colorLabel))
 	);
 
+	let availableChapterOptions = $derived.by(() =>
+		buildUniqueSortedValues(highlights.map((highlight) => getHighlightChapterLabel(highlight)))
+	);
+
+	let selectedHighlights = $derived.by(() =>
+		filteredHighlights.filter((highlight) => selectedKeys.has(getHighlightSelectionKey(highlight)))
+	);
+
 	$effect(() => {
 		searchMeta = {
 			availableTags: availableTagOptions,
@@ -295,10 +384,214 @@
 			availableCommentStates: availableCommentStateOptions,
 			availableNoteTypes: availableNoteTypeOptions,
 			availableHighlightColors: availableHighlightColorOptions,
+			availableChapters: availableChapterOptions,
 			matchCount: filteredHighlights.length,
 			totalCount: highlights.length,
 		};
 	});
+
+	function exitSelectionMode() {
+		selectionMode = false;
+		selectedKeys = new Set();
+	}
+
+	function enterSelectionMode(seedHighlight?: EpubDisplayHighlight) {
+		selectionMode = true;
+		if (seedHighlight) {
+			const next = new Set(selectedKeys);
+			next.add(getHighlightSelectionKey(seedHighlight));
+			selectedKeys = next;
+		}
+	}
+
+	function toggleHighlightSelection(highlight: EpubDisplayHighlight) {
+		const key = getHighlightSelectionKey(highlight);
+		const next = new Set(selectedKeys);
+		if (next.has(key)) {
+			next.delete(key);
+		} else {
+			next.add(key);
+		}
+		selectedKeys = next;
+	}
+
+	function selectAllFilteredHighlights() {
+		selectedKeys = new Set(filteredHighlights.map((highlight) => getHighlightSelectionKey(highlight)));
+	}
+
+	function clearSelectedHighlights() {
+		selectedKeys = new Set();
+	}
+
+	function attachMenuApp(menu: Menu) {
+		(menu as Menu & { app?: App }).app = app;
+	}
+
+	async function exportSelectedHighlights() {
+		if (!onExportHighlights || selectedHighlights.length === 0) {
+			new Notice(t('epub.notes.noExportableSelection'));
+			return;
+		}
+		await onExportHighlights(selectedHighlights.map((highlight) => getHighlightSelectionKey(highlight)));
+		exitSelectionMode();
+	}
+
+	async function deleteHighlightItem(highlight: EpubDisplayHighlight, quiet = false): Promise<boolean> {
+		if (!onDeleteHighlight) {
+			if (!quiet) {
+				new Notice(t('epub.reader.highlightDeleteFailed'));
+			}
+			return false;
+		}
+		return onDeleteHighlight(highlight);
+	}
+
+	async function deleteSelectedHighlights() {
+		if (!onDeleteHighlight || selectedHighlights.length === 0 || batchDeleting) {
+			return;
+		}
+		const confirmed = await showObsidianConfirm(
+			app,
+			t('epub.notes.batchDeleteConfirm', { count: selectedHighlights.length }),
+			{
+				title: t('epub.reader.highlightDeleteChoiceTitle'),
+				confirmText: t('epub.notes.menu.deleteSelected'),
+				cancelText: t('epub.reader.highlightDeleteChoiceCancel'),
+				confirmClass: 'mod-warning',
+			}
+		);
+		if (!confirmed) {
+			return;
+		}
+
+		batchDeleting = true;
+		let deletedCount = 0;
+		try {
+			for (const highlight of selectedHighlights) {
+				const deleted = await deleteHighlightItem(highlight, true);
+				if (deleted) {
+					deletedCount += 1;
+				}
+			}
+			if (deletedCount > 0) {
+				new Notice(t('epub.notes.batchDeleted', { count: deletedCount }));
+			}
+			if (deletedCount < selectedHighlights.length) {
+				new Notice(t('epub.notes.batchDeleteFailed'));
+			}
+			exitSelectionMode();
+		} finally {
+			batchDeleting = false;
+		}
+	}
+
+	function showPanelContextMenu(event: MouseEvent) {
+		event.preventDefault();
+		const menu = new Menu();
+		attachMenuApp(menu);
+
+		if (selectionMode) {
+			menu.addItem((item) => {
+				item.setTitle(t('epub.notes.menu.exportSelected'));
+				item.setIcon('download');
+				item.setDisabled(selectedHighlights.length === 0 || !onExportHighlights);
+				item.onClick(() => {
+					void exportSelectedHighlights();
+				});
+			});
+			menu.addItem((item) => {
+				item.setTitle(t('epub.notes.menu.deleteSelected'));
+				item.setIcon('trash');
+				item.setDisabled(selectedHighlights.length === 0 || !onDeleteHighlight || batchDeleting);
+				item.onClick(() => {
+					void deleteSelectedHighlights();
+				});
+			});
+			menu.addSeparator();
+			menu.addItem((item) => {
+				item.setTitle(t('epub.notes.menu.selectAll'));
+				item.setIcon('check-check');
+				item.setDisabled(filteredHighlights.length === 0);
+				item.onClick(() => {
+					selectAllFilteredHighlights();
+				});
+			});
+			menu.addItem((item) => {
+				item.setTitle(t('epub.notes.menu.deselectAll'));
+				item.setIcon('ban');
+				item.setDisabled(selectedHighlights.length === 0);
+				item.onClick(() => {
+					clearSelectedHighlights();
+				});
+			});
+			menu.addSeparator();
+			menu.addItem((item) => {
+				item.setTitle(t('epub.notes.menu.exitBatchSelect'));
+				item.setIcon('x');
+				item.onClick(() => {
+					exitSelectionMode();
+				});
+			});
+		} else {
+			menu.addItem((item) => {
+				item.setTitle(t('epub.notes.menu.batchSelect'));
+				item.setIcon('check-square');
+				item.onClick(() => {
+					enterSelectionMode();
+				});
+			});
+			if (onExportHighlights) {
+				menu.addItem((item) => {
+					item.setTitle(t('epub.notes.menu.exportFiltered'));
+					item.setIcon('download');
+					item.setDisabled(filteredHighlights.length === 0);
+					item.onClick(() => {
+						void onExportHighlights(
+							filteredHighlights.map((highlight) => getHighlightSelectionKey(highlight))
+						);
+					});
+				});
+			}
+		}
+
+		menu.showAtMouseEvent(event);
+	}
+
+	function showHighlightContextMenu(event: MouseEvent, highlight: EpubDisplayHighlight) {
+		event.preventDefault();
+		event.stopPropagation();
+		const menu = new Menu();
+		attachMenuApp(menu);
+
+		if (!selectionMode) {
+			menu.addItem((item) => {
+				item.setTitle(t('epub.notes.menu.batchSelect'));
+				item.setIcon('check-square');
+				item.onClick(() => {
+					enterSelectionMode(highlight);
+				});
+			});
+		}
+
+		menu.addItem((item) => {
+			item.setTitle(t('epub.notes.menu.delete'));
+			item.setIcon('trash');
+			item.setDisabled(!onDeleteHighlight || batchDeleting);
+			item.onClick(() => {
+				void deleteHighlightItem(highlight);
+			});
+		});
+
+		menu.showAtMouseEvent(event);
+	}
+
+	function handleHighlightActivate(highlight: EpubDisplayHighlight) {
+		if (selectionMode) {
+			toggleHighlightSelection(highlight);
+			return;
+		}
+		navigateToHighlight(highlight);
+	}
 
 	function isStaleAnnotationsLoad(loadToken: number, expectedBookId: string, expectedFilePath?: string): boolean {
 		return panelDisposed
@@ -542,7 +835,11 @@
 	});
 </script>
 
-<div class="epub-notes-panel">
+<div
+	class="epub-notes-panel"
+	class:selection-mode={selectionMode}
+	oncontextmenu={showPanelContextMenu}
+>
 	{#if preparing}
 		<EpubLoadingState message={t('epub.notes.preparing')} surface />
 	{:else if filteredHighlights.length === 0}
@@ -554,23 +851,62 @@
 			{/if}
 		</div>
 	{:else}
+		{#if selectionMode}
+			<div class="epub-notes-selection-bar" aria-live="polite">
+				<span>{t('epub.notes.selectionCount', { selected: selectedHighlights.length, total: filteredHighlights.length })}</span>
+				<div class="epub-notes-selection-actions">
+					<button
+						type="button"
+						class="clickable-icon epub-notes-selection-btn"
+						title={t('epub.notes.menu.exportSelected')}
+						aria-label={t('epub.notes.menu.exportSelected')}
+						disabled={selectedHighlights.length === 0 || !onExportHighlights}
+						onclick={() => void exportSelectedHighlights()}
+					>
+						<span class="epub-notes-selection-btn-label">{t('epub.notes.menu.exportSelected')}</span>
+					</button>
+					<button
+						type="button"
+						class="clickable-icon epub-notes-selection-btn"
+						title={t('epub.notes.menu.deleteSelected')}
+						aria-label={t('epub.notes.menu.deleteSelected')}
+						disabled={selectedHighlights.length === 0 || !onDeleteHighlight || batchDeleting}
+						onclick={() => void deleteSelectedHighlights()}
+					>
+						<span class="epub-notes-selection-btn-label">{t('epub.notes.menu.deleteSelected')}</span>
+					</button>
+					<button
+						type="button"
+						class="clickable-icon epub-notes-selection-btn"
+						title={t('epub.notes.menu.exitBatchSelect')}
+						aria-label={t('epub.notes.menu.exitBatchSelect')}
+						onclick={exitSelectionMode}
+					>
+						<span class="epub-notes-selection-btn-label">{t('epub.notes.menu.exitBatchSelect')}</span>
+					</button>
+				</div>
+			</div>
+		{/if}
 		{#if syncing}
 			<div class="epub-notes-sync-hint" aria-live="polite">{t('epub.notes.syncing')}</div>
 		{/if}
 		{#if filteredHighlights.length > 0}
 			<section class="notes-section">
 				<div class="notes-section-list">
-					{#each filteredHighlights as hl}
+					{#each filteredHighlights as hl (getHighlightSelectionKey(hl))}
 						<EpubAnnotationCard
 							clickable={true}
-							onActivate={() => navigateToHighlight(hl)}
+							selectionMode={selectionMode}
+							selected={selectedKeys.has(getHighlightSelectionKey(hl))}
+							onActivate={() => handleHighlightActivate(hl)}
+							onContextMenu={(event) => showHighlightContextMenu(event, hl)}
 							color={hl.color}
 							quoteText={hl.text}
 							commentText={hl.hasCommentDivider ? (hl.commentText || t('epub.notes.emptyComment')) : getEmptyExcerptHint(hl.text)}
 							commentMuted={!hl.hasCommentDivider}
 							metaLeft={getSourceLabel(hl.sourceFile)}
 							metaRightPrefix={formatTime(hl.createdTime)}
-							metaRight={hl.pageLabel}
+							metaRight={hl.pageLabel || getHighlightChapterLabel(hl)}
 						/>
 					{/each}
 				</div>
@@ -592,6 +928,50 @@
 		flex-direction: column;
 		gap: 16px;
 		padding: 14px 12px 22px;
+	}
+
+	.epub-notes-selection-bar {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 8px 10px;
+		border-radius: 12px;
+		background: color-mix(in srgb, var(--background-modifier-hover) 72%, transparent);
+		color: var(--text-muted);
+		font-size: var(--font-ui-smaller);
+	}
+
+	.epub-notes-selection-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	:global(.epub-notes-panel .epub-notes-selection-btn) {
+		display: inline-flex;
+		align-items: center;
+		min-height: 28px;
+		padding: 0 8px;
+		border: none;
+		border-radius: var(--clickable-icon-radius);
+		background: transparent;
+		box-shadow: none;
+		color: var(--text-muted);
+	}
+
+	:global(.epub-notes-panel .epub-notes-selection-btn:hover:not(:disabled)) {
+		background: var(--background-modifier-hover);
+		color: var(--text-normal);
+	}
+
+	:global(.epub-notes-panel .epub-notes-selection-btn:disabled) {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+
+	.epub-notes-selection-btn-label {
+		font-size: var(--font-ui-smaller);
+		line-height: 1.2;
 	}
 
 	.epub-placeholder {

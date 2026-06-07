@@ -1,7 +1,7 @@
 {
   "name": "weave-epub-reader",
   "private": true,
-  "version": "0.6.26",
+  "version": "0.6.27",
   "description": "Standalone EPUB reader with bookshelf, deep links, and reading state persistence.",
   "main": "main.js",
   "type": "module",
@@ -25,7 +25,7 @@
     "i18n:export-zh-snapshot": "npx tsx scripts/export-zh-snapshot.ts",
     "i18n:validate": "npx tsx scripts/i18n-validate.ts",
     "i18n:build-overlays": "npm run i18n:export-zh-snapshot && python scripts/build-quality-overlays.py",
-    "i18n:export-tutorial": "npx tsx scripts/export-tutorial-en.ts",
+    "i18n:export-tutorial": "npx tsx scripts/export-tutorial-en.ts && npx tsx scripts/export-tutorial-zh.ts",
     "i18n:draft:complete-ko": "python scripts/complete-ko-offline.py",
     "i18n:draft:generate-locales": "node scripts/generate-ja-ko-locales.mjs",
     "i18n:draft:generate-tutorial": "python scripts/generate-tutorial-locales.py",

@@ -191,9 +191,9 @@ flowchart LR
 
 ## 数据与同步
 
-**建议同步（位于 Vault）**：图书文件、Markdown 摘录、Canvas、Weave 牌组数据。
+**建议同步（位于 Vault）**：图书文件、Markdown 摘录、Canvas、Weave 牌组数据，以及每本书的进度与书签专有笔记（默认 `weave/epub-bookmarks/data_*.md`）。
 
-**通常不需跨设备同步（位于插件目录）**：阅读缓存、索引、部分界面状态。多设备使用时优先同步 Vault 内容，而非直接同步 `.obsidian/plugins/weave-epub-reader/` 下的缓存文件。
+**通常不需跨设备同步（位于插件目录）**：阅读缓存、索引、Canvas 绑定与参考阅读点等本地状态。多设备使用时优先同步 Vault 内容，而非直接同步 `.obsidian/plugins/weave-epub-reader/` 下的缓存文件。
 
 ## 隐私与网络
 

@@ -7,9 +7,16 @@ import {
 	translationOverrides,
 } from "./i18n/resources";
 import type { I18nConfig, SupportedLanguage, TranslationKey } from "./i18n/types";
+import {
+	normalizeInterfaceLanguagePreference,
+	resolveInterfaceLanguage,
+	type InterfaceLanguagePreference,
+} from "./i18n/locale-resolver";
 import { derived, get, writable } from "svelte/store";
 
 export type { I18nConfig, SupportedLanguage, TranslationKey } from "./i18n/types";
+export type { InterfaceLanguagePreference } from "./i18n/locale-resolver";
+export { normalizeInterfaceLanguagePreference } from "./i18n/locale-resolver";
 export { flattenTranslationLeafKeys } from "./i18n/flat-locale";
 
 export const translationCatalog: Record<SupportedLanguage, TranslationKey> = {
@@ -17,12 +24,13 @@ export const translationCatalog: Record<SupportedLanguage, TranslationKey> = {
 	"en-US": mergeTranslationTrees(translations["en-US"], translationOverrides["en-US"]),
 	"ja-JP": mergeTranslationTrees(translations["ja-JP"], translationOverrides["ja-JP"]),
 	"ko-KR": mergeTranslationTrees(translations["ko-KR"], translationOverrides["ko-KR"]),
+	"ru-RU": mergeTranslationTrees(translations["ru-RU"], translationOverrides["ru-RU"]),
 };
 
 const defaultConfig: I18nConfig = {
 	defaultLanguage: "zh-CN",
 	fallbackLanguage: "en-US",
-	supportedLanguages: ["zh-CN", "en-US", "ja-JP", "ko-KR"],
+	supportedLanguages: ["zh-CN", "en-US", "ja-JP", "ko-KR", "ru-RU"],
 };
 
 const translationKeyAliases: Record<string, string> = {};
@@ -79,49 +87,28 @@ function getTranslationAliasCandidates(key: string): string[] {
 	return [...candidates];
 }
 
-function normalizeObsidianLanguage(input: string | null | undefined): SupportedLanguage | null {
-	const normalized = String(input || "").trim().toLowerCase();
-	if (!normalized) {
-		return null;
-	}
+let interfaceLanguagePreference: InterfaceLanguagePreference = "auto";
 
-	if (normalized === "zh" || normalized.startsWith("zh-")) {
-		return "zh-CN";
-	}
-
-	if (normalized === "ja" || normalized.startsWith("ja-")) {
-		return "ja-JP";
-	}
-
-	if (normalized === "ko" || normalized.startsWith("ko-")) {
-		return "ko-KR";
-	}
-
-	return "en-US";
+export function setInterfaceLanguagePreference(
+	preference: InterfaceLanguagePreference | null | undefined
+): void {
+	interfaceLanguagePreference = normalizeInterfaceLanguagePreference(preference);
 }
 
-// ============================================================================
-// 自动检测 Obsidian 语言设置
-// ============================================================================
+export function getInterfaceLanguagePreference(): InterfaceLanguagePreference {
+	return interfaceLanguagePreference;
+}
 
-function detectObsidianLanguage(): SupportedLanguage {
+function detectInterfaceLanguage(): SupportedLanguage {
 	try {
-		const officialLanguage = normalizeObsidianLanguage(getLanguage());
-		if (officialLanguage) {
-			return officialLanguage;
-		}
-
-		const persistedLanguage = normalizeObsidianLanguage(vaultStorage.getItem("language"));
-		if (persistedLanguage) {
-			return persistedLanguage;
-		}
-
-		const browserLanguage = normalizeObsidianLanguage(window?.navigator?.language);
-		if (browserLanguage) {
-			return browserLanguage;
-		}
-
-		return defaultConfig.fallbackLanguage;
+		return resolveInterfaceLanguage({
+			preference: interfaceLanguagePreference,
+			obsidianLanguage: getLanguage(),
+			persistedLanguage: vaultStorage.getItem("language"),
+			browserLanguage:
+				typeof window !== "undefined" ? window.navigator.language : null,
+			fallback: defaultConfig.fallbackLanguage,
+		});
 	} catch {
 		return defaultConfig.fallbackLanguage;
 	}
@@ -133,20 +120,26 @@ function detectObsidianLanguage(): SupportedLanguage {
 
 export const currentLanguage = writable<SupportedLanguage>(defaultConfig.defaultLanguage);
 
-export function syncI18nWithObsidianLanguage(): SupportedLanguage {
-	const detectedLang = detectObsidianLanguage();
+export function syncI18nLanguage(): SupportedLanguage {
+	const detectedLang = detectInterfaceLanguage();
 	if (get(currentLanguage) !== detectedLang) {
 		currentLanguage.set(detectedLang);
 	}
 	return detectedLang;
 }
 
+/** @deprecated Use {@link syncI18nLanguage} */
+export const syncI18nWithObsidianLanguage = syncI18nLanguage;
+
 /**
- * 初始化国际化系统 - 检测Obsidian语言并设置
- * 应在插件onload时调用
+ * 初始化国际化系统
+ * 应在插件 onload、且 vault local storage 初始化后调用
  */
-export function initI18n(): void {
-	syncI18nWithObsidianLanguage();
+export function initI18n(preference?: InterfaceLanguagePreference): void {
+	if (preference !== undefined) {
+		setInterfaceLanguagePreference(preference);
+	}
+	syncI18nLanguage();
 }
 export const i18nConfig = writable<I18nConfig>(defaultConfig);
 

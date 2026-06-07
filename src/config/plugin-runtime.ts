@@ -6,6 +6,9 @@ export const CURRENT_PLUGIN_NAME = manifest.name;
 export const CURRENT_PLUGIN_VERSION = manifest.version;
 export const CURRENT_PLUGIN_DISPLAY_VERSION = `v${CURRENT_PLUGIN_VERSION}`;
 
+/** Permanent EPUB Reader license purchase page (ldxp storefront). */
+export const LIFETIME_LICENSE_PURCHASE_URL = "https://pay.ldxp.cn/item/zu4nrm";
+
 export const LEGACY_WEAVE_PRODUCT_IDS = new Set<string>([
 	"weave",
 	"weave-obsidian-plugin",

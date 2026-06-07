@@ -59,6 +59,7 @@
 		availableCommentStates: [] as string[],
 		availableNoteTypes: [] as string[],
 		availableHighlightColors: [] as string[],
+		availableChapters: [] as string[],
 		matchCount: 0,
 		totalCount: 0,
 	});
@@ -799,6 +800,7 @@
 								availableCommentStates={highlightSearchMeta.availableCommentStates}
 								availableNoteTypes={highlightSearchMeta.availableNoteTypes}
 								availableHighlightColors={highlightSearchMeta.availableHighlightColors}
+								availableChapters={highlightSearchMeta.availableChapters}
 								matchCount={highlightSearchMeta.matchCount}
 								totalCount={highlightSearchMeta.totalCount}
 							/>
@@ -836,7 +838,7 @@
 
 			<div class="epub-global-sidebar-tabs">
 				<button
-					class="epub-global-tab"
+					class="clickable-icon epub-global-tab"
 					class:active={activeTab === 'toc'}
 					onclick={() => switchTab('toc')}
 				>
@@ -845,7 +847,7 @@
 				</button>
 				{#if sharedState.canUseExcerptNotes}
 					<button
-						class="epub-global-tab"
+						class="clickable-icon epub-global-tab"
 						class:active={activeTab === 'highlights'}
 						onclick={() => switchTab('highlights')}
 					>
@@ -855,7 +857,7 @@
 					</button>
 				{/if}
 				<button
-					class="epub-global-tab"
+					class="clickable-icon epub-global-tab"
 					class:active={activeTab === 'bookmarks'}
 					onclick={() => switchTab('bookmarks')}
 				>
@@ -951,6 +953,10 @@
 							filePath={sharedState.filePath ?? undefined}
 							highlightRevision={sharedState.annotationRevision}
 							showStrikethroughHighlights={Boolean(sharedState.excerptSettings?.showStrikethroughInSidebar)}
+							currentChapterTitle={sharedState.chapterTitle}
+							currentChapterIndex={sharedState.readerService?.getCurrentChapterIndex?.() ?? -1}
+							onDeleteHighlight={sharedState.onDeleteHighlight ?? undefined}
+							onExportHighlights={sharedState.onExportHighlights ?? undefined}
 							bind:searchQuery={searchQuery}
 							bind:searchMeta={highlightSearchMeta}
 							onNavigate={handleHighlightNavigate}
@@ -974,7 +980,7 @@
 	}
 
 	.epub-global-sidebar {
-		/* 侧边栏里尽量继承宿主背景，避免和官方侧栏之间再叠一层独立底色。 */
+		/* Inherit host background in the sidebar to avoid an extra surface layer. */
 		--weave-epub-sidebar-surface-background: var(
 			--weave-epub-sidebar-host-background,
 			var(--weave-surface-background, var(--background-primary))
@@ -1195,7 +1201,7 @@
 	button.epub-global-tab.active {
 		color: var(--text-normal);
 		font-weight: 600;
-		background: var(--background-secondary);
+		background: var(--background-modifier-hover);
 		border: none;
 		box-shadow: none;
 	}

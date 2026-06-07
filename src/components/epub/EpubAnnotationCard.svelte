@@ -13,7 +13,10 @@
 		metaRightPageLabel?: string;
 		metaRightTime?: string;
 		clickable?: boolean;
+		selectionMode?: boolean;
+		selected?: boolean;
 		onActivate?: () => void;
+		onContextMenu?: (event: MouseEvent) => void;
 		commentMuted?: boolean;
 	}
 
@@ -27,7 +30,10 @@
 		metaRightPrefix = '',
 		metaRight = '',
 		clickable = false,
+		selectionMode = false,
+		selected = false,
 		onActivate,
+		onContextMenu,
 		commentMuted = false
 	}: Props = $props();
 
@@ -69,9 +75,17 @@
 		role="button"
 		tabindex="0"
 		class="weave-annotation-card clickable"
+		class:selection-mode={selectionMode}
+		class:selected={selected}
 		onclick={() => onActivate?.()}
 		onkeydown={handleActivateKeydown}
+		oncontextmenu={onContextMenu}
 	>
+		{#if selectionMode}
+			<div class="annotation-selector" aria-hidden="true">
+				<input type="checkbox" checked={selected} tabindex="-1" readonly />
+			</div>
+		{/if}
 		<div class="annotation-body">
 			{#if hasHeaderMeta}
 				<div class="annotation-header">
@@ -170,6 +184,9 @@
 <style>
 	.weave-annotation-card {
 		position: relative;
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
 		width: 100%;
 		height: auto;
 		min-height: unset;
@@ -196,6 +213,20 @@
 		user-select: none;
 	}
 
+	.weave-annotation-card.selected {
+		border-color: color-mix(in srgb, var(--interactive-accent) 42%, transparent);
+		background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary));
+	}
+
+	.annotation-selector {
+		flex: 0 0 auto;
+		padding-top: 2px;
+	}
+
+	.annotation-selector input {
+		pointer-events: none;
+	}
+
 	.weave-annotation-card.clickable:hover,
 	.weave-annotation-card.clickable:focus-visible {
 		transform: translateY(-1px);
@@ -211,6 +242,7 @@
 	}
 
 	.annotation-body {
+		flex: 1 1 auto;
 		min-width: 0;
 		display: flex;
 		flex-direction: column;

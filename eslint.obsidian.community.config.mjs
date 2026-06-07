@@ -53,4 +53,28 @@ export default defineConfig([
 			"@typescript-eslint/unbound-method": "off",
 		},
 	},
+	{
+		files: ["src/**/*.ts"],
+		rules: {
+			"obsidianmd/ui/sentence-case": [
+				"error",
+				{
+					brands: ["Weave", "Obsidian", "Markdown"],
+					acronyms: [
+						"AI",
+						"API",
+						"HTTP",
+						"HTTPS",
+						"IR",
+						"PDF",
+						"EPUB",
+						"PDF++",
+						"UUID",
+						"URL",
+						"YAML",
+					],
+				},
+			],
+		},
+	},
 ]);

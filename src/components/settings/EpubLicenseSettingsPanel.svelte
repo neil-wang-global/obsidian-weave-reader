@@ -11,6 +11,7 @@
   import { showObsidianConfirm } from "../../utils/obsidian-confirm";
   import { showNotification } from "../../utils/notifications";
   import { tr } from "../../utils/i18n";
+  import { LIFETIME_LICENSE_PURCHASE_URL } from "../../config/plugin-runtime";
 
   interface Props {
     plugin: any;
@@ -132,7 +133,17 @@
 <section class="epub-license-settings-panel">
   <div class="epub-license-settings-card">
     <div class="epub-license-settings-header">
-      <h3 class="section-title with-accent-bar accent-purple">{t("epub.settings.license.title")}</h3>
+      <div class="section-title-row">
+        <h3 class="section-title with-accent-bar accent-purple">{t("epub.settings.license.title")}</h3>
+        <a
+          class="license-purchase-link"
+          href={LIFETIME_LICENSE_PURCHASE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {t("epub.settings.license.purchaseLink")}
+        </a>
+      </div>
       <p class="section-description">{t("epub.settings.license.description")}</p>
     </div>
 
@@ -190,6 +201,33 @@
     flex-direction: column;
     gap: var(--epub-settings-gap-sm);
     min-width: 0;
+  }
+
+  .section-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--epub-settings-gap-lg);
+    min-width: 0;
+  }
+
+  .section-title-row .section-title {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .license-purchase-link {
+    flex-shrink: 0;
+    font-size: var(--epub-settings-font-size-desc, var(--font-ui-smaller, 0.85rem));
+    color: var(--text-accent);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: color 0.15s ease, opacity 0.15s ease;
+  }
+
+  .license-purchase-link:hover {
+    color: var(--text-accent-hover, var(--text-accent));
+    opacity: 0.88;
   }
 
   .epub-license-settings-content {
@@ -270,6 +308,15 @@
     .epub-license-settings-card {
       padding: calc(var(--epub-settings-panel-padding) - 0.1rem);
       border-radius: var(--radius-l, 14px);
+    }
+
+    .section-title-row {
+      flex-wrap: wrap;
+      row-gap: var(--epub-settings-gap-sm);
+    }
+
+    .license-purchase-link {
+      white-space: normal;
     }
 
     .epub-license-settings-content :global(.enhanced-activation-form .input-section:not(:first-child)) {

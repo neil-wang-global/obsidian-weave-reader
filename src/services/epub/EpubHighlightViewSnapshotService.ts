@@ -23,10 +23,24 @@ export interface EpubDisplayHighlight {
 	noteTypeKey: string;
 	tags: string[];
 	createdTime: number;
+	chapterIndex?: number;
+	chapterTitle?: string;
 	pageLabel?: string;
 	sourceFile?: string;
 	sourceRef?: string;
+	excerptId?: string;
 	searchableValues: string[];
+}
+
+export function buildEpubDisplayHighlightSelectionKey(
+	highlight: Pick<EpubDisplayHighlight, "cfiRange" | "sourceRef" | "sourceFile" | "excerptId">
+): string {
+	return [
+		String(highlight.cfiRange || "").trim(),
+		String(highlight.sourceRef || "").trim(),
+		String(highlight.sourceFile || "").trim(),
+		String(highlight.excerptId || "").trim(),
+	].join("::");
 }
 
 export interface EpubHighlightRenderSnapshot {
@@ -555,9 +569,15 @@ export class EpubHighlightViewSnapshotService {
 			noteTypeKey,
 			tags: this.extractHighlightTags(highlight.text, highlight.commentText),
 			createdTime: highlight.createdTime || 0,
+			chapterIndex:
+				typeof highlight.chapterIndex === "number" && Number.isFinite(highlight.chapterIndex)
+					? highlight.chapterIndex
+					: undefined,
+			chapterTitle: String(highlight.chapterTitle || "").trim() || undefined,
 			pageLabel: pageLabel || "",
 			sourceFile: highlight.sourceFile,
 			sourceRef: highlight.sourceRef,
+			excerptId: highlight.excerptId,
 			searchableValues: [],
 		};
 
@@ -565,6 +585,8 @@ export class EpubHighlightViewSnapshotService {
 			mappedHighlight.text,
 			mappedHighlight.commentText || "",
 			mappedHighlight.sourceFile || "",
+			mappedHighlight.chapterTitle || "",
+			mappedHighlight.pageLabel || "",
 			mappedHighlight.noteType,
 			mappedHighlight.noteTypeKey,
 			mappedHighlight.colorLabel,

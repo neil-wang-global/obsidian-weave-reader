@@ -347,8 +347,10 @@ describe("EpubBookmarkService", () => {
 		expect(content).toContain("readingState:");
 		expect(content).toContain("totalReadTime: 120000");
 		expect(content).toContain(EPUB_BOOKMARK_AUTO_MAINTAINED_CALLOUT);
-		expect(content).toContain("> [!warning]");
-		expect(content).toContain("阅读状态摘要");
+		expect(content).toContain("> [!abstract]");
+		expect(content).toContain("weave-epub-bookmarks/v2");
+		expect(content).toContain("## 概览");
+		expect(content).toContain("reading-progress: 12");
 	});
 
 	it("falls back to adapter.write when vault.modify hits ENOENT for a stale TFile index", async () => {

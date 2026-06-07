@@ -1,5 +1,6 @@
 {
   "epub.settings.license.title": "라이선스 및 활성화",
+  "epub.settings.license.purchaseLink": "평생 라이선스 구매",
   "epub.settings.license.description": "독립 EPUB 활성화 코드를 지원하며, 설치된 Weave의 유효한 프리미엄 라이선스를 상속할 수도 있습니다.",
   "epub.settings.license.noSavableCode": "현재 라이선스에 저장할 수 있는 활성화 코드가 없습니다",
   "epub.settings.license.codeCopied": "활성화 코드가 클립보드에 복사되었습니다. 안전하게 보관하세요.",

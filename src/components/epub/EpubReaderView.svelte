@@ -33,6 +33,7 @@
 		canUseExcerptNotes?: boolean;
 		getReadingPositionAutoSaveConfig?: () => { enabled: boolean; pages: number };
 		isParagraphModeActive?: () => boolean;
+		isParagraphModeProgressDetached?: () => boolean;
 		shouldSkipReadingProgressPersistOnRelocate?: () => boolean;
 		onAutoReadingPositionSaved?: (position: ReadingPosition) => void | Promise<void>;
 		hasPendingNavigation?: boolean;
@@ -57,6 +58,7 @@
 		canUseExcerptNotes = true,
 		getReadingPositionAutoSaveConfig,
 		isParagraphModeActive,
+		isParagraphModeProgressDetached,
 		shouldSkipReadingProgressPersistOnRelocate,
 		onAutoReadingPositionSaved,
 		hasPendingNavigation = false,
@@ -156,7 +158,7 @@
 			resetReadingPositionAutoSaveTracking(info.currentPage);
 			return;
 		}
-		if (isParagraphModeActive?.()) {
+		if (isParagraphModeActive?.() && !isParagraphModeProgressDetached?.()) {
 			await persistReadingProgress(position);
 			await onAutoReadingPositionSaved?.(position as ReadingPosition);
 			resetReadingPositionAutoSaveTracking(info.currentPage);
@@ -202,6 +204,10 @@
 			return;
 		}
 		if (!book?.id) {
+			await storageService.flushPendingProgress();
+			return;
+		}
+		if (isParagraphModeProgressDetached?.()) {
 			await storageService.flushPendingProgress();
 			return;
 		}

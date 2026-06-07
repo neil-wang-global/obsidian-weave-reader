@@ -1455,6 +1455,33 @@ describe('EpubBacklinkHighlightService', () => {
 		expect(files.get(notePath)).toContain('> 第二行批注');
 	});
 
+	it('writes divider comments back when the live reader CFI drifts from the stored callout locator', async () => {
+		const bookPath = '附件/demo.mobi';
+		const notePath = '笔记/demo-comment-drift.md';
+		const noteContent = [
+			'> [!EPUB|green] [[../../附件/demo.mobi#weave-cfi=epubcfi(/6/14!/4/12,/1:0,/1:11)&text=hello&chapter=6|demo]]',
+			'> 我认识他是在1984年',
+			'',
+		].join('\n');
+		const { app, files } = createMockApp({
+			[notePath]: noteContent,
+			[bookPath]: 'binary',
+		});
+		const service = new EpubBacklinkHighlightService(app);
+
+		const changed = await service.updateHighlightComment(
+			notePath,
+			'epubcfi(/6/14!/4/12,/1:0,/1:12)',
+			bookPath,
+			'漂移后的批注'
+		);
+
+		expect(changed).toBe(true);
+		expect(files.get(notePath)).toContain('> 我认识他是在1984年');
+		expect(files.get(notePath)).toContain('> ---div---');
+		expect(files.get(notePath)).toContain('> 漂移后的批注');
+	});
+
 	it('updates only the targeted canvas node highlight color when sourceRef is provided', async () => {
 		const canvasPath = 'Canvas/demo.canvas';
 		const canvasContent = JSON.stringify({

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build curated ja/ko overlays from:
+Build curated ja/ko/ru overlays from:
 1) manual overrides (highest priority)
 2) acceptable entries in legacy flat-locales drafts (if present)
 3) otherwise omitted so runtime falls back to en-US
@@ -30,30 +30,15 @@ def load_manual_files(language_code: str) -> dict[str, str]:
 	return merged
 
 PREFIXES = [
-	"epub.premium.",
-	"epub.settings.license.",
-	"epub.settings.tabs.",
-	"epub.settings.groups.",
-	"epub.settings.notifications.",
-	"epub.settings.basic.",
-	"epub.errors.",
-	"epub.common.",
-	"epub.plainText.",
-	"epub.reader.tutorial.",
-	"epub.reader.readingReference",
-	"epub.bookshelf.importModal.",
-	"epub.bookshelf.bookDeleteModal.",
-	"epub.bookshelf.bookInfoModal.",
-	"epub.bookshelf.rename.",
-	"views.epubView.emptyState.",
-	"views.epubView.notice.readingReference",
-	"views.epubView.label.readingReference",
-	"commands.openEpubReader",
-	"notifications.error.openFailed",
+	"views.",
+	"commands.",
+	"notifications.",
+	"epub.",
 ]
 
 JA_KANA = re.compile(r"[\u3040-\u30ff]")
 KO_HANGUL = re.compile(r"[\uac00-\ud7af]")
+RU_CYRILLIC = re.compile(r"[\u0400-\u04FF]")
 BROKEN = re.compile(r"GLOSSARY|⟦|__PH_")
 JA_SIGNAL = re.compile(
 	r"(プレミアム|ライセンス|読書|目次|ブックマーク|脚注|抜粋|無料|有料|機能|閲覧|表示|設定|削除|確認|保存)"
@@ -73,6 +58,10 @@ def is_acceptable(language: str, value: str, english: str, chinese: str | None =
 		if chinese and value == chinese:
 			return False
 		return bool(JA_KANA.search(value)) or bool(JA_SIGNAL.search(value))
+	if language == "ru-RU":
+		if chinese and value == chinese:
+			return False
+		return bool(RU_CYRILLIC.search(value))
 	if chinese and value == chinese:
 		return False
 	return bool(KO_HANGUL.search(value))
@@ -118,16 +107,21 @@ def main() -> None:
 	chinese_template = json.loads(ZH_SNAPSHOT.read_text(encoding="utf-8"))
 	OUT_DIR.mkdir(parents=True, exist_ok=True)
 
+	LEGACY_RU = ROOT / "src/utils/i18n/flat-locales/ru-RU.json"
+
 	ja = build_overlay("ja-JP", LEGACY_JA, "ja", template, chinese_template)
 	ko = build_overlay("ko-KR", LEGACY_KO, "ko", template, chinese_template)
+	ru = build_overlay("ru-RU", LEGACY_RU, "ru", template, chinese_template)
 
 	(OUT_DIR / "ja-JP.json").write_text(json.dumps(ja, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 	(OUT_DIR / "ko-KR.json").write_text(json.dumps(ko, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+	(OUT_DIR / "ru-RU.json").write_text(json.dumps(ru, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 	required = candidate_keys(template)
 	print(f"template curated candidates: {len(required)}")
 	print(f"ja overlay: {len(ja)} ({len(ja) / len(required) * 100:.1f}% coverage)")
 	print(f"ko overlay: {len(ko)} ({len(ko) / len(required) * 100:.1f}% coverage)")
+	print(f"ru overlay: {len(ru)} ({len(ru) / len(required) * 100:.1f}% coverage)")
 
 
 if __name__ == "__main__":

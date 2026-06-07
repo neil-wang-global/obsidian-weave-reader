@@ -437,7 +437,7 @@ describe('EpubStorageService', () => {
     expect(files.has(LOCAL_EPUB_DATA_PATH)).toBe(false);
   });
 
-  it('stores reading progress in unified local epub data without rewriting books.json', async () => {
+  it('stores reading progress in the per-book bookmark markdown file without rewriting books.json', async () => {
     const booksPath = `${SYNC_EPUB_ROOT}/books.json`;
     const { app, files, writes } = createMemoryApp(
       {
@@ -463,6 +463,12 @@ describe('EpubStorageService', () => {
     expect(files.has(booksPath)).toBe(false);
     expect(progress?.percent).toBe(66);
     expect(writes).not.toContain(booksPath);
+    const bookmarkFile = Array.from(files.keys()).find((path) =>
+      path.includes('weave/epub-bookmarks/') && path.endsWith('.md')
+    );
+    expect(bookmarkFile).toBeTruthy();
+    expect(files.get(bookmarkFile || '') || '').toContain('readingState:');
+    expect(files.get(bookmarkFile || '') || '').toContain('percent: 66');
   });
 
   it('marks and clears book completion without rewriting locator percent', async () => {
@@ -521,37 +527,40 @@ describe('EpubStorageService', () => {
     expect(book?.readingStats.lastReadTime).toBe(999);
   });
 
-  it('stores and loads the manual last-open bookmark in the unified local epub data file', async () => {
-    const { app, files } = createMemoryApp();
+  it('stores and loads the manual last-open bookmark in the per-book bookmark markdown file', async () => {
+    const { app, files } = createMemoryApp(
+      {
+        [`${SYNC_EPUB_ROOT}/books.json`]: JSON.stringify({
+          'book-1': createBook(),
+        }),
+      },
+      ['Books/demo.epub']
+    );
     const service = new EpubStorageService(app);
 
     await service.saveLastOpenBookmark('book-1', {
       chapterIndex: 2,
-      cfi: 'epubcfi(/6/10!/4/2/6)',
+      cfi: '/6/10',
       percent: 61.5,
       title: '第三章',
       preview: '第三章',
       savedAt: 1710000000000,
     });
 
-    expect(readLocalEpubData(files).books['book-1'].lastOpenBookmark).toEqual({
-      chapterIndex: 2,
-      cfi: 'epubcfi(/6/10!/4/2/6)',
-      percent: 61.5,
-      title: '第三章',
-      preview: '第三章',
-      savedAt: 1710000000000,
-    });
+    const bookmarkFile = Array.from(files.keys()).find((path) =>
+      path.includes('weave/epub-bookmarks/') && path.endsWith('.md')
+    );
+    expect(bookmarkFile).toBeTruthy();
+    const bookmarkContent = files.get(bookmarkFile || '') || '';
+    expect(bookmarkContent).toContain('readingState:');
+    expect(bookmarkContent).toContain('/6/10');
+    expect(readLocalEpubData(files).books?.['book-1']?.lastOpenBookmark).toBeUndefined();
 
     const restored = await service.loadLastOpenBookmark('book-1');
-    expect(restored).toEqual({
-      chapterIndex: 2,
-      cfi: 'epubcfi(/6/10!/4/2/6)',
-      percent: 61.5,
-      title: '第三章',
-      preview: '第三章',
-      savedAt: 1710000000000,
-    });
+    expect(restored?.cfi).toBe('/6/10');
+    expect(restored?.percent).toBe(61.5);
+    expect(restored?.chapterIndex).toBe(2);
+    expect(restored?.savedAt).toBe(1710000000000);
   });
 
   it('loads the manual last-open bookmark from the legacy sync path when local state is absent', async () => {

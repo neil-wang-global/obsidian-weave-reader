@@ -1,32 +1,19 @@
 import type { SupportedLanguage } from "./types";
 
-/** Keys that must have a curated ja/ko overlay (never rely on accidental MT). */
+/** Keys that must have a curated ja/ko/ru overlay (never rely on accidental MT). */
 export const CURATED_OVERLAY_REQUIRED_PREFIXES = [
-	"epub.premium.",
-	"epub.settings.license.",
-	"epub.settings.tabs.",
-	"epub.settings.groups.",
-	"epub.settings.notifications.",
-	"epub.settings.basic.",
-	"epub.errors.",
-	"epub.common.",
-	"epub.plainText.",
-	"epub.reader.tutorial.",
-	"epub.reader.readingReference",
-	"epub.bookshelf.importModal.",
-	"epub.bookshelf.bookDeleteModal.",
-	"epub.bookshelf.bookInfoModal.",
-	"epub.bookshelf.rename.",
-	"views.epubView.emptyState.",
-	"views.epubView.notice.readingReference",
-	"views.epubView.label.readingReference",
-	"commands.openEpubReader",
-	"notifications.error.openFailed",
+	"views.",
+	"commands.",
+	"notifications.",
+	"epub.",
 ] as const;
 
 const CHINESE_CHAR_PATTERN = /[\u3400-\u9fff]/;
 const JAPANESE_KANA_PATTERN = /[\u3040-\u30ff]/;
 const KOREAN_HANGUL_PATTERN = /[\uac00-\ud7af]/;
+const RUSSIAN_CYRILLIC_PATTERN = /[\u0400-\u04FF]/;
+
+export type CuratedOverlayLanguage = "ja-JP" | "ko-KR" | "ru-RU";
 
 export function listCuratedOverlayCandidateKeys(template: Record<string, string>): string[] {
 	return Object.keys(template)
@@ -45,7 +32,7 @@ export function containsChineseCharacters(value: string): boolean {
 }
 
 export function isAcceptableCuratedTranslation(
-	language: "ja-JP" | "ko-KR",
+	language: CuratedOverlayLanguage,
 	value: string,
 	english: string,
 	chinese?: string
@@ -69,6 +56,13 @@ export function isAcceptableCuratedTranslation(
 		return !/^[A-Za-z0-9\s\p{P}]+$/u.test(trimmed);
 	}
 
+	if (language === "ru-RU") {
+		if (chinese && trimmed === chinese) {
+			return false;
+		}
+		return RUSSIAN_CYRILLIC_PATTERN.test(trimmed);
+	}
+
 	if (containsChineseCharacters(trimmed) && !KOREAN_HANGUL_PATTERN.test(trimmed)) {
 		return false;
 	}
@@ -87,7 +81,7 @@ function hasJapaneseTypographicSignals(value: string): boolean {
 }
 
 export function validateCuratedOverlay(
-	language: "ja-JP" | "ko-KR",
+	language: CuratedOverlayLanguage,
 	overlay: Record<string, string>,
 	englishTemplate: Record<string, string>
 ): string[] {
@@ -139,6 +133,9 @@ export function assertOverlayDoesNotCopyChinese(
 				return (
 					!JAPANESE_KANA_PATTERN.test(value) && !hasJapaneseTypographicSignals(value)
 				);
+			}
+			if (language === "ru-RU") {
+				return !RUSSIAN_CYRILLIC_PATTERN.test(value);
 			}
 			return true;
 		})

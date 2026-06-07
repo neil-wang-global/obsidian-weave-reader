@@ -164,6 +164,13 @@ export interface ReaderParagraphLocation {
 	currentIndex: number;
 }
 
+export interface ReaderRandomParagraphPick {
+	paragraph: ReaderParagraph;
+	chapterIndex: number;
+	chapterParagraphs: ReaderParagraph[];
+	paragraphIndex: number;
+}
+
 export interface ReaderParagraphSelectionResolution {
 	cfiRange: string;
 	text: string;
@@ -251,6 +258,9 @@ export interface EpubReaderEngine {
 		preferredParagraphId?: string;
 		preferredIndex?: number;
 	}): Promise<ReaderParagraphLocation | null>;
+	pickRandomParagraph?(options?: {
+		excludeParagraphId?: string;
+	}): Promise<ReaderRandomParagraphPick | null>;
 	hydrateReaderParagraph?(paragraphId: string): Promise<ReaderParagraph | null>;
 	resolveParagraphSelection?(
 		paragraphId: string,

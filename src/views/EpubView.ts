@@ -33,7 +33,7 @@ import {
 } from "../services/navigation/navigation-intent";
 import type { CanvasViewLike, WorkspaceLeafWithGroup } from "../types/obsidian-extensions";
 import { getBookSessionManager } from "../services/epub/session/book-session-manager-access";
-import { i18n, syncI18nWithObsidianLanguage } from "../utils/i18n";
+import { i18n, syncI18nLanguage } from "../utils/i18n";
 import { logger } from "../utils/logger";
 import { getViewSurfaceTokens } from "../utils/view-location-utils";
 import type { ViewSurfaceTokens } from "../utils/view-location-utils";
@@ -141,6 +141,7 @@ export class EpubView extends ItemView {
 		canMarkIRResumePoint?: () => boolean;
 		markIRResumePoint?: (event?: MouseEvent) => Promise<void>;
 		exportCurrentChapterToMarkdown?: () => Promise<void>;
+		exportCurrentChapterHighlightsToMarkdown?: () => Promise<void>;
 		exportBookHighlightsToMarkdown?: (event?: MouseEvent) => Promise<void>;
 		getExcerptSettings?: () => EpubExcerptSettings;
 		updateExcerptSettings?: (patch: Partial<EpubExcerptSettings>) => Promise<void>;
@@ -508,7 +509,7 @@ export class EpubView extends ItemView {
 	}
 
 	onPaneMenu(menu: Menu, source: string): void {
-		syncI18nWithObsidianLanguage();
+		syncI18nLanguage();
 		super.onPaneMenu(menu, source);
 
 		const excerptSettings = this.actionHandlers.getExcerptSettings?.();
@@ -744,96 +745,81 @@ export class EpubView extends ItemView {
 				});
 			}
 
-			if (this.canUseReadingReference()) {
-				subMenu.addItem((item) => {
-					item.setTitle(this.t("views.epubView.menu.topSticker"));
-					item.setIcon("bookmark");
-					const stickerMenu = this.resolveMenuSubmenu(item, subMenu);
-					const topStickerVisible = readerSettings.showTopSticker !== false;
+			subMenu.addItem((item) => {
+				item.setTitle(this.t("views.epubView.menu.topSticker"));
+				item.setIcon("bookmark");
+				const stickerMenu = this.resolveMenuSubmenu(item, subMenu);
+				const topStickerVisible = readerSettings.showTopSticker !== false;
 
-					stickerMenu.addItem((subItem) => {
-						subItem.setTitle(this.t("views.epubView.menu.hidden"));
-						subItem.setChecked(!topStickerVisible);
-						subItem.onClick(() => {
-							if (!topStickerVisible) {
-								return;
-							}
-							void this.actionHandlers.updateReaderSettings?.({
-								showTopSticker: false,
-							});
-						});
-					});
-
-					stickerMenu.addSeparator();
-
-					stickerMenu.addItem((subItem) => {
-						subItem.setTitle(this.t("views.epubView.menu.auto"));
-						subItem.setChecked(topStickerVisible && readerSettings.topStickerLayout === "auto");
-						subItem.onClick(() => {
-							if (topStickerVisible && readerSettings.topStickerLayout === "auto") {
-								return;
-							}
-							void this.actionHandlers.updateReaderSettings?.({
-								showTopSticker: true,
-								topStickerLayout: "auto",
-							});
-						});
-					});
-
-					stickerMenu.addItem((subItem) => {
-						subItem.setTitle(this.t("views.epubView.menu.inline"));
-						subItem.setChecked(topStickerVisible && readerSettings.topStickerLayout === "inline");
-						subItem.onClick(() => {
-							if (topStickerVisible && readerSettings.topStickerLayout === "inline") {
-								return;
-							}
-							void this.actionHandlers.updateReaderSettings?.({
-								showTopSticker: true,
-								topStickerLayout: "inline",
-							});
-						});
-					});
-
-					stickerMenu.addItem((subItem) => {
-						subItem.setTitle(this.t("views.epubView.menu.sidebar"));
-						subItem.setChecked(topStickerVisible && readerSettings.topStickerLayout === "sidebar");
-						subItem.onClick(() => {
-							if (topStickerVisible && readerSettings.topStickerLayout === "sidebar") {
-								return;
-							}
-							void this.actionHandlers.updateReaderSettings?.({
-								showTopSticker: true,
-								topStickerLayout: "sidebar",
-							});
-						});
-					});
-
-					stickerMenu.addSeparator();
-
-					stickerMenu.addItem((subItem) => {
-						subItem.setTitle(this.t("views.epubView.menu.topStickerWiggle"));
-						subItem.setChecked(readerSettings.topStickerWiggleEnabled !== false);
-						subItem.onClick(() => {
-							void this.actionHandlers.updateReaderSettings?.({
-								topStickerWiggleEnabled: readerSettings.topStickerWiggleEnabled === false,
-							});
+				stickerMenu.addItem((subItem) => {
+					subItem.setTitle(this.t("views.epubView.menu.hidden"));
+					subItem.setChecked(!topStickerVisible);
+					subItem.onClick(() => {
+						if (!topStickerVisible) {
+							return;
+						}
+						void this.actionHandlers.updateReaderSettings?.({
+							showTopSticker: false,
 						});
 					});
 				});
-			} else if (this.isPremiumFeaturePreviewEnabled()) {
-				subMenu.addItem((item) => {
-					item.setTitle(
-						this.getFeatureActionLabel(
-							this.t("views.epubView.menu.topSticker"),
-							PREMIUM_FEATURES.EPUB_READING_REFERENCE
-						)
-					);
-					item.setIcon("bookmark");
-					item.onClick(() => {
-						this.showPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_READING_REFERENCE);
+
+				stickerMenu.addSeparator();
+
+				stickerMenu.addItem((subItem) => {
+					subItem.setTitle(this.t("views.epubView.menu.auto"));
+					subItem.setChecked(topStickerVisible && readerSettings.topStickerLayout === "auto");
+					subItem.onClick(() => {
+						if (topStickerVisible && readerSettings.topStickerLayout === "auto") {
+							return;
+						}
+						void this.actionHandlers.updateReaderSettings?.({
+							showTopSticker: true,
+							topStickerLayout: "auto",
+						});
 					});
 				});
-			}
+
+				stickerMenu.addItem((subItem) => {
+					subItem.setTitle(this.t("views.epubView.menu.inline"));
+					subItem.setChecked(topStickerVisible && readerSettings.topStickerLayout === "inline");
+					subItem.onClick(() => {
+						if (topStickerVisible && readerSettings.topStickerLayout === "inline") {
+							return;
+						}
+						void this.actionHandlers.updateReaderSettings?.({
+							showTopSticker: true,
+							topStickerLayout: "inline",
+						});
+					});
+				});
+
+				stickerMenu.addItem((subItem) => {
+					subItem.setTitle(this.t("views.epubView.menu.sidebar"));
+					subItem.setChecked(topStickerVisible && readerSettings.topStickerLayout === "sidebar");
+					subItem.onClick(() => {
+						if (topStickerVisible && readerSettings.topStickerLayout === "sidebar") {
+							return;
+						}
+						void this.actionHandlers.updateReaderSettings?.({
+							showTopSticker: true,
+							topStickerLayout: "sidebar",
+						});
+					});
+				});
+
+				stickerMenu.addSeparator();
+
+				stickerMenu.addItem((subItem) => {
+					subItem.setTitle(this.t("views.epubView.menu.topStickerWiggle"));
+					subItem.setChecked(readerSettings.topStickerWiggleEnabled !== false);
+					subItem.onClick(() => {
+						void this.actionHandlers.updateReaderSettings?.({
+							topStickerWiggleEnabled: readerSettings.topStickerWiggleEnabled === false,
+						});
+					});
+				});
+			});
 		});
 	}
 
@@ -1092,7 +1078,8 @@ export class EpubView extends ItemView {
 	private appendExportPaneMenu(menu: Menu): void {
 		const hasExport =
 			Boolean(this.actionHandlers.exportBookHighlightsToMarkdown) ||
-			Boolean(this.actionHandlers.exportCurrentChapterToMarkdown);
+			Boolean(this.actionHandlers.exportCurrentChapterToMarkdown) ||
+			Boolean(this.actionHandlers.exportCurrentChapterHighlightsToMarkdown);
 		if (!hasExport) {
 			return;
 		}
@@ -1117,6 +1104,16 @@ export class EpubView extends ItemView {
 					item.setIcon("file-text");
 					item.onClick(() => {
 						void this.actionHandlers.exportCurrentChapterToMarkdown?.();
+					});
+				});
+			}
+
+			if (this.actionHandlers.exportCurrentChapterHighlightsToMarkdown) {
+				subMenu.addItem((item) => {
+					item.setTitle(this.t("views.epubView.menu.exportCurrentChapterHighlights"));
+					item.setIcon("notebook-pen");
+					item.onClick(() => {
+						void this.actionHandlers.exportCurrentChapterHighlightsToMarkdown?.();
 					});
 				});
 			}
@@ -1180,7 +1177,7 @@ export class EpubView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
-		syncI18nWithObsidianLanguage();
+		syncI18nLanguage();
 		this.isOpen = true;
 		this.toolbarHandlersReady = false;
 		this.contentEl.empty();

@@ -30,6 +30,7 @@
     availableCommentStates?: string[];
     availableNoteTypes?: string[];
     availableHighlightColors?: string[];
+    availableChapters?: string[];
     availableStates?: string[];
     availableAccuracies?: string[];
     availableAttemptThresholds?: number[];
@@ -57,6 +58,7 @@
     availableCommentStates = [],
     availableNoteTypes = [],
     availableHighlightColors = [],
+    availableChapters = [],
     availableStates = [],
     availableAccuracies = [],
     availableAttemptThresholds = [],
@@ -94,6 +96,7 @@
     { prefix: 'comment:', label: t('epub.globalSidebar.searchUi.highlightCommentOption'), afterInsert: () => showCommentSuggestions() },
     { prefix: 'type:', label: t('epub.globalSidebar.searchUi.highlightTypeOption'), afterInsert: () => showNoteTypeSuggestions() },
     { prefix: 'color:', label: t('epub.globalSidebar.searchUi.highlightColorOption'), afterInsert: () => showHighlightColorSuggestions() },
+    { prefix: 'chapter:', label: t('epub.globalSidebar.searchUi.highlightChapterOption'), afterInsert: () => showChapterSuggestions() },
     { prefix: 'created:', label: t('epub.globalSidebar.searchUi.highlightCreatedOption'), afterInsert: () => showDateSuggestions('created') },
   ]);
 
@@ -247,6 +250,8 @@
       showCommentSuggestions();
     } else if (lastWord.endsWith('color:')) {
       showHighlightColorSuggestions();
+    } else if (lastWord.endsWith('chapter:') && dataSource === 'epub-highlights') {
+      showChapterSuggestions();
     } else if (lastWord.endsWith('created:')) {
       showDateSuggestions('created');
     } else {
@@ -454,6 +459,38 @@
         });
       });
     });
+    showMenuSafe(menu);
+  }
+
+  function showChapterSuggestions() {
+    if (!containerRef || menuShown) return;
+    const menu = new Menu();
+    (menu as any).app = app;
+    menu.addItem((item) => {
+      item.setTitle(t('epub.globalSidebar.searchUi.chapterLabel'));
+      item.setDisabled(true);
+    });
+    menu.addItem((item) => {
+      item.setTitle(t('epub.globalSidebar.searchUi.currentChapterOption'));
+      item.onClick(() => {
+        replaceLastWord('@current');
+      });
+    });
+    if (availableChapters.length === 0) {
+      menu.addItem((item) => {
+        item.setTitle(t('epub.globalSidebar.searchUi.noChapter'));
+        item.setDisabled(true);
+      });
+    } else {
+      availableChapters.slice(0, 20).forEach((chapter) => {
+        menu.addItem((item) => {
+          item.setTitle(chapter);
+          item.onClick(() => {
+            replaceLastWord(`"${chapter}"`);
+          });
+        });
+      });
+    }
     showMenuSafe(menu);
   }
 

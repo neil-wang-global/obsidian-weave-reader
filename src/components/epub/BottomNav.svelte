@@ -174,7 +174,7 @@
 
 <div class="epub-bottom-nav" class:vertical>
 	<button
-		class="epub-nav-btn"
+		class="clickable-icon epub-nav-btn"
 		class:vertical
 		type="button"
 		title={getPrevLabel()}
@@ -196,7 +196,7 @@
 	>
 		{#if canJumpToPage()}
 			<button
-				class="epub-nav-status-trigger"
+				class="clickable-icon epub-nav-status-trigger"
 				type="button"
 				aria-haspopup="dialog"
 				aria-expanded={jumpPopoverOpen}
@@ -252,7 +252,7 @@
 					/>
 				</label>
 				<div class="epub-nav-jump-actions">
-					<button class="epub-nav-jump-btn" type="button" onclick={() => void submitJumpPage()} disabled={jumpSubmitting}>{t('epub.bottomNav.jumpAction')}</button>
+					<button class="clickable-icon epub-nav-jump-btn" type="button" onclick={() => void submitJumpPage()} disabled={jumpSubmitting}>{t('epub.bottomNav.jumpAction')}</button>
 				</div>
 			</div>
 		{/if}
@@ -273,7 +273,7 @@
 	{/if}
 
 	<button
-		class="epub-nav-btn"
+		class="clickable-icon epub-nav-btn"
 		class:vertical
 		type="button"
 		title={getNextLabel()}

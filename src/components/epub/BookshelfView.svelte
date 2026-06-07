@@ -527,8 +527,16 @@
                 }, 400);
         }
 
+        function isPersistableCoverUrl(coverUrl: string | null | undefined): coverUrl is string {
+                const normalizedCover = typeof coverUrl === 'string' ? coverUrl.trim() : '';
+                return Boolean(
+                        normalizedCover
+                        && !normalizedCover.startsWith('blob:')
+                );
+        }
+
         function cacheResolvedCover(filePath: string, coverUrl: string | null | undefined) {
-                const normalizedCover = typeof coverUrl === 'string' && coverUrl.trim() ? coverUrl : null;
+                const normalizedCover = isPersistableCoverUrl(coverUrl) ? coverUrl.trim() : null;
                 coverCache.set(filePath, normalizedCover);
 
                 if (normalizedCover) {

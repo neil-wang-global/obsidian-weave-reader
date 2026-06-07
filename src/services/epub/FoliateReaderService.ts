@@ -16,6 +16,7 @@ import type {
 	ReaderParagraph,
 	ReaderParagraphLocation,
 	ReaderParagraphSelectionResolution,
+	ReaderRandomParagraphPick,
 	ReaderRemainingTimeEstimate,
 	ReaderRenderOptions,
 	ReaderSelectionChange,
@@ -51,6 +52,10 @@ import {
 import { i18n } from "../../utils/i18n";
 import { logger } from "../../utils/logger";
 import { domInstanceOf } from "../../utils/dom-instance-of";
+import {
+	sanitizeLegacyAuthorColorAttributes,
+	stripInlineAuthorColorStyles,
+} from "../../utils/epub-author-color-sanitizer";
 import { UnifiedThemeManager } from "../../utils/theme-detection";
 import { installFoliateCustomElementGuard } from "../../utils/foliate-custom-element-guard";
 import { usesFoliateGenericBookLoader } from "./book-format";
@@ -60,7 +65,7 @@ import {
 } from "./FoliateVaultPublicationParser";
 import {
 	installDesktopFoliateIframeSandboxPatch,
-	installMobileBlobIframePatch,
+	installFoliateBlobIframePatch,
 } from "./foliate-runtime-patches";
 import { FootnotePreviewController, FootnotePreviewResolver } from "./footnote-preview";
 import { FoliateSessionGuard } from "./FoliateSessionGuard";
@@ -347,6 +352,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private currentSectionProgression = 0;
 	private paceHeartbeatTimer: ReturnType<typeof window.setInterval> | null = null;
 	private paceVisibilityCleanup: (() => void) | null = null;
+	private lastSyncedVisibleSectionKey = "";
+	private annotationSyncInFlight: Promise<void> | null = null;
+	private annotationSyncQueued = false;
+	private annotationSyncForceNext = false;
 	private static readonly PACE_HEARTBEAT_MS = PACE_HEARTBEAT_MS;
 	private static readonly PACE_IDLE_CUTOFF_MS = PACE_IDLE_CUTOFF_MS;
 
@@ -382,8 +391,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private async ensureFoliateViewRegistered(): Promise<void> {
 		installFoliateCustomElementGuard();
 		installDesktopFoliateIframeSandboxPatch();
-		installMobileBlobIframePatch((error) => {
-			logger.warn("[FoliateReaderService] Failed to resolve mobile blob iframe source:", error);
+		installFoliateBlobIframePatch((error) => {
+			logger.warn("[FoliateReaderService] Failed to resolve foliate blob iframe source:", error);
 		});
 		if (customElements.get("foliate-view")) {
 			return;
@@ -947,6 +956,60 @@ export class FoliateReaderService implements EpubReaderEngine {
 		};
 	}
 
+	async pickRandomParagraph(options?: {
+		excludeParagraphId?: string;
+	}): Promise<ReaderRandomParagraphPick | null> {
+		const chapterCount = Math.max(this.parser.getMetadata().chapterCount, 0);
+		if (chapterCount <= 0) {
+			return null;
+		}
+
+		const excludeParagraphId = String(options?.excludeParagraphId || "").trim();
+		const triedChapters = new Set<number>();
+		const maxAttempts = Math.min(chapterCount, 16);
+
+		for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+			let chapterIndex = Math.floor(Math.random() * chapterCount);
+			if (triedChapters.size < chapterCount) {
+				while (triedChapters.has(chapterIndex)) {
+					chapterIndex = Math.floor(Math.random() * chapterCount);
+				}
+			}
+			triedChapters.add(chapterIndex);
+
+			const chapterParagraphs = await this.getParagraphsForChapter(chapterIndex, {
+				includeHtml: false,
+			});
+			const eligible = chapterParagraphs.filter(
+				(paragraph) =>
+					String(paragraph.cfiRange || "").trim()
+					&& (!excludeParagraphId || paragraph.id !== excludeParagraphId)
+			);
+			const pool =
+				eligible.length > 0
+					? eligible
+					: chapterParagraphs.filter((paragraph) => String(paragraph.cfiRange || "").trim());
+			if (pool.length === 0) {
+				continue;
+			}
+
+			const paragraph = pool[Math.floor(Math.random() * pool.length)];
+			const paragraphIndex = chapterParagraphs.findIndex((item) => item.id === paragraph.id);
+			if (paragraphIndex < 0) {
+				continue;
+			}
+
+			return {
+				paragraph,
+				chapterIndex,
+				chapterParagraphs,
+				paragraphIndex,
+			};
+		}
+
+		return null;
+	}
+
 	async resolveParagraphSelection(
 		paragraphId: string,
 		startOffset: number,
@@ -1322,7 +1385,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 	async refreshHighlights(): Promise<void> {
 		this.invalidateParagraphPresentation();
-		await this.syncAnnotationsWithView();
+		await this.queueAnnotationSync(true);
 	}
 
 	async applyHighlights(highlights: ReaderHighlight[]): Promise<void> {
@@ -1407,7 +1470,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			(item) => this.normalizeLocationKey(item.cfiRange) !== cfiKey
 		);
 		this.invalidateParagraphPresentation();
-		void this.syncAnnotationsWithView();
+		void this.queueAnnotationSync(true);
 	}
 
 	destroy(): void {
@@ -1439,7 +1502,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.schedulePaginatedLayoutRecovery();
 		const positionOperationToken = this.sessionGuard.startPositionOperation();
 		void this.syncCurrentPositionFromTarget(target, undefined, positionOperationToken).finally(() => {
-			void this.refreshHighlights();
+			this.scheduleAnnotationSyncAfterRelocate();
 		});
 	};
 
@@ -1462,8 +1525,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.attachHighlightClickListeners(doc);
 		this.attachWheelListeners(doc);
 		this.renderedAnnotations.clear();
+		this.lastSyncedVisibleSectionKey = "";
 		this.schedulePaginatedLayoutRecovery();
-		void this.syncAnnotationsWithView();
+		void this.queueAnnotationSync(true);
 	};
 
 	private handleLinkEvent = (event: Event): void => {
@@ -2200,6 +2264,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (!mountPoint) {
 			return;
 		}
+		const colorScheme = this.getCurrentColorScheme();
+		doc.documentElement.setAttribute("data-weave-host-scheme", colorScheme);
+		this.sanitizeRuntimeAuthorColorOverrides(doc);
+
 		let styleElement = this.documentStyleElements.get(doc);
 		if (!styleElement || !styleElement.isConnected) {
 			styleElement = doc.createElement("style");
@@ -2208,7 +2276,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 			this.documentStyleElements.set(doc, styleElement);
 		}
 		styleElement.textContent = this.buildReaderStyles();
-		const colorScheme = this.getCurrentColorScheme();
+		mountPoint.appendChild(styleElement);
+
 		const background = this.getObsidianCSSVar("--background-primary", "rgb(255, 255, 255)");
 		const textColor = this.getObsidianCSSVar("--text-normal", "rgb(28, 29, 31)");
 		doc.documentElement.style.colorScheme = colorScheme;
@@ -2220,6 +2289,22 @@ export class FoliateReaderService implements EpubReaderEngine {
 			doc.body.style.color = textColor;
 		}
 		this.attachFootnotePreviewListeners(doc);
+	}
+
+	private sanitizeRuntimeAuthorColorOverrides(doc: Document): void {
+		sanitizeLegacyAuthorColorAttributes(doc);
+		for (const element of Array.from(doc.querySelectorAll("[style]"))) {
+			const style = element.getAttribute("style");
+			if (!style) {
+				continue;
+			}
+			const sanitized = stripInlineAuthorColorStyles(style);
+			if (sanitized) {
+				element.setAttribute("style", sanitized);
+			} else {
+				element.removeAttribute("style");
+			}
+		}
 	}
 
 	private async navigateViewWithFallback(
@@ -2562,7 +2647,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 		const totalPages = this.parser.getTotalPositions();
 		const currentPage = resolved.cfi
-			? (await this.parser.resolvePageNumber(resolved.cfi)) || (totalPages > 0 ? 1 : 0)
+			? this.parser.resolvePageNumberForResolvedTarget(resolved) || (totalPages > 0 ? 1 : 0)
 			: totalPages > 0
 			? 1
 			: 0;
@@ -5569,6 +5654,20 @@ export class FoliateReaderService implements EpubReaderEngine {
 		const horizontalPageMargin = `${
 			this.currentWidthMode === "edge" ? 0 : Math.max(0, Math.round(this.currentPageMargin))
 		}px`;
+		const darkModeTextSelectors =
+			"article, section, main, aside, header, footer, nav, p, div, span, li, dd, dt, blockquote, figcaption, td, th, caption, label, legend, h1, h2, h3, h4, h5, h6, em, strong, i, b, u, small, sub, sup, mark";
+		const darkModeOverrides =
+			colorScheme === "dark"
+				? `
+html[data-weave-host-scheme="dark"] body :is(${darkModeTextSelectors}) {
+	color: ${textColor} !important;
+	-webkit-text-fill-color: currentColor !important;
+	background-color: transparent !important;
+}
+html[data-weave-host-scheme="dark"] body :is(table, thead, tbody, tfoot, tr) {
+	background-color: transparent !important;
+}`
+				: "";
 
 		return `:root {
 	color-scheme: ${colorScheme};
@@ -5599,6 +5698,7 @@ html {
 	margin: 0 var(--weave-reader-page-margin-inline) !important;
 	text-rendering: optimizeLegibility;
 	font-kerning: normal;
+	-webkit-touch-callout: none;
 }
 body :is(article, section, main, aside, header, footer, nav, p, div, span, li, dd, dt, blockquote, figcaption, td, th, caption, label, legend) {
 	font-family: inherit !important;
@@ -5637,7 +5737,62 @@ body .weave-foliate-concealment {
 	fill: ${concealment.base};
 	stroke: ${concealment.border};
 	stroke-width: 1;
-}`;
+}${darkModeOverrides}`;
+	}
+
+	private getVisibleSectionKey(): string {
+		const visibleFrames = this.getVisibleFramesWithIndex();
+		if (!visibleFrames.length) {
+			return "";
+		}
+		return visibleFrames
+			.map((frame) => frame.index)
+			.sort((left, right) => left - right)
+			.join(",");
+	}
+
+	private scheduleAnnotationSyncAfterRelocate(): void {
+		const visibleKey = this.getVisibleSectionKey();
+		if (!this.annotationSyncForceNext && visibleKey === this.lastSyncedVisibleSectionKey) {
+			return;
+		}
+		void this.queueAnnotationSync(false);
+	}
+
+	private queueAnnotationSync(force = false): Promise<void> {
+		if (force) {
+			this.annotationSyncForceNext = true;
+		}
+		if (this.annotationSyncInFlight) {
+			this.annotationSyncQueued = true;
+			return this.annotationSyncInFlight;
+		}
+		this.annotationSyncInFlight = this.runQueuedAnnotationSync().finally(() => {
+			this.annotationSyncInFlight = null;
+			if (this.annotationSyncQueued) {
+				this.annotationSyncQueued = false;
+				void this.queueAnnotationSync(false);
+			}
+		});
+		return this.annotationSyncInFlight;
+	}
+
+	private async runQueuedAnnotationSync(): Promise<void> {
+		const force = this.annotationSyncForceNext;
+		this.annotationSyncForceNext = false;
+		const visibleKey = this.getVisibleSectionKey();
+		if (!force && visibleKey === this.lastSyncedVisibleSectionKey) {
+			return;
+		}
+		await this.syncAnnotationsWithView();
+		this.lastSyncedVisibleSectionKey = visibleKey;
+	}
+
+	private resetAnnotationSyncState(): void {
+		this.lastSyncedVisibleSectionKey = "";
+		this.annotationSyncQueued = false;
+		this.annotationSyncForceNext = false;
+		this.annotationSyncInFlight = null;
 	}
 
 	private async syncAnnotationsWithView(): Promise<void> {
@@ -6707,7 +6862,7 @@ body .weave-foliate-concealment {
 		}
 		this.temporaryHighlightDataMap.delete(key);
 		this.invalidateParagraphPresentation();
-		void this.syncAnnotationsWithView();
+		void this.queueAnnotationSync(true);
 	}
 
 	private dedupeHighlights(highlights: ReaderHighlight[]): ReaderHighlight[] {
@@ -7144,6 +7299,7 @@ body .weave-foliate-concealment {
 		this.foliateView = null;
 		this.renderContainer = null;
 		this.renderedAnnotations.clear();
+		this.resetAnnotationSyncState();
 		this.loadedDocumentSectionIndexes = new WeakMap<Document, number>();
 		this.lastSelectionByDocument = new WeakMap<Document, string>();
 
@@ -7203,6 +7359,7 @@ body .weave-foliate-concealment {
 		this.temporaryHighlightDataMap.clear();
 		this.savedHighlights = [];
 		this.renderedAnnotations.clear();
+		this.resetAnnotationSyncState();
 	}
 
 	private resetParagraphState(): void {

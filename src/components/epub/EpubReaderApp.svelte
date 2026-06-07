@@ -55,6 +55,10 @@
 		getReaderHighlightIdentityKey,
 		mergeReaderHighlightsByIdentity,
 	} from './useEpubHighlights';
+	import {
+		buildEpubDisplayHighlightSelectionKey,
+		type EpubDisplayHighlight,
+	} from '../../services/epub/EpubHighlightViewSnapshotService';
 	import { createEpubNavigationController } from './useEpubNavigation';
 	import { resolveReadingViewportLockTarget } from '../../utils/mobile-reading-viewport-lock';
 	import { buildEpubMarkdownLocateCandidates } from '../../services/ui/source-locate-candidates';
@@ -120,6 +124,7 @@
 			canMarkIRResumePoint: () => boolean;
 			markIRResumePoint: (event?: MouseEvent) => Promise<void>;
 			exportCurrentChapterToMarkdown?: () => Promise<void>;
+			exportCurrentChapterHighlightsToMarkdown?: () => Promise<void>;
 			exportBookHighlightsToMarkdown?: (event?: MouseEvent) => Promise<void>;
 			getExcerptSettings: () => EpubExcerptSettings;
 			updateExcerptSettings: (patch: Partial<EpubExcerptSettings>) => Promise<void>;
@@ -257,6 +262,13 @@
 	let paragraphModeSuppressReactiveRefresh = 0;
 	let paragraphModeLastNavigationAt = 0;
 	let paragraphModePersistTimer: ReturnType<typeof setTimeout> | null = null;
+	let paragraphModeDetachedSession = $state(false);
+	let paragraphModeDetachedSnapshot = $state<{
+		readingPosition: ReadingPosition;
+		paragraphId?: string;
+		paragraphIndex?: number;
+		paragraphTextPreview?: string;
+	} | null>(null);
 	const PARAGRAPH_MODE_PERSIST_DEBOUNCE_MS = 1400;
 	const PARAGRAPH_MODE_REACTIVE_REFRESH_COOLDOWN_MS = 450;
 	let rootEl = $state<HTMLDivElement | null>(null);
@@ -312,6 +324,11 @@
 	let componentDisposed = false;
 	let activeBookLoadToken = 0;
 	let remainingReadingTimeRequestToken = 0;
+	let remainingReadingTimeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+	let readerStoreSyncTimer: ReturnType<typeof setTimeout> | null = null;
+	let pendingReaderStorePatch: Record<string, unknown> = {};
+	const REMAINING_READING_TIME_DEBOUNCE_MS = 4000;
+	const READER_STORE_SYNC_MS = 350;
 
 	function icon(node: HTMLElement, name: string) {
 		setIcon(node, name);
@@ -573,6 +590,9 @@
 	async function persistParagraphModeReadingProgress(
 		location: { paragraphs: ReaderParagraph[]; currentIndex: number } | null = paragraphModeLocation
 	): Promise<void> {
+		if (paragraphModeDetachedSession) {
+			return;
+		}
 		await persistParagraphModeReadingPositionFromLocation(location);
 		const currentBook = book;
 		if (!currentBook?.id || !hasReadingProgressCapability()) {
@@ -621,6 +641,100 @@
 		}
 	}
 
+	function clearParagraphModeDetachedSession(): void {
+		paragraphModeDetachedSession = false;
+		paragraphModeDetachedSnapshot = null;
+	}
+
+	async function beginParagraphModeDetachedSession(): Promise<void> {
+		const currentBook = book;
+		if (!currentBook || paragraphModeDetachedSession) {
+			return;
+		}
+		if (paragraphModePersistTimer) {
+			clearTimeout(paragraphModePersistTimer);
+			paragraphModePersistTimer = null;
+			await persistParagraphModeReadingProgress();
+		}
+		const activeLocation = paragraphModeLocation;
+		const activeIndex = activeLocation?.currentIndex ?? 0;
+		const activeParagraph = activeLocation?.paragraphs?.[activeIndex];
+		const livePosition = readerReady ? readerService.getCurrentPosition() : currentBook.currentPosition;
+		const readingPosition: ReadingPosition = {
+			chapterIndex:
+				typeof livePosition?.chapterIndex === 'number'
+					? livePosition.chapterIndex
+					: currentBook.currentPosition?.chapterIndex || 0,
+			cfi: String(livePosition?.cfi || currentBook.currentPosition?.cfi || '').trim(),
+			percent:
+				typeof livePosition?.percent === 'number' && Number.isFinite(livePosition.percent)
+					? livePosition.percent
+					: currentBook.currentPosition?.percent || 0,
+		};
+		if (!readingPosition.cfi) {
+			return;
+		}
+		paragraphModeDetachedSnapshot = {
+			readingPosition,
+			paragraphId: activeParagraph?.id,
+			paragraphIndex: activeIndex,
+			paragraphTextPreview: activeParagraph?.text.slice(0, 120),
+		};
+		paragraphModeDetachedSession = true;
+	}
+
+	async function restoreParagraphModeDetachedSnapshot(
+		snapshot: {
+			readingPosition: ReadingPosition;
+			paragraphId?: string;
+			paragraphIndex?: number;
+			paragraphTextPreview?: string;
+		} | null = paragraphModeDetachedSnapshot
+	): Promise<void> {
+		if (!snapshot?.readingPosition?.cfi) {
+			return;
+		}
+		try {
+			await readerService.goToLocation(snapshot.readingPosition.cfi);
+		} catch (error) {
+			logger.warn('[EpubReaderApp] Failed to restore reading position after detached paragraph session:', error);
+		}
+	}
+
+	async function showParagraphModeDetachedExitAnchor(
+		snapshot: {
+			readingPosition: ReadingPosition;
+			paragraphTextPreview?: string;
+		}
+	): Promise<void> {
+		if (!snapshot.readingPosition?.cfi || typeof readerService.navigateAndHighlight !== 'function') {
+			return;
+		}
+		const anchorText = String(snapshot.paragraphTextPreview || '').trim();
+		try {
+			await readerService.navigateAndHighlight({
+				cfi: snapshot.readingPosition.cfi,
+				text: anchorText || undefined,
+				flashStyle: 'highlight',
+			});
+			window.setTimeout(() => {
+				const rect = readerService.getNavigationTargetRect?.({
+					cfi: snapshot.readingPosition.cfi,
+					text: anchorText || undefined,
+				});
+				if (rect) {
+					sourceLocateOverlay.showAtRect(rect, {
+						label: t('epub.reader.paragraphMode.exitAnchor'),
+						icon: 'bookmark',
+						durationMs: 3200,
+					});
+				}
+			}, 80);
+		} catch (error) {
+			logger.warn('[EpubReaderApp] Failed to show detached paragraph mode exit anchor:', error);
+		}
+	}
+
 	async function exitParagraphModeToMainReader(options?: {
 		persist?: boolean;
 		disableSetting?: boolean;
@@ -630,7 +744,9 @@
 		const activeLocation = paragraphModeLocation;
 		const activeIndex = activeLocation?.currentIndex ?? 0;
 		const activeParagraph = activeLocation?.paragraphs?.[activeIndex];
-		const shouldPersist = options?.persist !== false && Boolean(activeParagraph);
+		const detachedSnapshot = paragraphModeDetachedSnapshot;
+		const wasDetachedSession = paragraphModeDetachedSession;
+		const shouldPersist = options?.persist !== false && Boolean(activeParagraph) && !wasDetachedSession;
 		const shouldDisableSetting = options?.disableSetting !== false;
 		const shouldShowExitAnchor = options?.showExitAnchor !== false;
 		const shouldNotifySaved = options?.notifySaved !== false;
@@ -645,13 +761,29 @@
 		clearParagraphModeSelection();
 		paragraphModeLocation = null;
 		paragraphModeAnchorParagraphId = '';
+		clearParagraphModeDetachedSession();
 		await setParagraphModeImmersive(false);
 
-		if (!shouldPersist && !shouldShowExitAnchor) {
+		if (!shouldPersist && !shouldShowExitAnchor && !wasDetachedSession) {
 			return;
 		}
 
 		void (async () => {
+			if (wasDetachedSession && detachedSnapshot) {
+				try {
+					if (paragraphModePersistTimer) {
+						clearTimeout(paragraphModePersistTimer);
+						paragraphModePersistTimer = null;
+					}
+					await restoreParagraphModeDetachedSnapshot(detachedSnapshot);
+					if (shouldShowExitAnchor) {
+						await showParagraphModeDetachedExitAnchor(detachedSnapshot);
+					}
+				} catch (error) {
+					logger.warn('[EpubReaderApp] Failed to restore detached paragraph mode reading position on exit:', error);
+				}
+				return;
+			}
 			if (shouldPersist && activeLocation) {
 				try {
 					if (paragraphModePersistTimer) {
@@ -744,6 +876,9 @@
 	}
 
 	function scheduleParagraphModePersist(): void {
+		if (paragraphModeDetachedSession) {
+			return;
+		}
 		if (paragraphModePersistTimer) {
 			clearTimeout(paragraphModePersistTimer);
 		}
@@ -816,7 +951,7 @@
 			}
 			paragraphModeLocation = location;
 			updateParagraphModeAnchorParagraphId(location);
-			if (options?.persist !== false) {
+			if (options?.persist !== false && !paragraphModeDetachedSession) {
 				scheduleParagraphModePersist();
 			}
 		} finally {
@@ -886,6 +1021,55 @@
 		await updateReaderSettings({
 			paragraphModeTransitionStyle: nextStyle,
 		});
+	}
+
+	async function navigateToRandomParagraph(): Promise<void> {
+		if (!settings.paragraphModeEnabled || paragraphModeBusy || !readerReady) {
+			return;
+		}
+		if (typeof readerService.pickRandomParagraph !== 'function') {
+			return;
+		}
+		const shouldStartDetachedSession = !paragraphModeDetachedSession;
+		if (shouldStartDetachedSession) {
+			await beginParagraphModeDetachedSession();
+			if (!paragraphModeDetachedSession) {
+				return;
+			}
+		}
+		const currentParagraph = paragraphModeLocation?.paragraphs?.[paragraphModeLocation.currentIndex];
+		const pick = await readerService.pickRandomParagraph({
+			excludeParagraphId: currentParagraph?.id,
+		});
+		if (!pick?.paragraph?.cfiRange) {
+			if (shouldStartDetachedSession) {
+				clearParagraphModeDetachedSession();
+			}
+			showTransientStatus(t('epub.reader.paragraphMode.randomReadingUnavailable'), 2200);
+			return;
+		}
+
+		paragraphModeBusy = true;
+		paragraphModeSuppressReactiveRefresh += 1;
+		try {
+			clearParagraphModeSelection();
+			applyParagraphModeIndex(
+				{ paragraphs: pick.chapterParagraphs, currentIndex: pick.paragraphIndex },
+				pick.paragraphIndex
+			);
+			void hydrateParagraphModeActiveParagraph(pick.paragraphIndex);
+			try {
+				await syncParagraphModeAnchor(pick.paragraph.cfiRange);
+			} catch (error) {
+				logger.warn('[EpubReaderApp] Failed to navigate to random paragraph:', error);
+				return;
+			}
+			await refreshParagraphModeLocation(pick.paragraphIndex, pick.paragraph.id, { persist: false });
+		} finally {
+			paragraphModeLastNavigationAt = Date.now();
+			paragraphModeSuppressReactiveRefresh = Math.max(0, paragraphModeSuppressReactiveRefresh - 1);
+			paragraphModeBusy = false;
+		}
 	}
 
 	async function navigateParagraphRelative(direction: -1 | 1): Promise<void> {
@@ -1162,6 +1346,53 @@
 		sessionReadingStartPercent = typeof value === 'number' && Number.isFinite(value)
 			? Math.max(0, value)
 			: null;
+	}
+
+	function clearRemainingReadingTimeDebounceTimer() {
+		if (remainingReadingTimeDebounceTimer) {
+			clearTimeout(remainingReadingTimeDebounceTimer);
+			remainingReadingTimeDebounceTimer = null;
+		}
+	}
+
+	function scheduleRemainingReadingTimeEstimateRefresh() {
+		clearRemainingReadingTimeDebounceTimer();
+		remainingReadingTimeDebounceTimer = setTimeout(() => {
+			remainingReadingTimeDebounceTimer = null;
+			void refreshRemainingReadingTimeEstimate();
+		}, REMAINING_READING_TIME_DEBOUNCE_MS);
+	}
+
+	function clearReaderStoreSyncTimer() {
+		if (readerStoreSyncTimer) {
+			clearTimeout(readerStoreSyncTimer);
+			readerStoreSyncTimer = null;
+		}
+		pendingReaderStorePatch = {};
+	}
+
+	function flushReaderStoreSync() {
+		clearReaderStoreSyncTimer();
+		const patch = pendingReaderStorePatch;
+		pendingReaderStorePatch = {};
+		if (Object.keys(patch).length > 0) {
+			epubActiveDocumentStore.setSharedState(patch);
+		}
+	}
+
+	function scheduleReaderStoreSync(patch: Record<string, unknown>) {
+		pendingReaderStorePatch = { ...pendingReaderStorePatch, ...patch };
+		if (readerStoreSyncTimer) {
+			return;
+		}
+		readerStoreSyncTimer = setTimeout(() => {
+			readerStoreSyncTimer = null;
+			const nextPatch = pendingReaderStorePatch;
+			pendingReaderStorePatch = {};
+			if (Object.keys(nextPatch).length > 0) {
+				epubActiveDocumentStore.setSharedState(nextPatch);
+			}
+		}, READER_STORE_SYNC_MS);
 	}
 
 	async function refreshRemainingReadingTimeEstimate() {
@@ -3195,6 +3426,111 @@
 			: buildBookHighlightsMarkdownTemplate1(highlights);
 	}
 
+	function buildReaderHighlightSelectionKey(highlight: ReaderHighlight): string {
+		return buildEpubDisplayHighlightSelectionKey({
+			cfiRange: highlight.cfiRange,
+			sourceRef: highlight.sourceRef,
+			sourceFile: highlight.sourceFile,
+			excerptId: highlight.excerptId,
+		});
+	}
+
+	function buildHighlightClickInfoFromDisplay(highlight: EpubDisplayHighlight): HighlightClickInfo {
+		const style =
+			highlight.noteTypeKey === 'underline' ||
+			highlight.noteTypeKey === 'strikethrough' ||
+			highlight.noteTypeKey === 'wavy'
+				? highlight.noteTypeKey
+				: undefined;
+		return {
+			cfiRange: highlight.cfiRange,
+			color: highlight.color,
+			style,
+			text: highlight.text,
+			commentText: highlight.commentText,
+			hasCommentDivider: highlight.hasCommentDivider,
+			sourceFile: highlight.sourceFile || '',
+			sourceRef: highlight.sourceRef,
+			excerptId: highlight.excerptId,
+			createdTime: highlight.createdTime,
+			presentation: 'highlight',
+			rect: { top: 0, left: 0, width: 0, height: 0 },
+		};
+	}
+
+	async function exportHighlightsBySelectionKeys(selectionKeys: string[]): Promise<void> {
+		try {
+			const plugin = getMarkdownExportHost();
+			if (!plugin?.exportEpubBookNotesToMarkdown) {
+				new Notice(t('epub.reader.exportMarkdownUnavailable'));
+				return;
+			}
+			if (!book) {
+				new Notice(t('epub.reader.bookNotReady'));
+				return;
+			}
+			if (!ensureBookNotesExportSelection()) {
+				new Notice(t('epub.reader.selectAtLeastOneExportType'));
+				return;
+			}
+
+			const keySet = new Set(selectionKeys);
+			const highlights = (await annotationService.collectAllHighlights(book.id, filePath, backlinkService))
+				.filter((highlight) => keySet.has(buildReaderHighlightSelectionKey(highlight)))
+				.filter(isHighlightSelectedForBookNotesExport);
+			if (highlights.length === 0) {
+				new Notice(t('epub.notes.noExportableSelection'));
+				return;
+			}
+
+			await plugin.exportEpubBookNotesToMarkdown({
+				filePath,
+				markdown: buildBookHighlightsMarkdown(highlights),
+				bookTitle: book.metadata.title,
+			});
+		} catch (error) {
+			logger.error('[EpubReaderApp] Failed to export selected highlights to markdown:', error);
+			new Notice(t('epub.reader.exportReadingNotesFailed'));
+		}
+	}
+
+	async function exportCurrentChapterHighlightsToMarkdown() {
+		try {
+			const plugin = getMarkdownExportHost();
+			if (!plugin?.exportEpubBookNotesToMarkdown) {
+				new Notice(t('epub.reader.exportMarkdownUnavailable'));
+				return;
+			}
+			if (!book) {
+				new Notice(t('epub.reader.bookNotReady'));
+				return;
+			}
+			if (!ensureBookNotesExportSelection()) {
+				new Notice(t('epub.reader.selectAtLeastOneExportType'));
+				return;
+			}
+
+			const chapterIndex = readerService.getCurrentChapterIndex();
+			const chapterTitle = readerService.getCurrentChapterTitle() || t('epub.reader.epubChapterDefaultTitle');
+			const highlights = (await annotationService.collectAllHighlights(book.id, filePath, backlinkService))
+				.filter((highlight) => getHighlightChapterIndex(highlight) === chapterIndex)
+				.filter(isHighlightSelectedForBookNotesExport);
+			if (highlights.length === 0) {
+				new Notice(t('epub.reader.noChapterExportableNotes'));
+				return;
+			}
+
+			await plugin.exportEpubBookNotesToMarkdown({
+				filePath,
+				markdown: buildBookHighlightsMarkdown(highlights),
+				bookTitle: `${book.metadata.title} - ${chapterTitle}`,
+			});
+		} catch (error) {
+			logger.error('[EpubReaderApp] Failed to export current chapter highlights to markdown:', error);
+			new Notice(t('epub.reader.exportReadingNotesFailed'));
+		}
+	}
+
 	async function exportBookHighlightsToMarkdown(event?: MouseEvent) {
 		try {
 			const plugin = getMarkdownExportHost();
@@ -3604,6 +3940,8 @@
 				excerptSettings,
 				highlightViewSnapshotService: canUseExcerptNotes ? highlightViewSnapshotService : null,
 				onDeleteBookmark: null,
+				onDeleteHighlight: null,
+				onExportHighlights: null,
 				onSettingsClick: showSettingsMenu,
 			});
 			return;
@@ -3628,6 +3966,8 @@
 			chapterHref: readerService.getCurrentChapterHref?.() || '',
 			paginationInfo,
 			onDeleteBookmark: deleteBookmarkById,
+			onDeleteHighlight: canUseExcerptNotes ? deleteDisplayHighlight : null,
+			onExportHighlights: canUseExcerptNotes ? exportHighlightsBySelectionKeys : null,
 			onNavigate: requestIRNavigation,
 			onSettingsClick: showSettingsMenu,
 			onSwitchBook,
@@ -3688,27 +4028,37 @@
 		return String(source.cfiRange || info.cfiRange || '').trim();
 	}
 
-	async function handleHighlightDelete(info: HighlightClickInfo) {
+	async function handleHighlightDelete(
+		info: HighlightClickInfo,
+		options?: { quiet?: boolean }
+	): Promise<boolean> {
+		const quiet = options?.quiet === true;
 		if (!hasExcerptNotesCapability()) {
-			return;
+			return false;
 		}
 		if (info.presentation === 'conceal') {
 			readerService.removeHighlight(info.cfiRange);
 			if (!book) {
-				new Notice(t('epub.reader.bookNotReady'));
-				return;
+				if (!quiet) {
+					new Notice(t('epub.reader.bookNotReady'));
+				}
+				return false;
 			}
 			await annotationService.deleteConcealedTextByCfi(book.id, info.cfiRange);
-			new Notice(t('epub.reader.hideTextRestored'));
+			if (!quiet) {
+				new Notice(t('epub.reader.hideTextRestored'));
+			}
 			highlightToolbarInfo = null;
 			void reloadHighlights();
-			return;
+			return true;
 		}
 		const source = await resolveHighlightSource(info);
 		if (!source?.sourceFile) {
-			new Notice(t('epub.reader.highlightSourcePending'));
+			if (!quiet) {
+				new Notice(t('epub.reader.highlightSourcePending'));
+			}
 			void reloadHighlights();
-			return;
+			return false;
 		}
 		const mutationCfiRange = resolveHighlightMutationCfi(info, source);
 
@@ -3731,17 +4081,21 @@
 			if (officialApiResult !== 'fallback') {
 				if (officialApiResult === 'success') {
 					readerService.removeHighlight(info.cfiRange);
-					new Notice(t('epub.reader.highlightDeleted'));
+					if (!quiet) {
+						new Notice(t('epub.reader.highlightDeleted'));
+					}
 					highlightToolbarInfo = null;
-				} else if (officialApiResult === 'failed') {
+				} else if (officialApiResult === 'failed' && !quiet) {
 					new Notice(t('epub.reader.highlightDeleteFailed'));
 				}
 				if (officialApiResult === 'success') {
 					reloadHighlightsAfterExcerptMutation(source.sourceFile);
-				} else if (officialApiResult !== 'cancelled') {
+					return true;
+				}
+				if (officialApiResult !== 'cancelled') {
 					void reloadHighlights({ invalidateCache: true });
 				}
-				return;
+				return false;
 			}
 		}
 
@@ -3783,7 +4137,7 @@
 
 				if (!choice) {
 					reloadHighlightsAfterExcerptMutation(source.sourceFile);
-					return;
+					return false;
 				}
 				cardDeletionMode = choice;
 			} else if (analysis?.matched) {
@@ -3801,13 +4155,22 @@
 		);
 		if (deleted) {
 			readerService.removeHighlight(info.cfiRange);
-			new Notice(t('epub.reader.highlightDeleted'));
+			if (!quiet) {
+				new Notice(t('epub.reader.highlightDeleted'));
+			}
 			highlightToolbarInfo = null;
 			reloadHighlightsAfterExcerptMutation(source.sourceFile);
-		} else {
-			new Notice(t('epub.reader.highlightDeleteFailed'));
-			reloadHighlightsAfterExcerptMutation(source.sourceFile);
+			return true;
 		}
+		if (!quiet) {
+			new Notice(t('epub.reader.highlightDeleteFailed'));
+		}
+		reloadHighlightsAfterExcerptMutation(source.sourceFile);
+		return false;
+	}
+
+	async function deleteDisplayHighlight(highlight: EpubDisplayHighlight, quiet = false): Promise<boolean> {
+		return handleHighlightDelete(buildHighlightClickInfoFromDisplay(highlight), { quiet });
 	}
 
 	async function deleteHighlightThroughOfficialAPI(
@@ -3977,9 +4340,9 @@
 	}
 
 	async function handleReferenceBadgeClick(infoOrCfi: HighlightClickInfo | string) {
-		if (!hasSourceLocationCapability()) {
+		if (!hasExcerptNotesCapability()) {
 			if (isPremiumFeaturePreviewEnabled()) {
-				openPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_SOURCE_LOCATION);
+				openPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
 			}
 			return;
 		}
@@ -4326,6 +4689,12 @@
 			} else {
 				publishSidebarHighlights(highlightsWithStats);
 			}
+
+			if (book) {
+				void bookmarkService.syncAnalytics(book, highlightsWithStats).catch((error) => {
+					logger.warn('[EpubReaderApp] Failed to sync bookmark analytics:', error);
+				});
+			}
 		} catch (_e) {
 			logger.warn('[EpubReaderApp] Failed to reload highlights:', _e);
 		} finally {
@@ -4617,6 +4986,9 @@
 			canMarkIRResumePoint: () => hasMarkIRResumePointCapability(),
 			markIRResumePoint,
 			exportCurrentChapterToMarkdown: hasChapterExportCapability() ? exportCurrentChapterToMarkdown : undefined,
+			exportCurrentChapterHighlightsToMarkdown: hasExcerptNotesCapability()
+				? exportCurrentChapterHighlightsToMarkdown
+				: undefined,
 			exportBookHighlightsToMarkdown: hasExcerptNotesCapability() ? exportBookHighlightsToMarkdown : undefined,
 			getExcerptSettings: () => excerptSettings,
 			updateExcerptSettings: applyAndPersistExcerptSettings,
@@ -4657,6 +5029,8 @@
 				clearTimeout(deferredHighlightReloadTimer);
 				deferredHighlightReloadTimer = null;
 			}
+			clearRemainingReadingTimeDebounceTimer();
+			flushReaderStoreSync();
 			if (rootEl) {
 				rootEl.removeEventListener('pointerdown', syncAsActiveEpubDocument);
 				rootEl.removeEventListener('focusin', syncAsActiveEpubDocument);
@@ -4703,8 +5077,6 @@
 		const _showTopSticker = settings.showTopSticker;
 		const _topStickerLayout = settings.topStickerLayout;
 		const _readingReferencePoint = readingReferencePoint?.cfi;
-		const _remainingBookMs = remainingReadingTime.bookMs;
-		const _remainingChapterMs = remainingReadingTime.chapterMs;
 		void _flowMode;
 		void _showScrolledSideNav;
 		void _widthMode;
@@ -4714,8 +5086,6 @@
 		void _showTopSticker;
 		void _topStickerLayout;
 		void _readingReferencePoint;
-		void _remainingBookMs;
-		void _remainingChapterMs;
 		untrack(() => {
 			setupScrolledNavMetricsObserver();
 			scheduleScrolledNavLayoutSync();
@@ -4793,15 +5163,15 @@
 			class="epub-reader-viewport"
 			bind:this={viewportEl}
 		>
+			{#if hasExcerptNotesCapability() && readerReady && highlightReloading}
+				<div class="epub-reader-highlight-loading-overlay">
+					<EpubLoadingState
+						variant="compact"
+						message={t('epub.reader.highlightLoadingHint')}
+					/>
+				</div>
+			{/if}
 			<div class="epub-content-wrapper">
-				{#if hasExcerptNotesCapability() && readerReady && highlightReloading}
-					<div class="epub-reader-highlight-loading-banner">
-						<EpubLoadingState
-							variant="compact"
-							message={t('epub.reader.highlightLoadingHint')}
-						/>
-					</div>
-				{/if}
 				<EpubReaderView
 					{app}
 					{filePath}
@@ -4816,30 +5186,34 @@
 					canUseExcerptNotes={hasExcerptNotesCapability()}
 					getReadingPositionAutoSaveConfig={getContinuousReadingPositionAutoSaveConfig}
 					isParagraphModeActive={() => settings.paragraphModeEnabled}
+					isParagraphModeProgressDetached={() => paragraphModeDetachedSession}
 					shouldSkipReadingProgressPersistOnRelocate={() =>
-						settings.paragraphModeEnabled
-						&& (
-							paragraphModeBusy
-							|| paragraphModeSuppressReactiveRefresh > 0
-							|| readerService.isParagraphAnchorSyncInFlight?.() === true
+						paragraphModeDetachedSession
+						|| (
+							settings.paragraphModeEnabled
+							&& (
+								paragraphModeBusy
+								|| paragraphModeSuppressReactiveRefresh > 0
+								|| readerService.isParagraphAnchorSyncInFlight?.() === true
+							)
 						)
 					}
 					onAutoReadingPositionSaved={syncReadingReferencePointFromAutoSave}
 					hasPendingNavigation={hasPendingBookLocate}
 					onProgressChange={(p) => {
 						syncReadingProgressDisplay(p);
-						epubActiveDocumentStore.setSharedState({
+						scheduleReaderStoreSync({
 							progress: hasReadingProgressCapability() ? readingProgress : 0,
 							chapterTitle: readerService.getCurrentChapterTitle(),
 							chapterHref: readerService.getCurrentChapterHref?.() || '',
 						});
 						scheduleScrolledNavLayoutSync();
-						void refreshRemainingReadingTimeEstimate();
+						scheduleRemainingReadingTimeEstimateRefresh();
 					}}
 					onPaginationChange={(info) => {
 						paginationInfo = info;
 						currentChapterIndex = readerService.getCurrentChapterIndex();
-						epubActiveDocumentStore.setSharedState({
+						scheduleReaderStoreSync({
 							paginationInfo: info,
 							chapterTitle: readerService.getCurrentChapterTitle(),
 							chapterHref: readerService.getCurrentChapterHref?.() || '',
@@ -4939,11 +5313,13 @@
 				surfaceStyle={settings.paragraphModeSurfaceStyle}
 				transitionStyle={settings.paragraphModeTransitionStyle}
 				immersive={paragraphModeImmersive}
+				randomReadingActive={paragraphModeDetachedSession}
 				currentIndex={paragraphModeLocation?.currentIndex || 0}
 				totalCount={paragraphModeLocation?.paragraphs?.length || 0}
 				onFontScaleChange={(fontScale) => void updateReaderSettings({ paragraphModeFontScale: fontScale })}
 				onSurfaceStyleChange={(surfaceStyle) => void updateReaderSettings({ paragraphModeSurfaceStyle: surfaceStyle })}
 				onTransitionStyleChange={setParagraphModeTransitionStyle}
+				onRandomParagraph={() => navigateToRandomParagraph()}
 				onPrev={() => navigateParagraphRelative(-1)}
 				onNext={() => navigateParagraphRelative(1)}
 				onFootnoteActivate={handleParagraphFootnoteActivate}
@@ -4959,6 +5335,7 @@
 
 			<EpubHighlightToolbar
 				readerService={readerService}
+				mobileDockBottomOffset={settings.paragraphModeEnabled ? paragraphModeNavBottomOffset : 0}
 				info={hasExcerptNotesCapability() ? highlightToolbarInfo : null}
 				canUseStyledExcerpts={hasStyledExcerptCapability()}
 				canUseSourceLocation={hasSourceLocationCapability()}
@@ -5106,27 +5483,27 @@
 						<div class="epub-settings-mode-group">
 							<button
 								type="button"
-							class="epub-settings-mode-btn"
+							class="clickable-icon epub-settings-mode-btn"
 							class:active={settings.widthMode === 'standard'}
 							disabled={settings.layoutMode === 'double'}
 							onclick={() => setReaderWidthMode('standard')}
 						>{t('epub.reader.typography.widthStandard')}</button>
 						<button
 							type="button"
-							class="epub-settings-mode-btn"
+							class="clickable-icon epub-settings-mode-btn"
 							class:active={settings.widthMode === 'full'}
 							disabled={settings.layoutMode === 'double'}
 							onclick={() => setReaderWidthMode('full')}
 						>{t('epub.reader.typography.widthWide')}</button>
 						<button
 							type="button"
-							class="epub-settings-mode-btn"
+							class="clickable-icon epub-settings-mode-btn"
 							class:active={settings.widthMode === 'fit'}
 							onclick={() => setReaderWidthMode('fit')}
 						>{t('epub.reader.typography.widthFull')}</button>
 						<button
 							type="button"
-							class="epub-settings-mode-btn"
+							class="clickable-icon epub-settings-mode-btn"
 							class:active={settings.widthMode === 'edge'}
 							disabled={settings.layoutMode === 'double'}
 							onclick={() => setReaderWidthMode('edge')}
@@ -5150,14 +5527,14 @@
 							{#if hasFootnotePreviewCapability()}
 								<button
 									type="button"
-									class="epub-settings-mode-btn"
+									class="clickable-icon epub-settings-mode-btn"
 									class:active={settings.footnoteClickAction === 'preview'}
 									onclick={() => setFootnoteClickAction('preview')}
 								>{t('epub.reader.typography.footnotePreview')}</button>
 							{/if}
 							<button
 								type="button"
-								class="epub-settings-mode-btn"
+								class="clickable-icon epub-settings-mode-btn"
 								class:active={settings.footnoteClickAction === 'navigate'}
 								onclick={() => setFootnoteClickAction('navigate')}
 							>{t('epub.reader.typography.footnoteNavigate')}</button>

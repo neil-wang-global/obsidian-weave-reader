@@ -4,11 +4,17 @@
 	import { PREMIUM_FEATURES } from '../../services/premium/PremiumFeatureGuard';
 	import { tr } from '../../utils/i18n';
 	import type { EpubReaderEngine, HighlightClickInfo } from '../../services/epub';
-	import { computeToolbarPosition, createEventBinder, isEventOutsideToolbar } from './toolbar-positioning';
+	import {
+		computeToolbarPosition,
+		createEventBinder,
+		isEventOutsideToolbar,
+		resolveMobileFloatingInsetBottom,
+	} from './toolbar-positioning';
 
 	interface Props {
 		info: HighlightClickInfo | null;
 		readerService: EpubReaderEngine;
+		mobileDockBottomOffset?: number;
 		canUseStyledExcerpts?: boolean;
 		canUseSourceLocation?: boolean;
 		showPremiumFeaturePreviewEnabled?: boolean;
@@ -27,6 +33,7 @@
 	let {
 		info,
 		readerService,
+		mobileDockBottomOffset = 0,
 		canUseStyledExcerpts = true,
 		canUseSourceLocation = true,
 		showPremiumFeaturePreviewEnabled = false,
@@ -167,6 +174,9 @@
 			toolbarWidth: toolbarEl.offsetWidth || 296,
 			toolbarHeight: toolbarEl.offsetHeight || 78,
 			mobile: isMobileToolbar,
+			insetBottom: isMobileToolbar
+				? resolveMobileFloatingInsetBottom(mobileDockBottomOffset)
+				: 0,
 		});
 
 		toolbarMode = position.mode;
@@ -248,15 +258,15 @@
 			<div class="highlight-main-row">
 				<div class="highlight-actions-shell">
 					<div class="toolbar-row actions-row highlight-actions-row concealment-actions">
-						<button class="action-item" onclick={() => onTemporarilyReveal(info)} title={t('epub.highlightToolbar.temporaryRevealTitle')}>
+						<button class="clickable-icon action-item" onclick={() => onTemporarilyReveal(info)} title={t('epub.highlightToolbar.temporaryRevealTitle')}>
 							<span class="action-icon" use:icon={'eye'}></span>
 							<span class="action-label">{t('epub.highlightToolbar.temporaryReveal')}</span>
 						</button>
-						<button class="action-item" onclick={() => onCopyText(info)} title={t('epub.highlightToolbar.copyHiddenTitle')}>
+						<button class="clickable-icon action-item" onclick={() => onCopyText(info)} title={t('epub.highlightToolbar.copyHiddenTitle')}>
 							<span class="action-icon" use:icon={'clipboard-copy'}></span>
 							<span class="action-label">{t('epub.highlightToolbar.copy')}</span>
 						</button>
-						<button class="action-item accent concealment-reset" onclick={() => onDelete(info)} title={t('epub.highlightToolbar.resetHiddenTitle')}>
+						<button class="clickable-icon action-item accent concealment-reset" onclick={() => onDelete(info)} title={t('epub.highlightToolbar.resetHiddenTitle')}>
 							<span class="action-icon" use:icon={'eye'}></span>
 							<span class="action-label">{t('epub.highlightToolbar.resetHidden')}</span>
 						</button>
@@ -282,13 +292,13 @@
 
 					<div class="highlight-style-shell">
 						<div class="toolbar-row highlight-style-row">
-							<button class="action-item icon-only style-action-item" class:accent={info.style === 'underline'} onclick={() => handleStyleToggle(info, 'underline')} title={t('epub.highlightToolbar.underline')} aria-label={t('epub.highlightToolbar.underline')}>
+							<button class="clickable-icon action-item icon-only style-action-item" class:accent={info.style === 'underline'} onclick={() => handleStyleToggle(info, 'underline')} title={t('epub.highlightToolbar.underline')} aria-label={t('epub.highlightToolbar.underline')}>
 								<span class="action-icon style-icon underline-style-icon" use:icon={'underline'}></span>
 							</button>
-							<button class="action-item icon-only style-action-item" class:accent={info.style === 'strikethrough'} onclick={() => handleStyleToggle(info, 'strikethrough')} title={t('epub.highlightToolbar.strikethrough')} aria-label={t('epub.highlightToolbar.strikethrough')}>
+							<button class="clickable-icon action-item icon-only style-action-item" class:accent={info.style === 'strikethrough'} onclick={() => handleStyleToggle(info, 'strikethrough')} title={t('epub.highlightToolbar.strikethrough')} aria-label={t('epub.highlightToolbar.strikethrough')}>
 								<span class="action-icon style-icon strikethrough-style-icon" use:icon={'strikethrough'}></span>
 							</button>
-							<button class="action-item icon-only style-action-item" class:accent={info.style === 'wavy'} onclick={() => handleStyleToggle(info, 'wavy')} title={t('epub.highlightToolbar.wavy')} aria-label={t('epub.highlightToolbar.wavy')}>
+							<button class="clickable-icon action-item icon-only style-action-item" class:accent={info.style === 'wavy'} onclick={() => handleStyleToggle(info, 'wavy')} title={t('epub.highlightToolbar.wavy')} aria-label={t('epub.highlightToolbar.wavy')}>
 								<span class="action-icon style-icon wavy-style-icon" use:icon={'pen-tool'}></span>
 							</button>
 						</div>
@@ -297,30 +307,30 @@
 
 				<div class="highlight-actions-shell">
 					<div class="toolbar-row actions-row highlight-actions-row">
-						<button class="action-item highlight-type-action" class:accent={!info.style} onclick={() => onChangeStyle(info, undefined)} title={t('epub.highlightToolbar.highlightTitle')} aria-label={t('epub.highlightToolbar.highlightTitle')}>
+						<button class="clickable-icon action-item highlight-type-action" class:accent={!info.style} onclick={() => onChangeStyle(info, undefined)} title={t('epub.highlightToolbar.highlightTitle')} aria-label={t('epub.highlightToolbar.highlightTitle')}>
 							<span class="action-icon highlight-style-icon" use:icon={'highlighter'}></span>
 							<span class="action-label">{t('epub.highlightToolbar.highlight')}</span>
 						</button>
-						<button class="action-item comment-action" class:accent={Boolean(info.hasCommentDivider)} onclick={() => onEditComment(info)} title={t('epub.highlightToolbar.commentTitle')} aria-label={t('epub.highlightToolbar.commentTitle')}>
+						<button class="clickable-icon action-item comment-action" class:accent={Boolean(info.hasCommentDivider)} onclick={() => onEditComment(info)} title={t('epub.highlightToolbar.commentTitle')} aria-label={t('epub.highlightToolbar.commentTitle')}>
 							<span class="action-icon" use:icon={'message-square'}></span>
 							<span class="action-label">{t('epub.highlightToolbar.comment')}</span>
 						</button>
 						{#if canUseSourceLocation || showPremiumFeaturePreviewEnabled}
-							<button class="action-item backlink-action" onclick={() => handleBacklinkAction(info)} title={t('epub.highlightToolbar.noteTitle')}>
+							<button class="clickable-icon action-item backlink-action" onclick={() => handleBacklinkAction(info)} title={t('epub.highlightToolbar.noteTitle')}>
 								<span class="action-icon" use:icon={'external-link'}></span>
 								<span class="action-label">{t('epub.highlightToolbar.note')}</span>
 							</button>
 						{/if}
-						<button class="action-item accent extract-action" onclick={() => onExtractToCard(info)} title={t('epub.highlightToolbar.createCardTitle')} aria-label={t('epub.highlightToolbar.createCardTitle')}>
+						<button class="clickable-icon action-item accent extract-action" onclick={() => onExtractToCard(info)} title={t('epub.highlightToolbar.createCardTitle')} aria-label={t('epub.highlightToolbar.createCardTitle')}>
 							<span class="action-icon" use:icon={'scissors'}></span>
 							<span class="action-label">{t('epub.highlightToolbar.createCard')}</span>
 						</button>
-						<button class="action-item copy-action" onclick={() => onCopyText(info)} title={t('epub.highlightToolbar.copyTitle')}>
+						<button class="clickable-icon action-item copy-action" onclick={() => onCopyText(info)} title={t('epub.highlightToolbar.copyTitle')}>
 							<span class="action-icon" use:icon={'clipboard-copy'}></span>
 							<span class="action-label">{t('epub.highlightToolbar.copy')}</span>
 						</button>
 						<div class="row-divider"></div>
-						<button class="action-item delete delete-action" onclick={() => onDelete(info)} title={t('epub.highlightToolbar.deleteTitle')}>
+						<button class="clickable-icon action-item delete delete-action" onclick={() => onDelete(info)} title={t('epub.highlightToolbar.deleteTitle')}>
 							<span class="action-icon" use:icon={'trash-2'}></span>
 							<span class="action-label">{t('epub.highlightToolbar.delete')}</span>
 						</button>

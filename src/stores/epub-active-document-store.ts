@@ -13,6 +13,7 @@ import type {
 	EpubReaderEngine,
 	TocItem,
 } from "../services/epub";
+import type { EpubDisplayHighlight } from "../services/epub/EpubHighlightViewSnapshotService";
 import type { FlashStyle, PaginationInfo } from "../services/epub";
 import type { EpubBacklinkHighlightService } from "../services/epub/EpubBacklinkHighlightService";
 import type { EpubReferenceStatsService } from "../services/epub/EpubReferenceStatsService";
@@ -48,6 +49,8 @@ export interface EpubSharedState {
 	searchQuerySeed: string;
 	searchRequestNonce: number;
 	onDeleteBookmark: ((bookmarkId: string) => Promise<boolean>) | null;
+	onDeleteHighlight: ((highlight: EpubDisplayHighlight) => Promise<boolean>) | null;
+	onExportHighlights: ((selectionKeys: string[]) => Promise<void>) | null;
 	onSettingsClick: ((evt: MouseEvent) => void) | null;
 	onSwitchBook: ((filePath: string) => void) | null;
 	onCreateChapterReadingPoint: ((item: TocItem, event?: MouseEvent) => Promise<void>) | null;
@@ -79,6 +82,8 @@ const EMPTY_STATE: EpubSharedState = {
 	searchQuerySeed: "",
 	searchRequestNonce: 0,
 	onDeleteBookmark: null,
+	onDeleteHighlight: null,
+	onExportHighlights: null,
 	onSettingsClick: null,
 	onSwitchBook: null,
 	onCreateChapterReadingPoint: null,

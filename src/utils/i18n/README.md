@@ -6,28 +6,38 @@
 |----------|--------|--------------|
 | `zh-CN` | `resources/epub.ts` + `app-shell-epub.ts` | — |
 | `en-US` | same (English tree) | — |
-| `ja-JP` | `en-US` catalog + `overlays/ja-JP.json` | fall back to **en-US** (via merged catalog + runtime fallback) |
-| `ko-KR` | `en-US` catalog + `overlays/ko-KR.json` | fall back to **en-US** |
+| `ja-JP` | `en-US` catalog + `overlays/ja-JP.json` (~99% UI keys) | brand names / language labels may stay Latin |
+| `ko-KR` | `en-US` catalog + `overlays/ko-KR.json` (~99% UI keys) | brand names / language labels may stay Latin |
+| `ru-RU` | `en-US` catalog + `overlays/ru-RU.json` (~99% UI keys) | brand names / language labels may stay Latin |
 
-We **do not** ship full 800+ key machine translations. Low-quality MT is worse than English fallback.
+## Runtime language resolution
 
-Curated overlays cover user-critical paths (premium, license, bookshelf modals, settings tabs/notifications, errors, reading reference). Other strings stay English until a human adds them under `scripts/curated-overlay-data/manual-*.json` (multiple files are merged by `i18n:build-overlays`).
+1. Plugin settings → **Interface language** (`interfaceLanguage`):
+   - `auto` (default): follow Obsidian via `getLanguage()` → `locale-resolver.ts`
+   - fixed `zh-CN` / `en-US` / `ja-JP` / `ko-KR` / `ru-RU`: never overridden by focus/layout sync
+2. Auto mode fallback chain: Obsidian API → Obsidian `language` localStorage → browser locale → `en-US`
+3. Obsidian `ru` maps to `ru-RU` in `mapObsidianLocaleToPluginLanguage`
+
+Curated overlays cover essentially all user-facing `views.*` / `epub.*` strings (reader menus, bookshelf, sidebars, toolbars, settings). Add or revise copy under `scripts/curated-overlay-data/manual-*.json`, then run `npm run i18n:build-overlays`.
 
 ## Adding or changing UI copy
 
 1. Update `resources/epub.ts` (and `app-shell-epub.ts` if needed) for **zh-CN** and **en-US**.
 2. Run `npm run i18n:export-keys` to refresh `flat-locales/en-US.template.json`.
-3. Add curated **ja** / **ko** strings in:
-   - `scripts/curated-overlay-data/manual-ja.json`
-   - `scripts/curated-overlay-data/manual-ko.json`
-4. Run `npm run i18n:build-overlays` to regenerate `overlays/ja-JP.json` and `overlays/ko-KR.json`.
+3. Add curated **ja** / **ko** / **ru** strings in:
+   - `scripts/curated-overlay-data/manual-ja*.json`
+   - `scripts/curated-overlay-data/manual-ko*.json`
+   - `scripts/curated-overlay-data/manual-ru*.json`
+4. Run `npm run i18n:build-overlays` to regenerate `overlays/*.json`.
 5. Run `npm run i18n:validate`.
 
 Optional: legacy draft files under `flat-locales/ja-JP.json` may be consulted by the build script if present, but only entries that pass quality checks are kept.
 
 ## Tutorial
 
-Tutorial **tab labels** are localized in `epub-tutorial-content.ts`. Tutorial **body** is authored for `zh-CN` and `en-US` only; `ja-JP` / `ko-KR` reuse English body until dedicated copy is written (not machine-generated).
+Tutorial content lives in `src/components/epub/tutorial-locales/*.json` (`zh-CN`, `en-US`, `ja-JP`, `ko-KR`, `ru-RU`). Tab labels are in `epub-tutorial-content.ts`. The tutorial modal follows `currentLanguage` automatically.
+
+To refresh draft `ja` / `ko` / `ru` bodies from English: `npm run i18n:draft:generate-tutorial` (Argos MT — review before shipping). Prefer hand-editing the JSON files for production copy.
 
 ## Scripts
 

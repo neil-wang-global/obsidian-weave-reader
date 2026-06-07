@@ -6,21 +6,34 @@ import { sanitizeForSync } from "../../utils/sync-safe-filename";
 import { EpubLinkService } from "./EpubLinkService";
 import { generateUniqueVaultFilePath } from "./epub-markdown-path-resolver";
 import { getEpubRuntime } from "./epub-runtime";
+import { buildEpubBookmarkAnalytics } from "./epub-bookmark-analytics";
+import type {
+	EpubBookmarkAnalytics,
+	EpubBookmarkUserMetadata,
+} from "./epub-bookmark-page-types";
+import {
+	EPUB_BOOKMARK_ACCEPTED_FORMATS,
+	EPUB_BOOKMARK_FILE_FORMAT_V2,
+} from "./epub-bookmark-page-types";
+import {
+	EPUB_BOOKMARK_PAGE_CALLOUT,
+	renderEpubBookmarkFileContent,
+} from "./epub-bookmark-page-render";
 import { normalizeReadingPaceStats } from "./reading-pace";
+import type { ReaderHighlightInput } from "./reader-engine-types";
 import type { EpubBook, ReadingPosition, ReadingStats } from "./types";
 import { errorPlainText, unknownPlainText } from "../../utils/unknown-plain-text";
 
 export const DEFAULT_EPUB_BOOKMARK_FOLDER = "weave/epub-bookmarks";
 /** Vault-visible bookmark / reading-progress note prefix (human-readable, no book id). */
 export const EPUB_BOOKMARK_DATA_FILE_PREFIX = "data_";
-const EPUB_BOOKMARK_FILE_FORMAT = "weave-epub-bookmarks/v1";
+const EPUB_BOOKMARK_FILE_FORMAT = EPUB_BOOKMARK_FILE_FORMAT_V2;
 
 /** Obsidian callout shown at the top of every EPUB bookmark file. */
-export const EPUB_BOOKMARK_AUTO_MAINTAINED_CALLOUT = [
-	"> [!warning] 自动维护 · 请勿手动编辑",
-	"> 本页 YAML 前置元数据中的 `readingState` 字段（阅读进度与阅读统计）由 **Weave EPUB 阅读器** 自动写入。",
-	"> 手动修改可能导致剩余阅读时间不准、进度冲突或数据损坏。请回到阅读器中阅读以更新数据。",
-].join("\n");
+export const EPUB_BOOKMARK_AUTO_MAINTAINED_CALLOUT = EPUB_BOOKMARK_PAGE_CALLOUT;
+
+export type { EpubBookmarkAnalytics } from "./epub-bookmark-page-types";
+export { buildEpubBookmarkAnalytics } from "./epub-bookmark-analytics";
 
 export interface EpubBookmarkReadingState {
 	currentPosition: ReadingPosition;
@@ -66,9 +79,14 @@ interface EpubBookmarkFileFrontmatter {
 	bookPath: string;
 	bookTitle: string;
 	bookAuthor?: string;
+	bookLanguage?: string;
+	wordCount?: number;
+	chapterCount?: number;
 	updatedAt: number;
 	bookmarks: EpubBookmarkRecord[];
 	readingState?: EpubBookmarkReadingState;
+	analytics?: EpubBookmarkAnalytics;
+	user?: EpubBookmarkUserMetadata;
 }
 
 export function normalizeEpubBookmarkFolderPath(value: unknown): string {
@@ -329,13 +347,8 @@ export class EpubBookmarkService {
 			existing.bookmarks = [bookmark, ...existing.bookmarks];
 		}
 
-		existing.bookId = String(book.id || "").trim();
-		existing.sourceId = typeof book.sourceId === "string" ? book.sourceId : undefined;
-		existing.sourceFingerprint =
-			typeof book.sourceFingerprint === "string" ? book.sourceFingerprint : undefined;
-		existing.bookPath = normalizePath(String(book.filePath || "").trim());
-		existing.bookTitle = this.resolveBookTitle(book);
-		existing.bookAuthor = this.resolveBookAuthor(book);
+		const merged = this.mergeBookIdentity(existing, book);
+		Object.assign(existing, merged);
 		existing.updatedAt = Date.now();
 		existing.bookmarks = existing.bookmarks
 			.filter((item) => Boolean(item.cfi))
@@ -393,19 +406,9 @@ export class EpubBookmarkService {
 			const filePath = await this.ensureCanonicalBookmarkFilePath(book);
 			const existing =
 				(await this.readBookmarkFileByPath(filePath)) || this.createEmptyFileFrontmatter(book);
-			const nextFrontmatter: EpubBookmarkFileFrontmatter = {
-				...existing,
-				stableKey: this.buildStableKey(book),
-				bookId: String(book.id || "").trim(),
-				sourceId: typeof book.sourceId === "string" ? book.sourceId : undefined,
-				sourceFingerprint:
-					typeof book.sourceFingerprint === "string" ? book.sourceFingerprint : undefined,
-				bookPath: normalizePath(String(book.filePath || "").trim()),
-				bookTitle: this.resolveBookTitle(book),
-				bookAuthor: this.resolveBookAuthor(book),
-				updatedAt: Date.now(),
-				readingState: this.normalizeReadingState(state) ?? undefined,
-			};
+			const nextFrontmatter = this.mergeBookIdentity(existing, book);
+			nextFrontmatter.updatedAt = Date.now();
+			nextFrontmatter.readingState = this.normalizeReadingState(state) ?? undefined;
 			await this.writeBookmarkFile(filePath, nextFrontmatter);
 			return filePath;
 		});
@@ -417,6 +420,19 @@ export class EpubBookmarkService {
 			return;
 		}
 		await this.migrateBookmarkFileForBook(book, filePath);
+	}
+
+	async syncAnalytics(book: EpubBook, highlights: ReaderHighlightInput[]): Promise<string | null> {
+		return await this.runSerializedBookmarkMutation(book, async () => {
+			const filePath = await this.ensureCanonicalBookmarkFilePath(book);
+			const existing =
+				(await this.readBookmarkFileByPath(filePath)) || this.createEmptyFileFrontmatter(book);
+			const nextFrontmatter = this.mergeBookIdentity(existing, book);
+			nextFrontmatter.analytics = buildEpubBookmarkAnalytics(highlights);
+			nextFrontmatter.updatedAt = Date.now();
+			await this.writeBookmarkFile(filePath, nextFrontmatter);
+			return filePath;
+		});
 	}
 
 	async updateBookFileReferences(oldPath: string, newPath: string): Promise<number> {
@@ -682,19 +698,10 @@ export class EpubBookmarkService {
 		const nextStableKey = this.buildStableKey(book);
 		const normalizedCurrentPath = normalizePath(String(filePath || "").trim());
 		const normalizedPreferredPath = normalizePath(String(preferredPath || "").trim());
-		const nextFrontmatter: EpubBookmarkFileFrontmatter = {
-			...current,
-			stableKey: nextStableKey,
-			bookId: String(book.id || "").trim(),
-			sourceId: typeof book.sourceId === "string" ? book.sourceId : undefined,
-			sourceFingerprint:
-				typeof book.sourceFingerprint === "string" ? book.sourceFingerprint : undefined,
-			bookPath: normalizePath(String(book.filePath || "").trim()),
-			bookTitle: this.resolveBookTitle(book),
-			bookAuthor: this.resolveBookAuthor(book),
-			updatedAt: Date.now(),
-			bookmarks: this.normalizeBookmarkRecords(current.bookmarks, nextStableKey),
-		};
+		const nextFrontmatter = this.mergeBookIdentity(current, book);
+		nextFrontmatter.stableKey = nextStableKey;
+		nextFrontmatter.updatedAt = Date.now();
+		nextFrontmatter.bookmarks = this.normalizeBookmarkRecords(current.bookmarks, nextStableKey);
 
 		if (normalizedCurrentPath === normalizedPreferredPath) {
 			if (!this.bookmarkFrontmatterNeedsPersist(current, nextFrontmatter)) {
@@ -713,6 +720,8 @@ export class EpubBookmarkService {
 			);
 			nextFrontmatter.readingState =
 				nextFrontmatter.readingState ?? existingPreferred.readingState;
+			nextFrontmatter.analytics = nextFrontmatter.analytics ?? existingPreferred.analytics;
+			nextFrontmatter.user = nextFrontmatter.user ?? existingPreferred.user;
 		}
 
 		await this.writeBookmarkFile(normalizedPreferredPath, nextFrontmatter);
@@ -752,6 +761,18 @@ export class EpubBookmarkService {
 		if (JSON.stringify(current.readingState) !== JSON.stringify(next.readingState)) {
 			return true;
 		}
+		if (JSON.stringify(current.analytics) !== JSON.stringify(next.analytics)) {
+			return true;
+		}
+		if (current.bookLanguage !== next.bookLanguage) {
+			return true;
+		}
+		if (current.wordCount !== next.wordCount) {
+			return true;
+		}
+		if (current.chapterCount !== next.chapterCount) {
+			return true;
+		}
 		return false;
 	}
 
@@ -789,7 +810,28 @@ export class EpubBookmarkService {
 	}
 
 	private createEmptyFileFrontmatter(book: EpubBook): EpubBookmarkFileFrontmatter {
+		return this.mergeBookIdentity(
+			{
+				format: EPUB_BOOKMARK_FILE_FORMAT,
+				weave_epub_bookmark_file: true,
+				stableKey: this.buildStableKey(book),
+				bookId: String(book.id || "").trim(),
+				bookPath: normalizePath(String(book.filePath || "").trim()),
+				bookTitle: this.resolveBookTitle(book),
+				updatedAt: Date.now(),
+				bookmarks: [],
+			},
+			book
+		);
+	}
+
+	private mergeBookIdentity(
+		frontmatter: EpubBookmarkFileFrontmatter,
+		book: EpubBook
+	): EpubBookmarkFileFrontmatter {
+		const metadata = book.metadata;
 		return {
+			...frontmatter,
 			format: EPUB_BOOKMARK_FILE_FORMAT,
 			weave_epub_bookmark_file: true,
 			stableKey: this.buildStableKey(book),
@@ -800,8 +842,15 @@ export class EpubBookmarkService {
 			bookPath: normalizePath(String(book.filePath || "").trim()),
 			bookTitle: this.resolveBookTitle(book),
 			bookAuthor: this.resolveBookAuthor(book),
-			updatedAt: Date.now(),
-			bookmarks: [],
+			bookLanguage: String(metadata?.language || "").trim() || undefined,
+			wordCount:
+				typeof metadata?.wordCount === "number" && metadata.wordCount > 0
+					? metadata.wordCount
+					: frontmatter.wordCount,
+			chapterCount:
+				typeof metadata?.chapterCount === "number" && metadata.chapterCount > 0
+					? metadata.chapterCount
+					: frontmatter.chapterCount,
 		};
 	}
 
@@ -897,7 +946,14 @@ export class EpubBookmarkService {
 		const bookId = unknownPlainText(value.bookId).trim();
 		const bookPath = normalizePath(unknownPlainText(value.bookPath).trim());
 		const bookTitle = unknownPlainText(value.bookTitle).trim();
-		if ((format && format !== EPUB_BOOKMARK_FILE_FORMAT) || !stableKey || !bookPath) {
+		if (
+			(format &&
+				!EPUB_BOOKMARK_ACCEPTED_FORMATS.includes(
+					format as (typeof EPUB_BOOKMARK_ACCEPTED_FORMATS)[number]
+				)) ||
+			!stableKey ||
+			!bookPath
+		) {
 			return null;
 		}
 		return {
@@ -911,9 +967,133 @@ export class EpubBookmarkService {
 			bookPath,
 			bookTitle,
 			bookAuthor: typeof value.bookAuthor === "string" ? value.bookAuthor : undefined,
+			bookLanguage: typeof value.bookLanguage === "string" ? value.bookLanguage : undefined,
+			wordCount: typeof value.wordCount === "number" ? value.wordCount : undefined,
+			chapterCount: typeof value.chapterCount === "number" ? value.chapterCount : undefined,
 			updatedAt: typeof value.updatedAt === "number" ? value.updatedAt : 0,
 			bookmarks: this.normalizeBookmarkRecords(value.bookmarks, stableKey),
 			readingState: this.normalizeReadingState(value.readingState) || undefined,
+			analytics: this.normalizeAnalytics(value.analytics) || undefined,
+			user: this.normalizeUserMetadata(value.user) || undefined,
+		};
+	}
+
+	private normalizeAnalytics(value: unknown): EpubBookmarkAnalytics | null {
+		if (!value || typeof value !== "object") {
+			return null;
+		}
+		const record = value as Record<string, unknown>;
+		const highlightCount =
+			typeof record.highlightCount === "number" ? Math.max(0, record.highlightCount) : 0;
+		const highlightsByColor =
+			record.highlightsByColor && typeof record.highlightsByColor === "object"
+				? (record.highlightsByColor as Partial<Record<string, number>>)
+				: {};
+		const topChaptersByHighlights = Array.isArray(record.topChaptersByHighlights)
+			? record.topChaptersByHighlights
+					.map((item) => {
+						if (!item || typeof item !== "object") {
+							return null;
+						}
+						const chapter = item as Record<string, unknown>;
+						const title = unknownPlainText(chapter.title).trim();
+						const count = typeof chapter.count === "number" ? chapter.count : 0;
+						if (!title || count <= 0) {
+							return null;
+						}
+						return { title, count };
+					})
+					.filter((item): item is { title: string; count: number } => Boolean(item))
+			: [];
+		const linkedNotePaths = Array.isArray(record.linkedNotePaths)
+			? record.linkedNotePaths
+					.map((item) => String(item || "").trim())
+					.filter(Boolean)
+			: [];
+		const recentExcerpts = Array.isArray(record.recentExcerpts)
+			? record.recentExcerpts
+					.map((item) => {
+						if (!item || typeof item !== "object") {
+							return null;
+						}
+						const excerpt = item as Record<string, unknown>;
+						const chapterTitle = unknownPlainText(excerpt.chapterTitle).trim();
+						const preview = unknownPlainText(excerpt.preview).trim();
+						if (!chapterTitle || !preview) {
+							return null;
+						}
+						return {
+							chapterTitle,
+							preview,
+							notePath:
+								typeof excerpt.notePath === "string" ? excerpt.notePath.trim() : undefined,
+							createdTime:
+								typeof excerpt.createdTime === "number" ? excerpt.createdTime : 0,
+						};
+					})
+					.filter(
+						(
+							item
+						): item is {
+							chapterTitle: string;
+							preview: string;
+							notePath?: string;
+							createdTime: number;
+						} => Boolean(item)
+					)
+			: [];
+
+		return {
+			updatedAt: typeof record.updatedAt === "number" ? record.updatedAt : Date.now(),
+			highlightCount,
+			highlightsByColor,
+			excerptNoteCount:
+				typeof record.excerptNoteCount === "number"
+					? Math.max(0, record.excerptNoteCount)
+					: linkedNotePaths.length,
+			commentCount: typeof record.commentCount === "number" ? Math.max(0, record.commentCount) : 0,
+			concealedCount:
+				typeof record.concealedCount === "number" ? Math.max(0, record.concealedCount) : 0,
+			referenceHeatMax:
+				typeof record.referenceHeatMax === "number" && record.referenceHeatMax > 0
+					? record.referenceHeatMax
+					: undefined,
+			topChaptersByHighlights,
+			linkedNotePaths,
+			recentExcerpts: recentExcerpts.length > 0 ? recentExcerpts : undefined,
+		};
+	}
+
+	private normalizeUserMetadata(value: unknown): EpubBookmarkUserMetadata | null {
+		if (!value || typeof value !== "object") {
+			return null;
+		}
+		const record = value as Record<string, unknown>;
+		const tags = Array.isArray(record.tags)
+			? record.tags.map((tag) => String(tag || "").trim()).filter(Boolean)
+			: undefined;
+		const rating =
+			typeof record.rating === "number" && Number.isFinite(record.rating)
+				? record.rating
+				: record.rating === null
+					? null
+					: undefined;
+		const priority =
+			typeof record.priority === "string" && record.priority.trim()
+				? record.priority.trim()
+				: undefined;
+		const notes =
+			typeof record.notes === "string" && record.notes.trim() ? record.notes.trim() : undefined;
+
+		if (!tags?.length && rating == null && !priority && !notes) {
+			return null;
+		}
+
+		return {
+			tags,
+			rating,
+			priority,
+			notes,
 		};
 	}
 
@@ -1037,239 +1217,25 @@ export class EpubBookmarkService {
 	}
 
 	private renderBookmarkFileContent(frontmatter: EpubBookmarkFileFrontmatter): string {
-		const yamlPayload: Record<string, unknown> = {
-			format: EPUB_BOOKMARK_FILE_FORMAT,
-			weave_epub_bookmark_file: true,
-			stableKey: frontmatter.stableKey,
-			bookId: frontmatter.bookId,
-			sourceId: frontmatter.sourceId,
-			sourceFingerprint: frontmatter.sourceFingerprint,
-			bookPath: frontmatter.bookPath,
-			bookTitle: frontmatter.bookTitle,
-			bookAuthor: frontmatter.bookAuthor,
-			updatedAt: frontmatter.updatedAt,
-			bookmarks: frontmatter.bookmarks,
-		};
-		if (frontmatter.readingState) {
-			yamlPayload.readingState = {
-				currentPosition: frontmatter.readingState.currentPosition,
-				readingStats: frontmatter.readingState.readingStats,
-			};
-		}
-		const yamlText = this.stringifyYamlObject(yamlPayload);
-		return `---\n${yamlText}\n---\n\n${this.renderBookmarkBody(frontmatter)}`;
-	}
-
-	private renderBookmarkBody(frontmatter: EpubBookmarkFileFrontmatter): string {
-		const lines: string[] = [EPUB_BOOKMARK_AUTO_MAINTAINED_CALLOUT, ""];
-		lines.push(`# ${frontmatter.bookTitle || "EPUB 书签"}`, "");
-		if (frontmatter.readingState) {
-			lines.push(...this.renderReadingStateSummary(frontmatter.readingState));
-			lines.push("");
-		}
-		if (frontmatter.bookmarks.length === 0) {
-			lines.push("## 书签", "", "暂无书签");
-			return lines.join("\n").trimEnd();
-		}
-		lines.push("## 书签", "");
-		for (const bookmark of frontmatter.bookmarks) {
-			const chapterTitle = bookmark.chapterTitle || `第 ${bookmark.chapterIndex + 1} 章`;
-			const pageLabel = this.buildPageLabel(bookmark);
-			const createdLabel = this.formatTimestamp(bookmark.createdAt);
-			const link = this.linkService.buildEpubLink(
-				frontmatter.bookPath,
-				bookmark.cfi,
-				bookmark.chapterTitle,
-				bookmark.chapterIndex,
-				bookmark.chapterTitle,
-				undefined,
-				frontmatter.sourceId
-			);
-			lines.push(`## ${chapterTitle}`);
-			lines.push("");
-			lines.push(`- 页位：${pageLabel}`);
-			lines.push(`- 创建：${createdLabel}`);
-			lines.push(`- 跳转：${link}`);
-			if (bookmark.preview) {
-				lines.push(`- 预览：${this.normalizeInlineText(bookmark.preview)}`);
-			}
-			lines.push("");
-		}
-		return lines.join("\n").trimEnd();
-	}
-
-	private renderReadingStateSummary(state: EpubBookmarkReadingState): string[] {
-		const stats = state.readingStats;
-		const lines: string[] = [
-			"## 阅读状态摘要",
-			"",
-			"> [!note] 以下为自动生成的可读摘要；权威数据以页面顶部 YAML 中的 `readingState` 为准。",
-			"",
-			"| 项目 | 值 |",
-			"| --- | --- |",
-			`| 阅读进度 | ${this.formatPercent(state.currentPosition.percent)} |`,
-			`| 累计阅读 | ${this.formatDurationMs(stats.totalReadTime)} |`,
-		];
-		if (typeof stats.bookWpm === "number" && stats.bookWpm > 0) {
-			lines.push(`| 本书阅读速度 | ${Math.round(stats.bookWpm)} 字/分钟 |`);
-		}
-		if ((stats.paceSampleCount || 0) > 0) {
-			lines.push(`| 速度采样次数 | ${stats.paceSampleCount} |`);
-		}
-		const lastRead = this.formatTimestamp(stats.lastReadTime);
-		if (lastRead) {
-			lines.push(`| 最近阅读 | ${lastRead} |`);
-		}
-		return lines;
-	}
-
-	private formatDurationMs(ms: number): string {
-		const safeMs = Number.isFinite(ms) ? Math.max(0, ms) : 0;
-		const totalMinutes = Math.max(1, Math.round(safeMs / 60_000));
-		if (totalMinutes < 60) {
-			return `${totalMinutes} 分钟`;
-		}
-		const hours = Math.floor(totalMinutes / 60);
-		const minutes = totalMinutes % 60;
-		return minutes > 0 ? `${hours} 小时 ${minutes} 分钟` : `${hours} 小时`;
-	}
-
-	private buildPageLabel(bookmark: EpubBookmarkRecord): string {
-		if (typeof bookmark.pageNumber === "number" && bookmark.pageNumber > 0) {
-			if (typeof bookmark.totalPages === "number" && bookmark.totalPages >= bookmark.pageNumber) {
-				return `第 ${bookmark.pageNumber} / ${bookmark.totalPages} 页`;
-			}
-			return `第 ${bookmark.pageNumber} 页`;
-		}
-		return `进度 ${this.formatPercent(bookmark.percent)}`;
-	}
-
-	private formatPercent(percent: number): string {
-		const safe = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
-		return `${Math.round(safe)}%`;
-	}
-
-	private formatTimestamp(timestamp: number): string {
-		if (!timestamp) {
-			return "";
-		}
-		const date = new Date(timestamp);
-		const year = date.getFullYear();
-		const month = String(date.getMonth() + 1).padStart(2, "0");
-		const day = String(date.getDate()).padStart(2, "0");
-		const hours = String(date.getHours()).padStart(2, "0");
-		const minutes = String(date.getMinutes()).padStart(2, "0");
-		return `${year}-${month}-${day} ${hours}:${minutes}`;
-	}
-
-	private normalizeInlineText(value: string): string {
-		return String(value || "")
-			.replace(/\s+/g, " ")
-			.trim();
-	}
-
-	private stringifyYamlObject(value: Record<string, unknown>, indent = ""): string {
-		const lines: string[] = [];
-		for (const [key, entry] of Object.entries(value)) {
-			if (entry === undefined) {
-				continue;
-			}
-			this.appendYamlProperty(lines, key, entry, indent);
-		}
-		return lines.join("\n");
-	}
-
-	private appendYamlProperty(lines: string[], key: string, value: unknown, indent: string): void {
-		if (Array.isArray(value)) {
-			if (value.length === 0) {
-				lines.push(`${indent}${key}: []`);
-				return;
-			}
-			lines.push(`${indent}${key}:`);
-			for (const item of value) {
-				this.appendYamlArrayItem(lines, item, `${indent}  `);
-			}
-			return;
-		}
-		if (value && typeof value === "object") {
-			const entries = Object.entries(value as Record<string, unknown>).filter(
-				([, entry]) => entry !== undefined
-			);
-			if (entries.length === 0) {
-				lines.push(`${indent}${key}: {}`);
-				return;
-			}
-			lines.push(`${indent}${key}:`);
-			for (const [childKey, childValue] of entries) {
-				this.appendYamlProperty(lines, childKey, childValue, `${indent}  `);
-			}
-			return;
-		}
-		lines.push(`${indent}${key}: ${this.formatYamlScalar(value)}`);
-	}
-
-	private appendYamlArrayItem(lines: string[], value: unknown, indent: string): void {
-		if (Array.isArray(value)) {
-			if (value.length === 0) {
-				lines.push(`${indent}- []`);
-				return;
-			}
-			lines.push(`${indent}-`);
-			for (const item of value) {
-				this.appendYamlArrayItem(lines, item, `${indent}  `);
-			}
-			return;
-		}
-		if (value && typeof value === "object") {
-			const entries = Object.entries(value as Record<string, unknown>).filter(
-				([, entry]) => entry !== undefined
-			);
-			if (entries.length === 0) {
-				lines.push(`${indent}- {}`);
-				return;
-			}
-			const [firstKey, firstValue] = entries[0];
-			if (Array.isArray(firstValue) || (firstValue && typeof firstValue === "object")) {
-				lines.push(`${indent}- ${firstKey}:`);
-				this.appendComplexYamlValue(lines, firstValue, `${indent}    `);
-			} else {
-				lines.push(`${indent}- ${firstKey}: ${this.formatYamlScalar(firstValue)}`);
-			}
-			for (const [key, entry] of entries.slice(1)) {
-				this.appendYamlProperty(lines, key, entry, `${indent}  `);
-			}
-			return;
-		}
-		lines.push(`${indent}- ${this.formatYamlScalar(value)}`);
-	}
-
-	private appendComplexYamlValue(lines: string[], value: unknown, indent: string): void {
-		if (Array.isArray(value)) {
-			for (const item of value) {
-				this.appendYamlArrayItem(lines, item, indent);
-			}
-			return;
-		}
-		if (value && typeof value === "object") {
-			for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-				if (entry === undefined) {
-					continue;
-				}
-				this.appendYamlProperty(lines, key, entry, indent);
-			}
-		}
-	}
-
-	private formatYamlScalar(value: unknown): string {
-		if (typeof value === "number") {
-			return Number.isFinite(value) ? String(value) : "0";
-		}
-		if (typeof value === "boolean") {
-			return value ? "true" : "false";
-		}
-		if (value == null) {
-			return "null";
-		}
-		return JSON.stringify(unknownPlainText(value));
+		return renderEpubBookmarkFileContent(
+			{
+				stableKey: frontmatter.stableKey,
+				bookId: frontmatter.bookId,
+				sourceId: frontmatter.sourceId,
+				sourceFingerprint: frontmatter.sourceFingerprint,
+				bookPath: frontmatter.bookPath,
+				bookTitle: frontmatter.bookTitle,
+				bookAuthor: frontmatter.bookAuthor,
+				bookLanguage: frontmatter.bookLanguage,
+				wordCount: frontmatter.wordCount,
+				chapterCount: frontmatter.chapterCount,
+				updatedAt: frontmatter.updatedAt,
+				bookmarks: frontmatter.bookmarks,
+				readingState: frontmatter.readingState,
+				analytics: frontmatter.analytics,
+				user: frontmatter.user,
+			},
+			this.linkService
+		);
 	}
 }
