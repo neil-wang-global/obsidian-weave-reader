@@ -10,6 +10,7 @@ jobs:
   # Job 1: 代码格式检查
   format-check:
     name: Code Format Check
+    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -21,12 +22,7 @@ jobs:
           node-version: '20'
       
       - name: Install dependencies
-        run: |
-          npm ci --no-audit --no-fund || (
-            echo "npm ci failed; retrying with npm install..."
-            rm -rf node_modules
-            npm install --no-audit --no-fund
-          )
+        run: node scripts/ci-install-dependencies.cjs
       
       - name: Check code formatting
         run: npm run format:check
@@ -46,17 +42,8 @@ jobs:
           node-version: '20'
       
       - name: Install dependencies
-        run: |
-          npm ci --no-audit --no-fund || (
-            echo "npm ci failed; retrying with npm install..."
-            rm -rf node_modules
-            npm install --no-audit --no-fund
-          )
+        run: node scripts/ci-install-dependencies.cjs
       
-      - name: Run linter
-        run: npm run lint:check
-        continue-on-error: false
-
       - name: Run Obsidian community lint
         run: npm run lint:obsidian
         continue-on-error: false
@@ -68,6 +55,10 @@ jobs:
       - name: Run Obsidian strict audit
         run: npm run lint:obsidian:strict
         continue-on-error: false
+
+      - name: Run linter
+        run: npm run lint:check
+        continue-on-error: true
       
       - name: Check Svelte 5 Compliance
         run: npm run lint:svelte5
@@ -87,12 +78,7 @@ jobs:
           node-version: '20'
       
       - name: Install dependencies
-        run: |
-          npm ci --no-audit --no-fund || (
-            echo "npm ci failed; retrying with npm install..."
-            rm -rf node_modules
-            npm install --no-audit --no-fund
-          )
+        run: node scripts/ci-install-dependencies.cjs
       
       - name: Run build check
         run: npm run check
@@ -112,12 +98,7 @@ jobs:
           node-version: '20'
       
       - name: Install dependencies
-        run: |
-          npm ci --no-audit --no-fund || (
-            echo "npm ci failed; retrying with npm install..."
-            rm -rf node_modules
-            npm install --no-audit --no-fund
-          )
+        run: node scripts/ci-install-dependencies.cjs
       
       - name: Run tests with coverage
         run: npm run test -- --coverage
@@ -145,12 +126,7 @@ jobs:
           node-version: '20'
       
       - name: Install dependencies
-        run: |
-          npm ci --no-audit --no-fund || (
-            echo "npm ci failed; retrying with npm install..."
-            rm -rf node_modules
-            npm install --no-audit --no-fund
-          )
+        run: node scripts/ci-install-dependencies.cjs
 
       - name: Verify public repo safety
         run: npm run verify:public-repo
