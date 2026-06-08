@@ -193,7 +193,7 @@
   "epub.premium.premiumFeatures.styledExcerpts.title": "Advanced excerpt styles",
   "epub.premium.premiumFeatures.styledExcerpts.description": "Underline, strikethrough, wavy underline, and related display controls.",
   "epub.premium.premiumFeatures.canvasExcerpts.title": "Canvas excerpt linking",
-  "epub.premium.premiumFeatures.canvasExcerpts.description": "Link Canvas mind-map excerpts and manage bindings inside the reader.",
+  "epub.premium.premiumFeatures.canvasExcerpts.description": "Link Canvas mind-map excerpts and manage bindings inside the reader; works with every book format this plugin supports (EPUB, MOBI, TXT, CBZ, and more).",
   "epub.premium.premiumFeatures.paragraphMode.title": "Paragraph reading mode",
   "epub.premium.premiumFeatures.paragraphMode.description": "Enter an immersive single-paragraph reading view with paragraph focus, font tuning, intra-paragraph paging, and cross-paragraph navigation.",
   "epub.premium.premiumFeatures.sourceLocation.title": "Bidirectional source location",

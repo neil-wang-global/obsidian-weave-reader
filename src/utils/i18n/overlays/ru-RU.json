@@ -305,7 +305,7 @@
   "epub.premium.limitedTimeOpenSuffix": " (ограниченный доступ)",
   "epub.premium.lockedFormatNotice": "Чтение {format} — премиум-функция. Активируйте лицензию для использования",
   "epub.premium.premiumColumnTitle": "Премиум-функции",
-  "epub.premium.premiumFeatures.canvasExcerpts.description": "Связывайте цитаты из ментальных карт Canvas и управляйте привязками в ридере.",
+  "epub.premium.premiumFeatures.canvasExcerpts.description": "Связывайте цитаты из ментальных карт Canvas и управляйте привязками в ридере. Работает со всеми форматами книг, которые поддерживает плагин (EPUB, MOBI, TXT, CBZ и др.).",
   "epub.premium.premiumFeatures.canvasExcerpts.title": "Связь цитат с Canvas",
   "epub.premium.premiumFeatures.chapterExport.description": "Быстро экспортируйте текущую главу в Markdown для дальнейшего редактирования.",
   "epub.premium.premiumFeatures.chapterExport.title": "Экспорт главы в Markdown",

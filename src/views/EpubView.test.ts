@@ -185,6 +185,25 @@ describe('EpubView', () => {
 		expect(navigateToCfi).not.toHaveBeenCalled();
 	});
 
+	it('shows canvas direction button via class toggle instead of inline display:none', () => {
+		const view = new EpubView({} as any, { app: {} } as any);
+		(view as any).actionHandlers = {
+			canUseCanvasExcerpts: () => true,
+		};
+		(view as any).toolbarHandlersReady = true;
+		(view as any).canvasModeActive = true;
+		const button = document.createElement('button') as HTMLButtonElement & {
+			toggleClass: (name: string, force?: boolean) => void;
+		};
+		button.toggleClass = (name: string, force?: boolean) => {
+			button.classList.toggle(name, force);
+		};
+		(view as any).canvasDirBtn = button;
+		(view as any).updateDirectionBtn();
+		expect(button.style.display).toBe('');
+		expect(button.classList.contains('epub-view-action-hidden')).toBe(false);
+	});
+
 	it('hides canvas actions when canvas excerpt premium capability is unavailable', () => {
 		const view = new EpubView({} as any, { app: {} } as any);
 		const applyActionButtonState = vi.spyOn(view as any, 'applyActionButtonState');

@@ -64,6 +64,9 @@ import {
 	normalizeLicenseStore,
 	resolveEffectiveLicenseState,
 } from "./utils/license-state";
+import { registerCanvasExcerptAnchorCacheWarmup } from "./services/epub/canvas-excerpt-anchor";
+import { registerCanvasDirectionMenu } from "./services/epub/register-canvas-direction-menu";
+import { registerCanvasExcerptAnchorMenu } from "./services/epub/register-canvas-excerpt-anchor-menu";
 import { registerLicenseSyncBridge } from "./utils/license-sync-bridge";
 import { licenseManager } from "./utils/licenseManager";
 import { logger } from "./utils/logger";
@@ -602,6 +605,9 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			inheritedLicenses: this.getInheritedLicenses(),
 		});
 		registerLicenseSyncBridge(this, this);
+		registerCanvasExcerptAnchorMenu(this);
+		registerCanvasDirectionMenu(this);
+		registerCanvasExcerptAnchorCacheWarmup(this);
 		this.registerWorkspaceViews();
 		registerEpubMarkdownPostProcessor(this, this.app);
 		registerEpubProtocolHandler(this, this.app, "[Standalone EPUB Protocol]");

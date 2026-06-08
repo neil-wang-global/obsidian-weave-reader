@@ -1,8 +1,21 @@
 import { Notice, TFile, TFolder, type App, normalizePath } from "obsidian";
 import { i18n } from "../../utils/i18n";
 import { logger } from "../../utils/logger";
-import type { CanvasViewLike } from "../../types/obsidian-extensions";
 import { generateCardUUID } from "../identifier/WeaveIDGenerator";
+import {
+	avoidNodeOverlap,
+	buildCanvasSelectionSnapshotKey,
+	calculateLockedHubNodePosition,
+	filterPlacementObstacleNodes,
+	getCanvasExcerptAnchorState,
+	getCanvasExcerptLayoutDirection,
+	getDirectChildNodes,
+	readBoundCanvasSelection,
+	resolveCanvasExcerptAnchorNodeId,
+	setCanvasExcerptLastCreatedNode,
+	setCanvasExcerptLayoutDirection,
+	type CanvasExcerptAnchorMode,
+} from "./canvas-excerpt-anchor";
 import { EpubLinkService } from "./EpubLinkService";
 import type {
 	CanvasAnchor,
@@ -27,6 +40,8 @@ export class EpubCanvasService {
 	private canvasPath: string | null = null;
 	private anchor: CanvasAnchor | null = null;
 	private layoutDirection: CanvasLayoutDirection = "down";
+	private lastInsertAnchorMode: CanvasExcerptAnchorMode | null = null;
+	private insertSelectionSnapshotByCanvas = new Map<string, string>();
 
 	constructor(app: App) {
 		this.app = app;
@@ -39,14 +54,29 @@ export class EpubCanvasService {
 
 	setCanvasPath(path: string | null): void {
 		this.canvasPath = path;
+		if (!path) {
+			this.insertSelectionSnapshotByCanvas.clear();
+			return;
+		}
+		void this.syncLayoutDirectionFromStorage(path);
 	}
 
 	getLayoutDirection(): CanvasLayoutDirection {
 		return this.layoutDirection;
 	}
 
-	setLayoutDirection(dir: CanvasLayoutDirection): void {
+	applyLayoutDirection(dir: CanvasLayoutDirection): void {
 		this.layoutDirection = dir;
+	}
+
+	setLayoutDirection(dir: CanvasLayoutDirection): void {
+		this.applyLayoutDirection(dir);
+		if (!this.canvasPath) {
+			return;
+		}
+		void setCanvasExcerptLayoutDirection(this.app, this.canvasPath, dir).catch((error) => {
+			logger.warn("[EpubCanvasService] Failed to persist canvas layout direction:", error);
+		});
 	}
 
 	getAnchor(): CanvasAnchor | null {
@@ -55,6 +85,10 @@ export class EpubCanvasService {
 
 	setAnchor(anchor: CanvasAnchor | null): void {
 		this.anchor = anchor;
+	}
+
+	getLastInsertAnchorMode(): CanvasExcerptAnchorMode | null {
+		return this.lastInsertAnchorMode;
 	}
 
 	isActive(): boolean {
@@ -164,6 +198,7 @@ export class EpubCanvasService {
 
 		try {
 			const data = await this.readCanvas();
+			await this.prepareInsertAnchor(data);
 
 			const noteContent = this.linkService.buildQuoteBlock(
 				filePath,
@@ -210,11 +245,7 @@ export class EpubCanvasService {
 			}
 
 			await this.writeCanvas(data);
-
-			this.anchor = {
-				nodeId,
-				parentNodeId: parentId,
-			};
+			await this.finalizeInsertAnchor(nodeId, parentId);
 
 			return node;
 		} catch (e) {
@@ -229,6 +260,7 @@ export class EpubCanvasService {
 
 		try {
 			const data = await this.readCanvas();
+			await this.prepareInsertAnchor(data);
 			const nodeId = this.generateNodeId();
 			const canvasColor = color ? HIGHLIGHT_TO_CANVAS_COLOR[color] : undefined;
 			const position = this.calculateNodePosition(data);
@@ -260,11 +292,7 @@ export class EpubCanvasService {
 			}
 
 			await this.writeCanvas(data);
-
-			this.anchor = {
-				nodeId,
-				parentNodeId: parentId,
-			};
+			await this.finalizeInsertAnchor(nodeId, parentId);
 
 			return node;
 		} catch (e) {
@@ -297,7 +325,41 @@ export class EpubCanvasService {
 			return this.calculateRootPosition(data);
 		}
 
-		return this.calculateDirectionalPosition(anchorNode);
+		let position: { x: number; y: number };
+		if (this.lastInsertAnchorMode === "locked") {
+			const existingChildren = getDirectChildNodes(data, anchorNode.id);
+			position = calculateLockedHubNodePosition(
+				anchorNode,
+				existingChildren,
+				this.layoutDirection
+			);
+		} else {
+			position = this.calculateDirectionalPosition(anchorNode);
+		}
+
+		return avoidNodeOverlap(
+			position,
+			{ width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT },
+			data.nodes,
+			this.layoutDirection
+		);
+	}
+
+	private getInsertSelectionSnapshot(): string | null {
+		if (!this.canvasPath) {
+			return null;
+		}
+		return this.insertSelectionSnapshotByCanvas.get(this.canvasPath) ?? null;
+	}
+
+	private rememberInsertSelectionSnapshot(selectionNodeIds: string[]): void {
+		if (!this.canvasPath) {
+			return;
+		}
+		this.insertSelectionSnapshotByCanvas.set(
+			this.canvasPath,
+			buildCanvasSelectionSnapshotKey(selectionNodeIds)
+		);
 	}
 
 	private resolveAnchorNode(data: CanvasData): CanvasNode | null {
@@ -308,14 +370,15 @@ export class EpubCanvasService {
 	}
 
 	private calculateRootPosition(data: CanvasData): { x: number; y: number } {
-		if (data.nodes.length === 0) {
+		const placementNodes = filterPlacementObstacleNodes(data.nodes);
+		if (placementNodes.length === 0) {
 			return { x: 0, y: 0 };
 		}
 
 		switch (this.layoutDirection) {
 			case "down": {
 				let maxY = -Infinity;
-				for (const node of data.nodes) {
+				for (const node of placementNodes) {
 					const bottom = node.y + node.height;
 					if (bottom > maxY) maxY = bottom;
 				}
@@ -323,14 +386,14 @@ export class EpubCanvasService {
 			}
 			case "up": {
 				let minY = Infinity;
-				for (const node of data.nodes) {
+				for (const node of placementNodes) {
 					if (node.y < minY) minY = node.y;
 				}
 				return { x: 0, y: minY - DEFAULT_NODE_HEIGHT - NODE_GAP_Y };
 			}
 			case "right": {
 				let maxX = -Infinity;
-				for (const node of data.nodes) {
+				for (const node of placementNodes) {
 					const right = node.x + node.width;
 					if (right > maxX) maxX = right;
 				}
@@ -338,7 +401,7 @@ export class EpubCanvasService {
 			}
 			case "left": {
 				let minX = Infinity;
-				for (const node of data.nodes) {
+				for (const node of placementNodes) {
 					if (node.x < minX) minX = node.x;
 				}
 				return { x: minX - DEFAULT_NODE_WIDTH - NODE_GAP_X, y: 0 };
@@ -360,70 +423,97 @@ export class EpubCanvasService {
 	}
 
 	updateAnchorFromCanvasSelection(app: App): void {
+		void this.prepareInsertAnchorFromOpenCanvas(app);
+	}
+
+	private async syncLayoutDirectionFromStorage(canvasPath: string): Promise<void> {
 		try {
-			const canvasLeaves = app.workspace.getLeavesOfType("canvas");
-			for (const leaf of canvasLeaves) {
-				const canvasView = leaf.view as CanvasViewLike;
-				if (!canvasView?.canvas) continue;
-
-				const filePath = canvasView.file?.path;
-				if (filePath !== this.canvasPath) continue;
-
-				const selection = canvasView.canvas.selection;
-				if (!selection || selection.size === 0) {
-					return;
-				}
-
-				const rawData = canvasView.canvas.getData?.();
-				const data =
-					rawData && typeof rawData === "object" && !Array.isArray(rawData)
-						? (rawData as CanvasData)
-						: null;
-				const nodes = Array.isArray(data?.nodes) ? data.nodes : [];
-				let selectedNode: string | null = null;
-				for (const item of selection.values()) {
-					const itemRecord =
-						item && typeof item === "object" ? (item as Record<string, unknown>) : null;
-					const itemId = typeof itemRecord?.id === "string" ? itemRecord.id : null;
-					if (
-						itemId &&
-						nodes.some((node) => {
-							const nodeRecord =
-								node && typeof node === "object"
-									? (node as unknown as Record<string, unknown>)
-									: null;
-							return typeof nodeRecord?.id === "string" && nodeRecord.id === itemId;
-						})
-					) {
-						selectedNode = itemId;
-						break;
-					}
-				}
-				if (!selectedNode) {
-					this.anchor = null;
-					return;
-				}
-
-				let parentNodeId: string | null = null;
-				if (Array.isArray(data?.edges)) {
-					const parentEdge = data.edges.find(
-						(edge): edge is CanvasEdge =>
-							Boolean(edge && typeof edge === "object") && edge.toNode === selectedNode
-					);
-					if (parentEdge && typeof parentEdge.fromNode === "string") {
-						parentNodeId = parentEdge.fromNode;
-					}
-				}
-
-				this.anchor = {
-					nodeId: selectedNode,
-					parentNodeId,
-				};
-				return;
-			}
-		} catch (e) {
-			logger.warn("[EpubCanvasService] Failed to read canvas selection:", e);
+			this.layoutDirection = await getCanvasExcerptLayoutDirection(this.app, canvasPath);
+		} catch (error) {
+			logger.warn("[EpubCanvasService] Failed to load canvas layout direction:", error);
 		}
+	}
+
+	private async prepareInsertAnchor(data: CanvasData): Promise<void> {
+		if (!this.canvasPath) {
+			this.anchor = null;
+			this.lastInsertAnchorMode = null;
+			return;
+		}
+
+		await this.syncLayoutDirectionFromStorage(this.canvasPath);
+
+		const selection = readBoundCanvasSelection(this.app, this.canvasPath);
+		let anchorState = {
+			lockedNodeId: null,
+			lastCreatedNodeId: null,
+			layoutDirection: this.layoutDirection,
+		};
+		try {
+			anchorState = await getCanvasExcerptAnchorState(this.app, this.canvasPath);
+			if (anchorState.layoutDirection) {
+				this.layoutDirection = anchorState.layoutDirection;
+			}
+		} catch (error) {
+			logger.warn("[EpubCanvasService] Failed to load canvas excerpt anchor state:", error);
+		}
+
+		const validNodeIds = new Set(
+			data.nodes.map((node) => String(node.id || "").trim()).filter(Boolean)
+		);
+		const resolution = resolveCanvasExcerptAnchorNodeId(
+			anchorState,
+			selection?.nodeIds ?? [],
+			validNodeIds,
+			this.getInsertSelectionSnapshot()
+		);
+		this.lastInsertAnchorMode = resolution.mode;
+		if (!resolution.nodeId) {
+			this.anchor = null;
+			return;
+		}
+
+		let parentNodeId: string | null = null;
+		if (resolution.mode === "locked") {
+			parentNodeId = resolution.nodeId;
+		} else {
+			const parentEdge = data.edges.find((edge) => edge.toNode === resolution.nodeId);
+			if (parentEdge) {
+				parentNodeId = parentEdge.fromNode;
+			}
+		}
+
+		this.anchor = {
+			nodeId: resolution.nodeId,
+			parentNodeId,
+		};
+	}
+
+	private async prepareInsertAnchorFromOpenCanvas(app: App): Promise<void> {
+		try {
+			const data = await this.readCanvas();
+			await this.prepareInsertAnchor(data);
+		} catch (error) {
+			logger.warn("[EpubCanvasService] Failed to prepare canvas insert anchor:", error);
+		}
+	}
+
+	private async finalizeInsertAnchor(nodeId: string, parentId: string | null): Promise<void> {
+		this.anchor = {
+			nodeId,
+			parentNodeId: parentId,
+		};
+		if (!this.canvasPath) {
+			return;
+		}
+		try {
+			await setCanvasExcerptLastCreatedNode(this.app, this.canvasPath, nodeId);
+		} catch (error) {
+			logger.warn("[EpubCanvasService] Failed to persist canvas excerpt last-created node:", error);
+		}
+
+		const selection = readBoundCanvasSelection(this.app, this.canvasPath);
+		this.rememberInsertSelectionSnapshot(selection?.nodeIds ?? []);
 	}
 
 	async listCanvasFiles(): Promise<string[]> {

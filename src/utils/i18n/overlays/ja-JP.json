@@ -305,7 +305,7 @@
   "epub.premium.limitedTimeOpenSuffix": "（期間限定で利用可能）",
   "epub.premium.lockedFormatNotice": "{format} の閲覧はプレミアム機能です。利用するにはライセンスを有効化してください",
   "epub.premium.premiumColumnTitle": "プレミアム機能",
-  "epub.premium.premiumFeatures.canvasExcerpts.description": "Canvas のマインドマップ抜粋と連携し、リーダー内でバインドを管理します。",
+  "epub.premium.premiumFeatures.canvasExcerpts.description": "Canvas のマインドマップ抜粋と連携し、リーダー内でバインドを管理します。EPUB、MOBI、TXT、CBZ など、このプラグインが対応するすべての書籍形式で利用できます。",
   "epub.premium.premiumFeatures.canvasExcerpts.title": "Canvas 抜粋連携",
   "epub.premium.premiumFeatures.chapterExport.description": "現在の章を Markdown ファイルとして素早くエクスポートし、後から編集できます。",
   "epub.premium.premiumFeatures.chapterExport.title": "章の Markdown エクスポート",

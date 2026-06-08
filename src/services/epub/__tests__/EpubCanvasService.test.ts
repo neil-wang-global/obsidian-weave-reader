@@ -1,3 +1,22 @@
+vi.mock('../canvas-excerpt-anchor', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../canvas-excerpt-anchor')>();
+	return {
+		...actual,
+		getCanvasExcerptAnchorState: vi.fn(async () => ({
+			lockedNodeId: null,
+			lastCreatedNodeId: null,
+			layoutDirection: 'down' as const,
+		})),
+		getCanvasExcerptLayoutDirection: vi.fn(async () => 'down' as const),
+		setCanvasExcerptLastCreatedNode: vi.fn(async () => undefined),
+		setCanvasExcerptLayoutDirection: vi.fn(async () => ({
+			lockedNodeId: null,
+			lastCreatedNodeId: null,
+			layoutDirection: 'down' as const,
+		})),
+	};
+});
+
 vi.mock('obsidian', () => ({
 	App: class MockApp {},
 	TFile: class MockTFile {
@@ -152,9 +171,6 @@ describe('EpubCanvasService', () => {
 		}, canvasLeaves);
 		const service = new EpubCanvasService(app);
 		service.setCanvasPath(canvasPath);
-
-		service.updateAnchorFromCanvasSelection(app);
-		expect(service.getAnchor()).toBeNull();
 
 		await service.addRawTextNode('Detached note');
 

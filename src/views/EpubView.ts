@@ -459,7 +459,6 @@ export class EpubView extends ItemView {
 					this.showDirectionMenu(evt);
 				}
 			);
-			this.canvasDirBtn.setCssProps({ display: "none" });
 			this.canvasBtn = this.addAction(
 				"layout-dashboard",
 				this.t("views.epubView.label.canvasOff"),
@@ -1730,6 +1729,17 @@ export class EpubView extends ItemView {
 			onCanvasStateChange: (active: boolean, _canvasPath: string | null) => {
 				this.canvasModeActive = active;
 				this.updateCanvasBtn();
+				if (active) {
+					const canvasService = this.actionHandlers.getCanvasService?.();
+					if (canvasService) {
+						this.canvasDirection = canvasService.getLayoutDirection();
+						this.updateDirectionBtn();
+					}
+				}
+			},
+			onCanvasLayoutDirectionChange: (direction: CanvasLayoutDirection) => {
+				this.canvasDirection = direction;
+				this.updateDirectionBtn();
 			},
 		};
 	}

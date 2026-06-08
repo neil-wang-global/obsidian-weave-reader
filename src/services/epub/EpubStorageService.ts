@@ -25,6 +25,7 @@ import {
 	resolveSupportedBookFile,
 	resolveSupportedBookFilePath as resolveCanonicalSupportedBookFilePath,
 } from "./epub-vault-path";
+import { normalizeCanvasExcerptAnchorsMap } from "./canvas-excerpt-anchor";
 import { EpubBookmarkService, type EpubBookmarkReadingState } from "./EpubBookmarkService";
 import { normalizeReadingPaceStats } from "./reading-pace";
 import type {
@@ -123,7 +124,14 @@ interface EpubReaderLocalDataFile {
 	bookshelfMembership?: EpubBookshelfMembershipEntry[];
 	sourceRegistry?: EpubSourceRegistryEntry[];
 	canvasBindings?: Record<string, string>;
+	canvasExcerptAnchors?: Record<string, CanvasExcerptAnchorRecord>;
 	books?: Record<string, EpubReaderLocalBookRecord>;
+}
+
+export interface CanvasExcerptAnchorRecord {
+	lockedNodeId: string | null;
+	lastCreatedNodeId: string | null;
+	layoutDirection?: "down" | "right" | "up" | "left";
 }
 
 export interface EpubLocalDataMigrationInspection {
@@ -1027,6 +1035,9 @@ export class EpubStorageService {
 					)
 					.filter(([bookId, canvasPath]) => Boolean(bookId) && Boolean(canvasPath))
 			);
+		}
+		if (Object.prototype.hasOwnProperty.call(record, "canvasExcerptAnchors")) {
+			normalized.canvasExcerptAnchors = normalizeCanvasExcerptAnchorsMap(record.canvasExcerptAnchors);
 		}
 
 		return normalized;
@@ -4105,7 +4116,69 @@ export class EpubStorageService {
 			await this.saveCanvasBindings(bindings);
 		}
 
+		await this.remapCanvasExcerptAnchorPath(normalizedOldPath, normalizedNewPath);
+
 		return updated;
+	}
+
+	async getCanvasExcerptAnchor(canvasPath: string): Promise<CanvasExcerptAnchorRecord> {
+		const normalizedPath = normalizePath(String(canvasPath || "").trim());
+		if (!normalizedPath) {
+			return { lockedNodeId: null, lastCreatedNodeId: null };
+		}
+		const anchors = await this.loadCanvasExcerptAnchors();
+		const record = anchors[normalizedPath];
+		return {
+			lockedNodeId: record?.lockedNodeId ?? null,
+			lastCreatedNodeId: record?.lastCreatedNodeId ?? null,
+			layoutDirection: record?.layoutDirection,
+		};
+	}
+
+	async setCanvasExcerptAnchor(
+		canvasPath: string,
+		record: CanvasExcerptAnchorRecord
+	): Promise<void> {
+		const normalizedPath = normalizePath(String(canvasPath || "").trim());
+		if (!normalizedPath) {
+			return;
+		}
+		const anchors = await this.loadCanvasExcerptAnchors();
+		const nextRecord: CanvasExcerptAnchorRecord = {
+			lockedNodeId: String(record.lockedNodeId || "").trim() || null,
+			lastCreatedNodeId: String(record.lastCreatedNodeId || "").trim() || null,
+			layoutDirection: record.layoutDirection,
+		};
+		if (!nextRecord.lockedNodeId && !nextRecord.lastCreatedNodeId && !nextRecord.layoutDirection) {
+			if (Object.prototype.hasOwnProperty.call(anchors, normalizedPath)) {
+				delete anchors[normalizedPath];
+				await this.saveCanvasExcerptAnchors(anchors);
+			}
+			return;
+		}
+		anchors[normalizedPath] = nextRecord;
+		await this.saveCanvasExcerptAnchors(anchors);
+	}
+
+	async remapCanvasExcerptAnchorPath(oldPath: string, newPath: string): Promise<boolean> {
+		const normalizedOldPath = normalizePath(String(oldPath || "").trim());
+		const normalizedNewPath = normalizePath(String(newPath || "").trim());
+		if (
+			!normalizedOldPath ||
+			!normalizedNewPath ||
+			normalizedOldPath === normalizedNewPath
+		) {
+			return false;
+		}
+		const anchors = await this.loadCanvasExcerptAnchors();
+		const existing = anchors[normalizedOldPath];
+		if (!existing) {
+			return false;
+		}
+		delete anchors[normalizedOldPath];
+		anchors[normalizedNewPath] = existing;
+		await this.saveCanvasExcerptAnchors(anchors);
+		return true;
 	}
 
 	async removeCanvasBinding(bookId: string): Promise<void> {
@@ -4713,6 +4786,23 @@ export class EpubStorageService {
 		);
 		await this.updateUnifiedLocalReaderData((localData) => {
 			localData.canvasBindings = normalizedBindings;
+		});
+	}
+
+	private async loadCanvasExcerptAnchors(): Promise<Record<string, CanvasExcerptAnchorRecord>> {
+		const unifiedData = await this.readUnifiedLocalReaderData();
+		if (unifiedData.canvasExcerptAnchors && typeof unifiedData.canvasExcerptAnchors === "object") {
+			return { ...unifiedData.canvasExcerptAnchors };
+		}
+		return {};
+	}
+
+	private async saveCanvasExcerptAnchors(
+		anchors: Record<string, CanvasExcerptAnchorRecord>
+	): Promise<void> {
+		const normalizedAnchors = normalizeCanvasExcerptAnchorsMap(anchors);
+		await this.updateUnifiedLocalReaderData((localData) => {
+			localData.canvasExcerptAnchors = normalizedAnchors;
 		});
 	}
 

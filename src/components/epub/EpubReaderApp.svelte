@@ -30,6 +30,10 @@
 	import type { BacklinkSourceMatch } from '../../services/epub/EpubBacklinkHighlightService';
 	import { EpubScreenshotService } from '../../services/epub/EpubScreenshotService';
 	import { EpubCanvasService } from '../../services/epub/EpubCanvasService';
+	import {
+		WEAVE_EPUB_CANVAS_LAYOUT_DIRECTION_EVENT,
+		type WeaveEpubCanvasLayoutDirectionPayload,
+	} from '../../services/epub/canvas-excerpt-anchor';
 	import type { EpubVisibleFrameLike, ScreenshotRect } from '../../services/epub/EpubScreenshotService';
 	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubHostCapabilities, EpubLastOpenBookmark, EpubLayoutMode, EpubParagraphModeReadingPosition, EpubParagraphModeTransitionStyle, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, EpubWeaveExcerptRemovalMode, EpubWeaveOfficialAPI, EpubWeaveRemoveExcerptResult, FlashStyle, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderParagraph, ReadingPosition, TocItem } from '../../services/epub';
 	import { PremiumFeatureGuard, PREMIUM_FEATURES } from '../../services/premium/PremiumFeatureGuard';
@@ -133,6 +137,7 @@
 		}) => void;
 		onSwitchBook?: (filePath: string) => void;
 		onCanvasStateChange?: (active: boolean, canvasPath: string | null) => void;
+		onCanvasLayoutDirectionChange?: (direction: import('../../services/epub/canvas-types').CanvasLayoutDirection) => void;
 	}
 
 	let { 
@@ -152,7 +157,8 @@
 		onBackFromBookshelf,
 		onActionsReady, 
 		onSwitchBook, 
-		onCanvasStateChange 
+		onCanvasStateChange,
+		onCanvasLayoutDirectionChange
 	}: Props = $props();
 	let t = $derived($tr);
 
@@ -2942,6 +2948,20 @@
 		}
 	}
 
+	function showCanvasAddedNotice(
+		anchorMode: ReturnType<EpubCanvasService['getLastInsertAnchorMode']>
+	): void {
+		const noticeKey =
+			anchorMode === 'locked'
+				? 'epub.reader.addedToCanvasLocked'
+				: anchorMode === 'selection'
+					? 'epub.reader.addedToCanvasSelection'
+					: anchorMode === 'chain'
+						? 'epub.reader.addedToCanvasChain'
+						: 'epub.reader.addedToCanvas';
+		new Notice(t(noticeKey));
+	}
+
 	async function addToCanvas(
 		text: string,
 		cfiRange: string,
@@ -2953,8 +2973,6 @@
 		}
 		const chapterIndex = readerService.getCurrentChapterIndex();
 		const chapterTitle = readerService.getCurrentChapterTitle();
-
-		canvasService.updateAnchorFromCanvasSelection(app);
 
 		const timestamp = excerptSettings.addCreationTime ? formatTimestamp(new Date()) : undefined;
 		const node = await canvasService.addExcerptNode(
@@ -2971,7 +2989,7 @@
 		if (node) {
 			rememberHighlightSourcePath(canvasService.getCanvasPath());
 			queueHighlightReload(120, { incremental: true });
-			new Notice(t('epub.reader.addedToCanvas'));
+			showCanvasAddedNotice(canvasService.getLastInsertAnchorMode());
 		}
 	}
 
@@ -3728,10 +3746,9 @@
 		}
 
 		if (canvasMode && canvasService.isActive() && canvasContent) {
-			canvasService.updateAnchorFromCanvasSelection(app);
 			const node = await canvasService.addRawTextNode(canvasContent);
 			if (node) {
-				new Notice(t('epub.reader.screenshotAddedToCanvas'));
+				showCanvasAddedNotice(canvasService.getLastInsertAnchorMode());
 			}
 		}
 	}
@@ -4867,6 +4884,18 @@
 			EPUB_RUNTIME.events.bookDisplayTitleChanged,
 			handleBookDisplayTitleChanged
 		);
+		const canvasDirectionRef = app.workspace.on(
+			WEAVE_EPUB_CANVAS_LAYOUT_DIRECTION_EVENT,
+			(payload: WeaveEpubCanvasLayoutDirectionPayload) => {
+				const activePath = normalizePath(String(canvasService.getCanvasPath() || '').trim());
+				const eventPath = normalizePath(String(payload?.canvasPath || '').trim());
+				if (!activePath || activePath !== eventPath || !payload?.direction) {
+					return;
+				}
+				canvasService.applyLayoutDirection(payload.direction);
+				onCanvasLayoutDirectionChange?.(payload.direction);
+			}
+		);
 		componentDisposed = false;
 		setupScrolledNavMetricsObserver();
 		window.addEventListener('resize', scheduleScrolledNavLayoutSync);
@@ -4996,6 +5025,7 @@
 			nextPage: handleNextPage,
 		});
 		return () => {
+			app.workspace.offref(canvasDirectionRef);
 			document.removeEventListener('fullscreenchange', handleFullscreenChange);
 			cleanupExternalHighlightSyncReload();
 			cleanupCardHighlightSync();

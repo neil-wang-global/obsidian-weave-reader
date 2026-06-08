@@ -110,7 +110,8 @@ export const epubTranslations: Record<EpubTranslationLocale, TranslationKey> = {
 					},
 					canvasExcerpts: {
 						title: "脑图摘录联动",
-						description: "自动关联 Canvas 脑图摘录，并在阅读器中管理绑定状态。",
+						description:
+							"自动关联 Canvas 脑图摘录，并在阅读器中管理绑定状态；适用于 EPUB、MOBI、TXT、CBZ 等插件支持的全部书籍格式。",
 					},
 					paragraphMode: {
 						title: "段落阅读模式",
@@ -567,6 +568,15 @@ export const epubTranslations: Record<EpubTranslationLocale, TranslationKey> = {
 				imageCopied: "图片已复制到剪贴板",
 				imageCopyFailed: "图片复制失败",
 				addedToCanvas: "已添加到 Canvas",
+				addedToCanvasLocked: "已添加到 Canvas（从固定锚点延伸）",
+				addedToCanvasSelection: "已添加到 Canvas（从选中节点延伸）",
+				addedToCanvasChain: "已添加到 Canvas（续写上一节点）",
+				canvasExcerptAnchorLock: "固定阅读器摘录锚点",
+				canvasExcerptAnchorUnlock: "取消固定阅读器摘录锚点",
+				canvasExcerptAnchorLocked: "已固定摘录锚点",
+				canvasExcerptAnchorUnlocked: "已取消固定摘录锚点",
+				canvasExcerptAnchorSelectOne: "请先选中一个 Canvas 节点",
+				canvasExcerptDirectionMenu: "阅读器摘录方向",
 				createCardSuccess: "摘录已填充到创建卡片窗口",
 				createCardFailed: "摘录失败，请重试",
 				highlightExtractFailed: "高亮摘录失败，请重试",
@@ -1063,7 +1073,8 @@ export const epubTranslations: Record<EpubTranslationLocale, TranslationKey> = {
 					},
 					canvasExcerpts: {
 						title: "Canvas excerpt linking",
-						description: "Link Canvas mind-map excerpts and manage bindings inside the reader.",
+						description:
+							"Link Canvas mind-map excerpts and manage bindings inside the reader; works with every book format this plugin supports (EPUB, MOBI, TXT, CBZ, and more).",
 					},
 					paragraphMode: {
 						title: "Paragraph reading mode",
@@ -1535,6 +1546,15 @@ export const epubTranslations: Record<EpubTranslationLocale, TranslationKey> = {
 				imageCopied: "Image copied to clipboard",
 				imageCopyFailed: "Failed to copy image",
 				addedToCanvas: "Added to Canvas",
+				addedToCanvasLocked: "Added to Canvas (from pinned anchor)",
+				addedToCanvasSelection: "Added to Canvas (from selected node)",
+				addedToCanvasChain: "Added to Canvas (continuing previous node)",
+				canvasExcerptAnchorLock: "Pin reader excerpt anchor",
+				canvasExcerptAnchorUnlock: "Unpin reader excerpt anchor",
+				canvasExcerptAnchorLocked: "Excerpt anchor pinned",
+				canvasExcerptAnchorUnlocked: "Excerpt anchor unpinned",
+				canvasExcerptAnchorSelectOne: "Select exactly one Canvas node first",
+				canvasExcerptDirectionMenu: "Reader excerpt direction",
 				createCardSuccess: "Excerpt filled into the card creation window",
 				createCardFailed: "Failed to create card from excerpt. Please try again",
 				highlightExtractFailed: "Failed to create a card from the highlight. Please try again",
