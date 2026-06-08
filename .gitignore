@@ -286,6 +286,8 @@ scripts/*
 !scripts/check-forbidden-eslint-disables.cjs
 !scripts/sync-obsidian-community-version.cjs
 !scripts/ci-install-dependencies.cjs
+!scripts/ci-run-tests.cjs
+!scripts/ci-run-build.cjs
 !scripts/patch-foliate-paginator.mjs
 !scripts/check-mojibake.cjs
 !scripts/verify-no-dynamic-script.cjs

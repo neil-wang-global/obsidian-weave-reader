@@ -105,18 +105,10 @@ jobs:
       - name: Log Node.js runtime
         run: node -e "console.log('node', process.version, 'groupBy', typeof Object.groupBy)"
       
-      - name: Run tests with coverage
-        run: npm test
+      - name: Run tests
+        run: node scripts/ci-run-tests.cjs
         continue-on-error: false
       
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        if: always()
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage/coverage-final.json
-          fail_ci_if_error: false
-          
   # Job 5: 构建验证
   build:
     name: Build Verification
@@ -138,7 +130,7 @@ jobs:
         continue-on-error: false
       
       - name: Build project
-        run: npm run build
+        run: node scripts/ci-run-build.cjs
         continue-on-error: false
 
       - name: Verify release assets
