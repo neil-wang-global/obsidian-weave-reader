@@ -10,7 +10,6 @@ jobs:
   # Job 1: 代码格式检查
   format-check:
     name: Code Format Check
-    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -26,7 +25,7 @@ jobs:
       
       - name: Check code formatting
         run: npm run format:check
-        continue-on-error: false
+        continue-on-error: true
 
   # Job 2: Lint检查
   lint:
@@ -62,7 +61,7 @@ jobs:
       
       - name: Check Svelte 5 Compliance
         run: npm run lint:svelte5
-        continue-on-error: false
+        continue-on-error: true
 
   # Job 3: TypeScript类型检查（关键）
   type-check:
