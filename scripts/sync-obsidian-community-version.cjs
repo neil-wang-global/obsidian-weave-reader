@@ -157,7 +157,9 @@ function main() {
 		console.log(`  - git fetch ${REMOTE}`);
 		console.log(`  - git stash push -u -m "${stashMessage}"`);
 		console.log(`  - git checkout -B ${SYNC_BRANCH} ${REMOTE}/${DEFAULT_BRANCH}`);
-		console.log("  - update manifest.json / package.json(version only) / versions.json");
+		console.log(
+			"  - update manifest.json / package.json(version only) / package-lock.json(version only) / versions.json"
+		);
 		console.log(`  - git commit + git push ${REMOTE} ${SYNC_BRANCH}:${DEFAULT_BRANCH}`);
 		console.log(`  - git checkout ${previousBranch} && git stash pop`);
 		return;
@@ -184,7 +186,10 @@ function main() {
 
 		writeJson("versions.json", metadata.versions);
 
-		run("git", ["add", "manifest.json", "package.json", "versions.json"]);
+		// Keep package-lock root version aligned so remote `npm ci` does not fail after version-only sync.
+		syncPackageLockVersion(targetVersion);
+
+		run("git", ["add", "manifest.json", "package.json", "package-lock.json", "versions.json"]);
 
 		const stagedDiff = runCapture("git", ["diff", "--cached", "--stat"]);
 		console.log(stagedDiff);
