@@ -8,6 +8,22 @@ import { logger } from '../utils/logger';
 import '@testing-library/jest-dom';
 import { afterEach, vi } from 'vitest';
 
+if (typeof Object.groupBy !== 'function') {
+	Object.groupBy = <T>(
+		items: Iterable<T>,
+		keySelector: (item: T) => PropertyKey
+	): Partial<Record<PropertyKey, T[]>> => {
+		const result: Partial<Record<PropertyKey, T[]>> = {};
+		for (const item of items) {
+			const key = keySelector(item);
+			const bucket = result[key] ?? [];
+			bucket.push(item);
+			result[key] = bucket;
+		}
+		return result;
+	};
+}
+
 afterEach(() => {
   vi.useRealTimers();
   const testWindow = window as TestWindow & {
