@@ -232,7 +232,9 @@ legacy-weave-archive/
 scratch/
 output/
 .windsurf/
+# Cursor / AI 开发文档 — 仅本地，禁止提交或推送到公开 GitHub
 .cursor/
+AGENTS.md
 .playwright-cli/
 开发规则.zh-CN.md
 版本更新文档/
@@ -245,7 +247,7 @@ promo-*.html
 promo-*.css
 promo-*.js
 
-# 内部文档
+# 内部文档（含 docs/specs、docs/architecture — 禁止推公开仓）
 docs/
 DEVELOPMENT.md
 ERROR_CHECK_REPORT.md

@@ -39,6 +39,8 @@ const FORBIDDEN_TRACKED_PATH_RULES = [
 	{
 		name: "local tooling and debug artifacts",
 		patterns: [
+			/^\.cursor\//,
+			/^AGENTS\.md$/,
 			/^\.windsurf\//,
 			/^\.playwright-cli\//,
 			/^\.mcp\.json$/,
