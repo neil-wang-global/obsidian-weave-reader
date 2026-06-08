@@ -1,5 +1,8 @@
 name: Continuous Integration
 
+env:
+  NODE_OPTIONS: --max-old-space-size=6144
+
 on:
   push:
     branches: [main, develop]
@@ -98,9 +101,12 @@ jobs:
       
       - name: Install dependencies
         run: node scripts/ci-install-dependencies.cjs
+
+      - name: Log Node.js runtime
+        run: node -e "console.log('node', process.version, 'groupBy', typeof Object.groupBy)"
       
       - name: Run tests with coverage
-        run: npm run test -- --coverage
+        run: npm test
         continue-on-error: false
       
       - name: Upload coverage to Codecov

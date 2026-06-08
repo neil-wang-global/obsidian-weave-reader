@@ -6,6 +6,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const foliateRoot = path.resolve(__dirname, "../node_modules/foliate-js");
 const paginatorPath = path.join(foliateRoot, "paginator.js");
 const fixedLayoutPath = path.join(foliateRoot, "fixed-layout.js");
+const epubPath = path.join(foliateRoot, "epub.js");
+const GROUPBY_POLYFILL_MARKER = "weave-epub-reader Object.groupBy polyfill";
 
 const OLD_SET_SELECTION = `const setSelectionTo = (target, collapse) => {
     let range
@@ -107,12 +109,46 @@ function patchFile(filePath, oldText, newText, label) {
 	return true;
 }
 
+function patchEpubGroupByPolyfill() {
+	if (!fs.existsSync(epubPath)) {
+		console.warn(`[patch-foliate-paginator] Skipped: ${epubPath} not found`);
+		return false;
+	}
+
+	const source = fs.readFileSync(epubPath, "utf8");
+	if (source.includes(GROUPBY_POLYFILL_MARKER)) {
+		return false;
+	}
+
+	const prefix = `// ${GROUPBY_POLYFILL_MARKER}
+if (typeof Object.groupBy !== "function") {
+\tObject.groupBy = (items, keySelector) => {
+\t\tconst result = {};
+\t\tfor (const item of items) {
+\t\t\tconst key = keySelector(item);
+\t\t\t(result[key] ??= []).push(item);
+\t\t}
+\t\treturn result;
+\t};
+}
+
+`;
+
+	fs.writeFileSync(epubPath, prefix + source, "utf8");
+	console.log("[patch-foliate-paginator] Patched foliate-js/epub.js Object.groupBy polyfill");
+	return true;
+}
+
 if (!fs.existsSync(paginatorPath)) {
 	console.warn(`[patch-foliate-paginator] Skipped: ${paginatorPath} not found`);
 	process.exit(0);
 }
 
 let changed = false;
+
+if (patchEpubGroupByPolyfill()) {
+	changed = true;
+}
 
 if (!fs.readFileSync(paginatorPath, "utf8").includes("isLiveSelectionTarget")) {
 	if (!fs.readFileSync(paginatorPath, "utf8").includes(OLD_SET_SELECTION)) {
