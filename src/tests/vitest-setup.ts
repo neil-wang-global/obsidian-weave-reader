@@ -24,6 +24,22 @@ if (typeof Object.groupBy !== 'function') {
 	};
 }
 
+if (typeof Map.groupBy !== 'function') {
+	Map.groupBy = <T, K>(
+		items: Iterable<T>,
+		keySelector: (item: T) => K
+	): Map<K, T[]> => {
+		const result = new Map<K, T[]>();
+		for (const item of items) {
+			const key = keySelector(item);
+			const bucket = result.get(key) ?? [];
+			bucket.push(item);
+			result.set(key, bucket);
+		}
+		return result;
+	};
+}
+
 afterEach(() => {
   vi.useRealTimers();
   const testWindow = window as TestWindow & {

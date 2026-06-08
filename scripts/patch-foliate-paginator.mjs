@@ -109,19 +109,20 @@ function patchFile(filePath, oldText, newText, label) {
 	return true;
 }
 
-function patchEpubGroupByPolyfill() {
-	if (!fs.existsSync(epubPath)) {
-		console.warn(`[patch-foliate-paginator] Skipped: ${epubPath} not found`);
-		return false;
-	}
+const MAP_GROUPBY_POLYFILL = `if (typeof Map.groupBy !== "function") {
+\tMap.groupBy = (items, keySelector) => {
+\t\tconst result = new Map();
+\t\tfor (const item of items) {
+\t\t\tconst key = keySelector(item);
+\t\t\tconst bucket = result.get(key) ?? [];
+\t\t\tbucket.push(item);
+\t\t\tresult.set(key, bucket);
+\t\t}
+\t\treturn result;
+\t};
+}`;
 
-	const source = fs.readFileSync(epubPath, "utf8");
-	if (source.includes(GROUPBY_POLYFILL_MARKER)) {
-		return false;
-	}
-
-	const prefix = `// ${GROUPBY_POLYFILL_MARKER}
-if (typeof Object.groupBy !== "function") {
+const OBJECT_GROUPBY_POLYFILL = `if (typeof Object.groupBy !== "function") {
 \tObject.groupBy = (items, keySelector) => {
 \t\tconst result = {};
 \t\tfor (const item of items) {
@@ -130,12 +131,39 @@ if (typeof Object.groupBy !== "function") {
 \t\t}
 \t\treturn result;
 \t};
-}
+}`;
+
+function patchEpubGroupByPolyfill() {
+	if (!fs.existsSync(epubPath)) {
+		console.warn(`[patch-foliate-paginator] Skipped: ${epubPath} not found`);
+		return false;
+	}
+
+	let source = fs.readFileSync(epubPath, "utf8");
+	let changed = false;
+
+	if (!source.includes(GROUPBY_POLYFILL_MARKER)) {
+		const prefix = `// ${GROUPBY_POLYFILL_MARKER}
+${OBJECT_GROUPBY_POLYFILL}
+${MAP_GROUPBY_POLYFILL}
 
 `;
+		source = prefix + source;
+		changed = true;
+	} else if (!source.includes("typeof Map.groupBy")) {
+		source = source.replace(
+			/(if \(typeof Object\.groupBy[\s\S]*?\n\})\n/,
+			`$1\n${MAP_GROUPBY_POLYFILL}\n`
+		);
+		changed = true;
+	}
 
-	fs.writeFileSync(epubPath, prefix + source, "utf8");
-	console.log("[patch-foliate-paginator] Patched foliate-js/epub.js Object.groupBy polyfill");
+	if (!changed) {
+		return false;
+	}
+
+	fs.writeFileSync(epubPath, source, "utf8");
+	console.log("[patch-foliate-paginator] Patched foliate-js/epub.js groupBy polyfills");
 	return true;
 }
 
