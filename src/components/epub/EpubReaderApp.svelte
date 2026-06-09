@@ -48,6 +48,7 @@
 	import { logger } from '../../utils/logger';
 	import { tr } from '../../utils/i18n';
 	import { isWeaveMainPluginEnabled } from '../../utils/weave-reader-access';
+	import { getOpenEpubFilePath, pathsReferToSameOpenBook } from '../../utils/epub-leaf-utils';
 	import { showObsidianChoice, showObsidianConfirm } from '../../utils/obsidian-confirm';
 	import { UnifiedThemeManager } from '../../utils/theme-detection';
 	import { getSourceLocateOverlayService } from '../../services/ui/SourceLocateOverlayService';
@@ -452,7 +453,7 @@
 			closePremiumFeaturePreview();
 		}
 		void refreshReadingReferencePointState(book?.id);
-		syncAsActiveEpubDocument();
+		syncAsActiveEpubDocumentIfActive();
 		onReadingPositionAutoSaveChange?.();
 		onPremiumUiStateChange?.();
 	}
@@ -1377,16 +1378,31 @@
 		pendingReaderStorePatch = {};
 	}
 
+	function isActiveEpubReaderInstance(leaf: WorkspaceLeaf | null = app.workspace.activeLeaf): boolean {
+		if (!leaf) {
+			return false;
+		}
+		const activePath = getOpenEpubFilePath(leaf);
+		const currentPath = normalizePath(String(filePath || '').trim());
+		if (currentPath) {
+			return !!activePath && pathsReferToSameOpenBook(activePath, currentPath);
+		}
+		return !activePath;
+	}
+
 	function flushReaderStoreSync() {
 		clearReaderStoreSyncTimer();
 		const patch = pendingReaderStorePatch;
 		pendingReaderStorePatch = {};
-		if (Object.keys(patch).length > 0) {
+		if (Object.keys(patch).length > 0 && isActiveEpubReaderInstance()) {
 			epubActiveDocumentStore.setSharedState(patch);
 		}
 	}
 
 	function scheduleReaderStoreSync(patch: Record<string, unknown>) {
+		if (!isActiveEpubReaderInstance()) {
+			return;
+		}
 		pendingReaderStorePatch = { ...pendingReaderStorePatch, ...patch };
 		if (readerStoreSyncTimer) {
 			return;
@@ -1395,7 +1411,7 @@
 			readerStoreSyncTimer = null;
 			const nextPatch = pendingReaderStorePatch;
 			pendingReaderStorePatch = {};
-			if (Object.keys(nextPatch).length > 0) {
+			if (Object.keys(nextPatch).length > 0 && isActiveEpubReaderInstance()) {
 				epubActiveDocumentStore.setSharedState(nextPatch);
 			}
 		}, READER_STORE_SYNC_MS);
@@ -2107,8 +2123,10 @@
 			showNextChapterAction = false;
 			bookmarkRevision = 0;
 			onTitleChange?.(loadedBook.metadata.title);
-			epubActiveDocumentStore.setSharedState({ filePath: targetFilePath, book: loadedBook });
-			syncAsActiveEpubDocument();
+			if (isActiveEpubReaderInstance()) {
+				epubActiveDocumentStore.setSharedState({ filePath: targetFilePath, book: loadedBook });
+			}
+			syncAsActiveEpubDocumentIfActive();
 			prefetchAnnotationIndexForBook(loadedBook, targetFilePath, { priority: 'immediate' });
 
 			// Unblock the reader shell as soon as the engine can render.
@@ -3944,6 +3962,16 @@
 		referencePopoverStats = null;
 	}
 
+	function syncAsActiveEpubDocumentIfActive(leaf: WorkspaceLeaf | null = app.workspace.activeLeaf): void {
+		if (isActiveEpubReaderInstance(leaf)) {
+			syncAsActiveEpubDocument();
+		}
+	}
+
+	function handleWorkspaceActiveLeafChange(leaf: WorkspaceLeaf | null): void {
+		syncAsActiveEpubDocumentIfActive(leaf);
+	}
+
 	function syncAsActiveEpubDocument() {
 		const activeFilePath = filePath?.trim() ? filePath : null;
 		const canUseReadingProgress = hasReadingProgressCapability();
@@ -4878,7 +4906,9 @@
 				},
 			};
 			onTitleChange?.(nextTitle);
-			epubActiveDocumentStore.setSharedState({ book });
+			if (isActiveEpubReaderInstance()) {
+				epubActiveDocumentStore.setSharedState({ book });
+			}
 		};
 		window.addEventListener(
 			EPUB_RUNTIME.events.bookDisplayTitleChanged,
@@ -4965,7 +4995,11 @@
 		setupFootnotePreviewHandler();
 		trackHighlightSourceChanges();
 		readerService.setBookEndAdvanceHandler?.(handleBookEndAdvanceAttempt);
-		syncAsActiveEpubDocument();
+		const activeLeafChangeRef = app.workspace.on(
+			'active-leaf-change',
+			handleWorkspaceActiveLeafChange
+		);
+		syncAsActiveEpubDocumentIfActive();
 
 		if (rootEl) {
 			rootEl.addEventListener('pointerdown', syncAsActiveEpubDocument);
@@ -5025,6 +5059,7 @@
 			nextPage: handleNextPage,
 		});
 		return () => {
+			app.workspace.offref(activeLeafChangeRef);
 			app.workspace.offref(canvasDirectionRef);
 			document.removeEventListener('fullscreenchange', handleFullscreenChange);
 			cleanupExternalHighlightSyncReload();
@@ -5253,10 +5288,12 @@
 					}}
 					onChapterChange={(title) => {
 						currentChapterIndex = readerService.getCurrentChapterIndex();
-						epubActiveDocumentStore.setSharedState({
-							chapterTitle: String(title || '').trim(),
-							chapterHref: readerService.getCurrentChapterHref?.() || '',
-						});
+						if (isActiveEpubReaderInstance()) {
+							epubActiveDocumentStore.setSharedState({
+								chapterTitle: String(title || '').trim(),
+								chapterHref: readerService.getCurrentChapterHref?.() || '',
+							});
+						}
 						syncNextChapterActionVisibility();
 						onChapterTitleChange?.(String(title || '').trim());
 					}}
