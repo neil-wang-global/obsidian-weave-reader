@@ -1,6 +1,6 @@
 # Weave EPUB Reader
 
-[中文](./README.zh-CN.md) | [English](./README.md#english-documentation) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Русский](./README.ru.md)
+[中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md) | [English](./README.md#english-documentation) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Русский](./README.ru.md)
 
 <div align="center">
 
@@ -23,7 +23,7 @@
 ## 핵심 기능
 
 - **지원 플랫폼**: 데스크톱(Windows, macOS, Linux) 및 모바일(iOS, Android)
-- **UI 언어**: 简体中文, English, 日本語, 한국어, Русский(기본은 Obsidian 따름; 리더 설정에서 고정 가능)
+- **UI 언어**: 简体中文, 繁體中文, English, 日本語, 한국어, Русский(기본은 Obsidian 따름; 리더 설정에서 고정 가능)
 - **지원 형식**: Vault 내 EPUB, MOBI, AZW3, FB2, FBZ(`fb2.zip`), CBZ, TXT 등(이름은 EPUB이지만 EPUB 전용은 아님)
 - **발췌 및 노트**: 5색 하이라이트, 밑줄·취소선·물결선 등 스타일, 주석, Markdown / Canvas / Weave 덱 자동 또는 수동 기록, 본문 반영, 노트 변경 시 하이라이트 동기화
 - **양방향 추적 및 앵커**: 도서 딥링크, 노트에서 원문 단락으로 이동, 리더 내 하이라이트에서 소스 노트 / Canvas / 덱으로
@@ -237,6 +237,7 @@ flowchart LR
 ## 추가 문서
 
 - [플러그인 소개(简体中文)](./README.md#中文文档)
+- [플러그인 소개(繁體中文)](./README.zh-TW.md)
 - [개인정보](./PRIVACY.md) · [프리미엄 지원 약관](./PREMIUM_TERMS.md) · [지원](./SUPPORT.md) · [보안](./SECURITY.md)
 
 ## 라이선스 및 작성자

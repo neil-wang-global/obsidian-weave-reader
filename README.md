@@ -1,6 +1,6 @@
 # Weave EPUB Reader
 
-[中文](#中文文档) | [English](#english-documentation) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Русский](./README.ru.md)
+[中文](#中文文档) | [繁體中文](./README.zh-TW.md) | [English](#english-documentation) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Русский](./README.ru.md)
 
 <div align="center">
 
@@ -25,9 +25,9 @@
 ## 核心能力
 
 - **支持平台**：桌面端（Windows、macOS、Linux）与移动端（iOS、Android）
-- **界面语言**：简体中文、English、日本語、한국어、Русский（默认跟随 Obsidian，可在阅读器设置中固定）
+- **界面语言**：简体中文、繁體中文、English、日本語、한국어、Русский（默认跟随 Obsidian，可在阅读器设置中固定）
 - **阅读格式**：Vault 内 EPUB、MOBI、AZW3、FB2、FBZ（`fb2.zip`）、CBZ、TXT 等（名称含 EPUB，但不仅限于 EPUB）
-- **摘录笔记**：五种高亮颜色，以及下划线、删除线、波浪线等样式标注；批注；自动或手动写入 Markdown / Canvas / Weave 牌组；正文回显；笔记删改、改色后书中高亮同步更新
+- **摘录笔记**：五种高亮颜色，以及下划线、删除线、波浪线等样式标注；想法；自动或手动写入 Markdown / Canvas / Weave 牌组；正文回显；笔记删改、改色后书中高亮同步更新
 - **双向溯源与定位**：书籍深链接锚点；笔记跳回原文段落；阅读器内点击高亮反查来源笔记 / Canvas / 牌组
 - **段落阅读模式**：单段沉浸阅读、段内翻页与跨段导航
 - **其它**：书架与目录、分页/连续滚动、版式主题；阅读进度与剩余时间估算；增量阅读月历排期；脚注浮窗；书签、章节导出、截图、Canvas 绑定；AI 入口
@@ -150,7 +150,7 @@ flowchart LR
 | 阅读 **EPUB**，目录跳转、翻页/滚动、版式与主题 | ✅ | ✅ |
 | 阅读 **TXT** 纯文本书籍 | ✅ | ✅ |
 | 阅读 **MOBI / AZW3 / FB2 / FBZ / CBZ** | 🔒 | ✅ |
-| **五种高亮色**、批注、摘录与**正文回显** | ✅ | ✅ |
+| **五种高亮色**、想法、摘录与**正文回显** | ✅ | ✅ |
 | **下划线 / 删除线 / 波浪线**等样式标注 | 🔒 | ✅ |
 | **双向溯源**（锚点跳转、笔记 ↔ 原书定位显示） | 🔒 | ✅ |
 | **段落阅读模式**、参考阅读点 | 🔒 | ✅ |
@@ -222,7 +222,7 @@ flowchart LR
 
 ### 为何提供高级付费？
 
-高级支持用于**支持持续开发**——让开发者能长期投入、打磨阅读与摘录细节。**基础体验免费**，已覆盖日常阅读、五色高亮、批注、摘录与正文回显等核心能力，上手体验完整；若你需要多格式、双向溯源、段落阅读模式等进阶能力，再按需启用高级支持即可。
+高级支持用于**支持持续开发**——让开发者能长期投入、打磨阅读与摘录细节。**基础体验免费**，已覆盖日常阅读、五色高亮、想法、摘录与正文回显等核心能力，上手体验完整；若你需要多格式、双向溯源、段落阅读模式等进阶能力，再按需启用高级支持即可。
 
 ### 是订阅还是买断？
 
@@ -239,6 +239,7 @@ flowchart LR
 ## 更多文档
 
 - [插件介绍（简体中文）](#中文文档)
+- [插件介绍（繁體中文）](./README.zh-TW.md)
 - [隐私说明](./PRIVACY.md) · [高级支持条款](./PREMIUM_TERMS.md) · [支持](./SUPPORT.md) · [安全](./SECURITY.md)
 
 ## 许可证与作者
@@ -263,7 +264,7 @@ Getting started is light: put an EPUB in your vault, open it from the bookshelf,
 ## Core capabilities
 
 - **Platforms**: Desktop (Windows, macOS, Linux) and mobile (iOS, Android)
-- **Interface languages**: Simplified Chinese, English, Japanese, Korean, Russian (follow Obsidian by default; can be fixed in reader settings)
+- **Interface languages**: Simplified Chinese, Traditional Chinese, English, Japanese, Korean, Russian (follow Obsidian by default; can be fixed in reader settings)
 - **Formats**: EPUB, MOBI, AZW3, FB2, FBZ (`fb2.zip`), CBZ, TXT, and more in the vault (despite the name, the plugin is not EPUB-only)
 - **Excerpts and notes**: Five highlight colors plus underline, strikethrough, and wavy underline; annotations; auto or manual capture to Markdown, Canvas, or Weave decks; in-body rendering; highlights refresh when notes change
 - **Two-way tracing and anchors**: Book deep links; jump from notes to the original passage; open the source note, Canvas, or deck from a highlight in the reader
@@ -477,6 +478,7 @@ Plugin ID: `weave-epub-reader` → `.obsidian/plugins/weave-epub-reader/`
 ## More documentation
 
 - [Introduction (Simplified Chinese)](#中文文档)
+- [Introduction (Traditional Chinese)](./README.zh-TW.md)
 - [Privacy](./PRIVACY.md) · [Premium support terms](./PREMIUM_TERMS.md) · [Support](./SUPPORT.md) · [Security](./SECURITY.md)
 
 ## License and author
