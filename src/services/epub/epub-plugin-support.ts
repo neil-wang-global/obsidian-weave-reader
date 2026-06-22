@@ -103,6 +103,13 @@ export function registerEpubProtocolHandler(plugin: Plugin, app: App, logPrefix:
 		}
 
 		const linkService = new EpubLinkService(app);
+		if (parsed.tocHref && !parsed.cfi) {
+			await linkService.navigateToEpubChapter(parsed.filePath, parsed.tocHref, {
+				sourceId: parsed.sourceId,
+			});
+			return;
+		}
+
 		await linkService.navigateToEpubLocation(
 			parsed.filePath,
 			parsed.cfi,

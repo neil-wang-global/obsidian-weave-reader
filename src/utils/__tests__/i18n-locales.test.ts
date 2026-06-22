@@ -35,7 +35,7 @@ const bookshelfModalKeys = Object.keys(enTemplate).filter(
 );
 
 describe("i18n locales", () => {
-	it("detects Japanese, Korean, and Russian locale tags", () => {
+	it("detects Japanese, Korean, Russian, and Traditional Chinese locale tags", () => {
 		initI18n();
 		currentLanguage.set("ja-JP");
 		expect(get(currentLanguage)).toBe("ja-JP");
@@ -43,6 +43,8 @@ describe("i18n locales", () => {
 		expect(get(currentLanguage)).toBe("ko-KR");
 		currentLanguage.set("ru-RU");
 		expect(get(currentLanguage)).toBe("ru-RU");
+		currentLanguage.set("zh-TW");
+		expect(get(currentLanguage)).toBe("zh-TW");
 	});
 
 	it("ships full bookshelf modal overlays for ja-JP, ko-KR, and ru-RU", () => {
@@ -133,6 +135,17 @@ describe("i18n locales", () => {
 				"ko-KR"
 			)
 		).toEqual([]);
+	});
+
+	it("keeps zh-TW catalog the same shape as zh-CN", () => {
+		const zhCnLeafCount = Object.keys(
+			flattenTranslationLeafKeys(translationCatalog["zh-CN"])
+		).length;
+		const zhTwLeafCount = Object.keys(
+			flattenTranslationLeafKeys(translationCatalog["zh-TW"])
+		).length;
+
+		expect(zhTwLeafCount).toBe(zhCnLeafCount);
 	});
 
 	it("keeps ja/ko/ru catalogs the same shape as English", () => {

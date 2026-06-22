@@ -141,7 +141,7 @@ export class NavigationHub {
 		const focus = intent.policy?.focus !== false;
 		let leaf: WorkspaceLeaf | null;
 
-		if (intent.policy?.preferredLeaf) {
+		if (intent.policy?.preferredLeaf || intent.policy?.reuseLeaf) {
 			leaf = await openEpubInPreferredLeaf(this.app, resolvedFilePath, viewState);
 		} else {
 			leaf = await openBookForSourceNavigation(this.app, resolvedFilePath, viewState, { focus });

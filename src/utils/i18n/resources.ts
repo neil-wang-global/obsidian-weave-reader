@@ -8,6 +8,7 @@ import { mergeFlatLocaleOverlay, mergeTranslationTrees } from './flat-locale';
 import jaJpCuratedOverlay from './overlays/ja-JP.json';
 import koKrCuratedOverlay from './overlays/ko-KR.json';
 import ruRuCuratedOverlay from './overlays/ru-RU.json';
+import zhTwCuratedOverlay from './overlays/zh-TW.json';
 
 const zhCNCatalog: TranslationKey = {
 	...appShellEpubTranslations['zh-CN'],
@@ -31,6 +32,7 @@ function buildLocalizedCatalog(
 
 export const translations: Record<SupportedLanguage, TranslationKey> = {
 	'zh-CN': zhCNCatalog,
+	'zh-TW': buildLocalizedCatalog(zhCNCatalog, zhTwCuratedOverlay as Record<string, string>),
 	'en-US': enUSCatalog,
 	'ja-JP': buildLocalizedCatalog(enUSCatalog, jaJpCuratedOverlay as Record<string, string>),
 	'ko-KR': buildLocalizedCatalog(enUSCatalog, koKrCuratedOverlay as Record<string, string>),
@@ -46,6 +48,7 @@ export const translationOverrides: Partial<Record<SupportedLanguage, Translation
 		...appShellEpubTranslationOverrides['en-US'],
 		...epubTranslationOverrides['en-US'],
 	},
+	'zh-TW': {},
 	'ja-JP': {},
 	'ko-KR': {},
 	'ru-RU': {},

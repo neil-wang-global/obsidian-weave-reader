@@ -21,6 +21,7 @@ export { flattenTranslationLeafKeys } from "./i18n/flat-locale";
 
 export const translationCatalog: Record<SupportedLanguage, TranslationKey> = {
 	"zh-CN": mergeTranslationTrees(translations["zh-CN"], translationOverrides["zh-CN"]),
+	"zh-TW": mergeTranslationTrees(translations["zh-TW"], translationOverrides["zh-TW"]),
 	"en-US": mergeTranslationTrees(translations["en-US"], translationOverrides["en-US"]),
 	"ja-JP": mergeTranslationTrees(translations["ja-JP"], translationOverrides["ja-JP"]),
 	"ko-KR": mergeTranslationTrees(translations["ko-KR"], translationOverrides["ko-KR"]),
@@ -30,7 +31,7 @@ export const translationCatalog: Record<SupportedLanguage, TranslationKey> = {
 const defaultConfig: I18nConfig = {
 	defaultLanguage: "zh-CN",
 	fallbackLanguage: "en-US",
-	supportedLanguages: ["zh-CN", "en-US", "ja-JP", "ko-KR", "ru-RU"],
+	supportedLanguages: ["zh-CN", "zh-TW", "en-US", "ja-JP", "ko-KR", "ru-RU"],
 };
 
 const translationKeyAliases: Record<string, string> = {};

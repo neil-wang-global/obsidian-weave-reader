@@ -15,7 +15,6 @@ export const DEFAULT_READER_SETTINGS: EpubReaderSettings = {
 	footnoteClickAction: "preview",
 	showTopSticker: true,
 	topStickerLayout: "auto",
-	topStickerWiggleEnabled: true,
 	paragraphModeEnabled: false,
 	paragraphModeFontSize: "medium",
 	paragraphModeFontScale: 100,
@@ -80,10 +79,6 @@ export function normalizeEpubReaderSettingsForDevice(
 				? settings.showTopSticker
 				: defaults.showTopSticker,
 		topStickerLayout: normalizeTopStickerLayout(settings.topStickerLayout, defaults.topStickerLayout),
-		topStickerWiggleEnabled:
-			typeof settings.topStickerWiggleEnabled === "boolean"
-				? settings.topStickerWiggleEnabled
-				: defaults.topStickerWiggleEnabled,
 		paragraphModeEnabled:
 			typeof settings.paragraphModeEnabled === "boolean"
 				? settings.paragraphModeEnabled

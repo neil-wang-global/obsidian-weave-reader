@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 import { MarkdownPostProcessorContext, TFile, setIcon } from "obsidian";
 import { isSupportedBookLocatorHref, stripSupportedBookExtension } from "./book-format";
+import { maybeMigrateEpubLinksInMarkdownFile } from "./epub-link-content-migration";
 import { EpubLinkService } from "./EpubLinkService";
 import { isSupportedEpubProtocolName } from "./epub-runtime";
 
@@ -23,6 +24,7 @@ function extractEpubProtocolName(href: string): string {
 
 function clearBoundEpubHandler(linkEl: BoundEpubLinkElement): void {
 	if (linkEl.__weaveEpubClickHandler) {
+		linkEl.removeEventListener("click", linkEl.__weaveEpubClickHandler, true);
 		linkEl.removeEventListener("click", linkEl.__weaveEpubClickHandler);
 		linkEl.__weaveEpubClickHandler = undefined;
 	}
@@ -89,36 +91,134 @@ function applyEpubCalloutAppearanceAttributes(root: HTMLElement): void {
 	}
 }
 
+function resolveProtocolLocatorHref(href: string): string | null {
+	const protocolName = extractEpubProtocolName(href);
+	if (!isSupportedEpubProtocolName(protocolName)) {
+		return null;
+	}
+
+	try {
+		const url = new URL(href.startsWith("obsidian://") ? href : `obsidian://${href}`);
+		const params = Object.fromEntries(url.searchParams.entries());
+		if ((!params.file && !params.sid) || !params.cfi) {
+			return null;
+		}
+
+		const parsed = EpubLinkService.parseProtocolParams(params);
+		if (!parsed?.filePath || !parsed.cfi) {
+			return null;
+		}
+
+		const locatorHref = EpubLinkService.buildEpubLocatorHref(
+			parsed.filePath,
+			parsed.cfi,
+			parsed.text,
+			parsed.chapter,
+			parsed.sourceId,
+			parsed.excerptId,
+			{
+				includeText: Boolean(String(parsed.text || "").trim()),
+				includeChapter: parsed.chapter !== undefined,
+				preferCompactLocator: true,
+			}
+		);
+		return locatorHref && isSupportedBookLocatorHref(locatorHref) ? locatorHref : null;
+	} catch {
+		return null;
+	}
+}
+
+function bindEpubLocatorLink(
+	app: App,
+	linkEl: HTMLAnchorElement,
+	locatorHref: string,
+	ctx: MarkdownPostProcessorContext,
+	displayText?: string
+): void {
+	const boundLinkEl = linkEl as BoundEpubLinkElement;
+	const hashIdx = locatorHref.indexOf("#");
+	if (hashIdx === -1) {
+		clearBoundEpubHandler(boundLinkEl);
+		return;
+	}
+
+	const filePath = locatorHref.substring(0, hashIdx);
+	const subpath = locatorHref.substring(hashIdx);
+	if (!EpubLinkService.hasSupportedEpubSubpath(subpath)) {
+		clearBoundEpubHandler(boundLinkEl);
+		return;
+	}
+
+	const parsed = EpubLinkService.parseEpubLink(subpath);
+	if (!parsed) {
+		clearBoundEpubHandler(boundLinkEl);
+		return;
+	}
+
+	if (boundLinkEl.__weaveEpubBoundHref === locatorHref) {
+		return;
+	}
+
+	clearBoundEpubHandler(boundLinkEl);
+	linkEl.setAttribute("href", locatorHref);
+	linkEl.addClass("internal-link");
+	linkEl.removeClass("external-link");
+
+	styleEpubLink(
+		linkEl,
+		displayText ||
+			linkEl.textContent ||
+			stripSupportedBookExtension(filePath.split("/").pop() || "") ||
+			"Book"
+	);
+
+	boundLinkEl.__weaveEpubBoundHref = locatorHref;
+	const navigateFromLink = () => {
+		void (async () => {
+			const linkService = new EpubLinkService(app);
+			const sourceMarkdownPath = String(ctx?.sourcePath || "").trim() || undefined;
+			const quoteText =
+				String(parsed.text || "").trim() || extractCalloutQuoteText(boundLinkEl);
+			await linkService.navigateToEpubLocation(
+				filePath,
+				parsed.cfi,
+				quoteText,
+				parsed.sourceId,
+				sourceMarkdownPath
+			);
+		})();
+	};
+
+	boundLinkEl.__weaveEpubClickHandler = (e: MouseEvent) => {
+		e.preventDefault();
+		e.stopImmediatePropagation();
+		navigateFromLink();
+	};
+	// Capture phase runs before Obsidian's obsidian:// default handler opens a new tab.
+	linkEl.addEventListener("click", boundLinkEl.__weaveEpubClickHandler, true);
+	linkEl.addEventListener("click", boundLinkEl.__weaveEpubClickHandler);
+}
+
 export function createEpubLinkPostProcessor(app: App) {
-	const migratedSourcePaths = new Set<string>();
+	const scheduledMigrationPaths = new Set<string>();
 	return (el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
 		applyEpubCalloutAppearanceAttributes(el);
 
 		const sourcePath = String(ctx?.sourcePath || "").trim();
-		if (sourcePath && !migratedSourcePaths.has(sourcePath)) {
-			migratedSourcePaths.add(sourcePath);
+		if (sourcePath && !scheduledMigrationPaths.has(sourcePath)) {
+			scheduledMigrationPaths.add(sourcePath);
 			queueMicrotask(() => {
 				void (async () => {
-				try {
-					const sourceFile = app.vault.getAbstractFileByPath(sourcePath);
-					if (!(sourceFile instanceof TFile) || sourceFile.extension !== "md") {
-						return;
+					try {
+						const sourceFile = app.vault.getAbstractFileByPath(sourcePath);
+						if (!(sourceFile instanceof TFile) || sourceFile.extension !== "md") {
+							return;
+						}
+						const originalContent = await app.vault.cachedRead(sourceFile);
+						await maybeMigrateEpubLinksInMarkdownFile(app, sourceFile, originalContent);
+					} catch {
+						// ignore background enrichment failures
 					}
-					const originalContent = await app.vault.cachedRead(sourceFile);
-					const linkService = new EpubLinkService(app);
-					const migration = await linkService.enrichEpubLinksWithSourceIdsInContent(
-						originalContent,
-						sourcePath
-					);
-					if (!migration.changed || migration.content === originalContent) {
-						return;
-					}
-					await app.vault.process(sourceFile, (content) =>
-						content === originalContent ? migration.content : content
-					);
-				} catch {
-					// ignore background enrichment failures
-				}
 				})();
 			});
 		}
@@ -126,93 +226,21 @@ export function createEpubLinkPostProcessor(app: App) {
 		const links = el.querySelectorAll("a");
 
 		links.forEach((linkEl) => {
-			const href = linkEl.getAttribute("href") || linkEl.getAttribute("data-href") || "";
-			const boundLinkEl = linkEl as BoundEpubLinkElement;
-
-			// Book wikilink format: [[book.<ext>#weave-loc=...]] / [[book.<ext>#weave-cfi=...]] or legacy tuanki-cfi links
-			if (isSupportedBookLocatorHref(href)) {
-				const hashIdx = href.indexOf("#");
-				if (hashIdx === -1) {
-					clearBoundEpubHandler(boundLinkEl);
-					return;
-				}
-
-				const filePath = href.substring(0, hashIdx);
-				const subpath = href.substring(hashIdx);
-				if (!EpubLinkService.hasSupportedEpubSubpath(subpath)) {
-					clearBoundEpubHandler(boundLinkEl);
-					return;
-				}
-				const parsed = EpubLinkService.parseEpubLink(subpath);
-				if (!parsed) {
-					clearBoundEpubHandler(boundLinkEl);
-					return;
-				}
-				if (boundLinkEl.__weaveEpubBoundHref === href) return;
-
-				clearBoundEpubHandler(boundLinkEl);
-
-				styleEpubLink(
-					linkEl,
-					linkEl.textContent ||
-						stripSupportedBookExtension(filePath.split("/").pop() || "") ||
-						"Book"
-				);
-
-				boundLinkEl.__weaveEpubBoundHref = href;
-				boundLinkEl.__weaveEpubClickHandler = (e: MouseEvent) => {
-					e.preventDefault();
-					e.stopImmediatePropagation();
-					void (async () => {
-					const linkService = new EpubLinkService(app);
-					const sourceMarkdownPath = String(ctx?.sourcePath || "").trim() || undefined;
-					const quoteText =
-						String(parsed.text || "").trim() ||
-						extractCalloutQuoteText(boundLinkEl);
-					if (parsed.sourceId) {
-						await linkService.navigateToEpubLocation(
-							filePath,
-							parsed.cfi,
-							quoteText,
-							parsed.sourceId,
-							sourceMarkdownPath
-						);
-						return;
-					}
-					await linkService.navigateToEpubLocation(
-						filePath,
-						parsed.cfi,
-						quoteText,
-						undefined,
-						sourceMarkdownPath
-					);
-					})();
-				};
-				linkEl.addEventListener("click", boundLinkEl.__weaveEpubClickHandler);
+			if (!(linkEl instanceof HTMLAnchorElement)) {
 				return;
 			}
 
-			clearBoundEpubHandler(boundLinkEl);
+			const rawHref = linkEl.getAttribute("href") || linkEl.getAttribute("data-href") || "";
+			const protocolLocatorHref = resolveProtocolLocatorHref(rawHref);
+			const locatorHref = protocolLocatorHref || (isSupportedBookLocatorHref(rawHref) ? rawHref : "");
 
-			const protocolName = extractEpubProtocolName(href);
-			if (!isSupportedEpubProtocolName(protocolName)) return;
-
-			try {
-				const url = new URL(href.startsWith("obsidian://") ? href : `obsidian://${href}`);
-				const params = Object.fromEntries(url.searchParams.entries());
-				if ((!params.file && !params.sid) || !params.cfi) return;
-
-				const displayText = params.text
-					? decodeURIComponent(params.text)
-					: linkEl.textContent ||
-					  stripSupportedBookExtension(
-							decodeURIComponent(params.file || "").split("/").pop() || ""
-					  ) ||
-					  "Book";
-				styleEpubLink(linkEl, displayText);
-			} catch {
-				// skip malformed links
+			if (!locatorHref) {
+				clearBoundEpubHandler(linkEl as BoundEpubLinkElement);
+				return;
 			}
+
+			const displayText = protocolLocatorHref ? linkEl.textContent || undefined : undefined;
+			bindEpubLocatorLink(app, linkEl, locatorHref, ctx, displayText);
 		});
 	};
 }

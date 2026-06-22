@@ -4,6 +4,7 @@ import {
 	readBlobUrlAsText,
 	shouldPreferFetchForResourceUrl,
 } from "../../utils/blob-url-text";
+import { inlineFoliateBlobMarkup } from "./foliate-blob-markup-normalizer";
 
 function readTextFromResourceUrl(resourceUrl: string): Promise<string> {
 	if (isBlobResourceUrl(resourceUrl)) {
@@ -163,11 +164,20 @@ export function installFoliateBlobIframePatch(onLoadError: (error: unknown) => v
 			const loadToken = (foliateBlobIframeLoadTokens.get(this) || 0) + 1;
 			foliateBlobIframeLoadTokens.set(this, loadToken);
 			void readTextFromResourceUrl(normalizedValue)
-				.then((html) => {
+				.then(async (html) => {
 					if (foliateBlobIframeLoadTokens.get(this) !== loadToken) {
 						return;
 					}
-					this.srcdoc = html;
+					let normalizedHtml = html;
+					try {
+						normalizedHtml = await inlineFoliateBlobMarkup(html);
+					} catch {
+						// Keep raw markup if normalization fails; load error handler covers hard failures.
+					}
+					if (foliateBlobIframeLoadTokens.get(this) !== loadToken) {
+						return;
+					}
+					this.srcdoc = normalizedHtml;
 				})
 				.catch((error) => {
 					try {

@@ -1,6 +1,10 @@
 import type { App } from "obsidian";
 import { logger } from "../../utils/logger";
 import type { EpubAnnotationService } from "./EpubAnnotationService";
+import type {
+	EpubAnnotationBacklinkPort,
+	EpubAnnotationBacklinkServicePort,
+} from "./annotation-index-ports";
 import { getEpubBacklinkHighlightService } from "./epub-backlink-highlight-access";
 import { getEpubHighlightViewSnapshotService } from "./epub-highlight-view-snapshot-access";
 import { canUseEpubExcerptNotes } from "./epub-premium";
@@ -17,7 +21,7 @@ export type EpubAnnotationIndexReadiness = "unknown" | "preparing" | "ready";
 
 export interface EpubAnnotationPrefetchInput extends EpubHighlightSnapshotContextInput {
 	annotationService?: EpubAnnotationService;
-	backlinkService?: ReturnType<typeof getEpubBacklinkHighlightService>;
+	backlinkService?: EpubAnnotationBacklinkPort | EpubAnnotationBacklinkServicePort;
 	readerService?: EpubReaderEngine | null;
 	highlightRevision?: number;
 	priority?: "immediate" | "background";

@@ -58,6 +58,7 @@ export interface RemainingReadingEstimateInput {
 export interface RemainingReadingEstimateResult {
 	bookMs?: number;
 	chapterMs?: number;
+	chapterProgressPercent?: number;
 	wordsPerMinute?: number;
 }
 
@@ -289,6 +290,17 @@ export function estimateChapterWordProgress(
 	};
 }
 
+function resolveChapterProgressPercent(chapterProgress: {
+	consumed: number;
+	remaining: number;
+}): number | undefined {
+	const total = chapterProgress.consumed + chapterProgress.remaining;
+	if (total <= 0) {
+		return undefined;
+	}
+	return Math.round((chapterProgress.consumed / total) * 100);
+}
+
 export function buildRemainingReadingEstimate(
 	input: RemainingReadingEstimateInput
 ): RemainingReadingEstimateResult {
@@ -331,6 +343,7 @@ export function buildRemainingReadingEstimate(
 			chapterProgress.remaining > 0
 				? Math.round((chapterProgress.remaining / effectiveWpm) * 60_000)
 				: undefined,
+		chapterProgressPercent: resolveChapterProgressPercent(chapterProgress),
 		wordsPerMinute: effectiveWpm,
 	};
 }

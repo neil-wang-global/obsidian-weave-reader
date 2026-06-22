@@ -3,23 +3,25 @@ import type { EpubLinkService } from "./EpubLinkService";
 import type {
 	EpubBookmarkAnalytics,
 	EpubBookmarkFlatProperties,
+	EpubBookmarkPersistedAnalytics,
 	EpubBookmarkReadingStatePayload,
 	EpubBookmarkReadingStatusCode,
 	EpubBookmarkUserMetadata,
 } from "./epub-bookmark-page-types";
-import { EPUB_BOOKMARK_FILE_FORMAT_V2 } from "./epub-bookmark-page-types";
+import {
+	EPUB_BOOKMARK_FILE_FORMAT_V3,
+} from "./epub-bookmark-page-types";
 import type { ReadingStats } from "./types";
 import { unknownPlainText } from "../../utils/unknown-plain-text";
 
-export const EPUB_BOOKMARK_PAGE_CALLOUT = [
-	"> [!abstract] 关于本页",
-	"> 这是 **Weave EPUB 阅读器** 自动维护的书籍数据页。",
-	"> - **YAML 中** `readingState`、`bookmarks`、`analytics` → 插件写入，请勿手改",
-	"> - **YAML 中** `user` 与下方「我的标注」→ 你可自由编辑，供 AI 与 Dataview 使用",
-	"> - 高亮原文在摘录笔记中，本页只保留索引与统计",
-].join("\n");
+export const EPUB_BOOKMARK_PAGE_MAINTENANCE_NOTE =
+	"> 📎 本页由 Weave EPUB 自动维护。YAML 中 `readingState`、`bookmarks` 请勿手改；`user` 与「我的标注」可自由编辑。";
+
+/** @deprecated Use EPUB_BOOKMARK_PAGE_MAINTENANCE_NOTE */
+export const EPUB_BOOKMARK_PAGE_CALLOUT = EPUB_BOOKMARK_PAGE_MAINTENANCE_NOTE;
 
 export interface EpubBookmarkPageBookmark {
+	id?: string;
 	cfi: string;
 	chapterIndex: number;
 	percent: number;
@@ -36,9 +38,17 @@ export interface EpubBookmarkPageRenderInput {
 	sourceId?: string;
 	sourceFingerprint?: string;
 	bookPath: string;
+	displayTitle: string;
 	bookTitle: string;
 	bookAuthor?: string;
 	bookLanguage?: string;
+	publisher?: string;
+	isbn?: string;
+	publishDate?: string;
+	subjects?: string[];
+	description?: string;
+	translator?: string;
+	coverPath?: string;
 	wordCount?: number;
 	chapterCount?: number;
 	updatedAt: number;
@@ -65,7 +75,7 @@ export function resolveEpubBookmarkReadingStatus(
 }
 
 export function buildEpubBookmarkFlatProperties(
-	input: Pick<EpubBookmarkPageRenderInput, "readingState" | "analytics">
+	input: Pick<EpubBookmarkPageRenderInput, "readingState" | "analytics" | "bookmarks">
 ): EpubBookmarkFlatProperties {
 	const stats = input.readingState?.readingStats;
 	const percent = input.readingState?.currentPosition?.percent ?? 0;
@@ -81,6 +91,24 @@ export function buildEpubBookmarkFlatProperties(
 		"reading-wpm": Number.isFinite(bookWpm) && bookWpm > 0 ? Math.round(bookWpm) : 0,
 		"highlight-count": input.analytics?.highlightCount ?? 0,
 		"excerpt-note-count": input.analytics?.excerptNoteCount ?? 0,
+		"bookmark-count": input.bookmarks.length,
+		"last-read-at": stats?.lastReadTime ?? 0,
+	};
+}
+
+export function toEpubBookmarkPersistedAnalytics(
+	analytics?: EpubBookmarkAnalytics
+): EpubBookmarkPersistedAnalytics | undefined {
+	if (!analytics) {
+		return undefined;
+	}
+	return {
+		updatedAt: analytics.updatedAt,
+		highlightsByColor: analytics.highlightsByColor,
+		commentCount: analytics.commentCount,
+		concealedCount: analytics.concealedCount,
+		referenceHeatMax: analytics.referenceHeatMax,
+		topChaptersByHighlights: analytics.topChaptersByHighlights,
 	};
 }
 
@@ -101,17 +129,34 @@ export function renderEpubBookmarkFileContent(
 	linkService: EpubLinkService
 ): string {
 	const flat = buildEpubBookmarkFlatProperties(input);
+	const yamlPayload = buildEpubBookmarkYamlPayload(input, flat);
+	const yamlText = stringifyYamlObject(yamlPayload);
+	return `---\n${yamlText}\n---\n\n${renderEpubBookmarkBody(input, linkService, flat)}`;
+}
+
+function buildEpubBookmarkYamlPayload(
+	input: EpubBookmarkPageRenderInput,
+	flat: EpubBookmarkFlatProperties
+): Record<string, unknown> {
 	const yamlPayload: Record<string, unknown> = {
-		format: EPUB_BOOKMARK_FILE_FORMAT_V2,
+		format: EPUB_BOOKMARK_FILE_FORMAT_V3,
 		weave_epub_bookmark_file: true,
 		stableKey: input.stableKey,
 		bookId: input.bookId,
 		sourceId: input.sourceId,
 		sourceFingerprint: input.sourceFingerprint,
 		bookPath: input.bookPath,
+		displayTitle: input.displayTitle,
 		bookTitle: input.bookTitle,
 		bookAuthor: input.bookAuthor,
 		bookLanguage: input.bookLanguage,
+		publisher: input.publisher,
+		isbn: input.isbn,
+		publishDate: input.publishDate,
+		subjects: input.subjects?.length ? input.subjects : undefined,
+		description: input.description,
+		translator: input.translator,
+		coverPath: input.coverPath,
 		wordCount: input.wordCount,
 		chapterCount: input.chapterCount,
 		...flat,
@@ -124,20 +169,22 @@ export function renderEpubBookmarkFileContent(
 		};
 	}
 
-	yamlPayload.bookmarks = input.bookmarks;
+	yamlPayload.bookmarks = input.bookmarks.map(({ preview: _preview, ...bookmark }) => bookmark);
 
-	if (input.analytics) {
-		yamlPayload.analytics = input.analytics;
+	const persistedAnalytics = toEpubBookmarkPersistedAnalytics(input.analytics);
+	if (persistedAnalytics) {
+		yamlPayload.analytics = persistedAnalytics;
 	}
 
-	if (input.user && Object.keys(input.user).length > 0) {
-		yamlPayload.user = input.user;
-	}
+	yamlPayload.user = input.user ?? {
+		tags: [],
+		rating: null,
+		priority: "",
+		notes: "",
+	};
 
 	yamlPayload.updatedAt = input.updatedAt;
-
-	const yamlText = stringifyYamlObject(yamlPayload);
-	return `---\n${yamlText}\n---\n\n${renderEpubBookmarkBody(input, linkService, flat)}`;
+	return yamlPayload;
 }
 
 function renderEpubBookmarkBody(
@@ -145,87 +192,147 @@ function renderEpubBookmarkBody(
 	linkService: EpubLinkService,
 	flat: EpubBookmarkFlatProperties
 ): string {
-	const lines: string[] = [EPUB_BOOKMARK_PAGE_CALLOUT, ""];
-	const title = input.bookTitle || "EPUB 书籍";
-	const author = String(input.bookAuthor || "").trim();
-	const statusLabel = formatReadingStatusLabel(flat["reading-status"]);
-	const progressLabel = `${flat["reading-progress"]}%`;
-
-	lines.push(`# ${title}`, "");
-	if (author) {
-		lines.push(`*${author}* · \`${statusLabel}\` · 进度 **${progressLabel}**`, "");
-	} else {
-		lines.push(`\`${statusLabel}\` · 进度 **${progressLabel}**`, "");
-	}
-
-	lines.push(`[[${input.bookPath}|打开书籍]]`, "");
-	lines.push("---", "");
-	lines.push(...renderOverviewSection(input, flat));
-	lines.push("");
-
-	if (input.readingState) {
-		lines.push(...renderContinueReadingTip(input.readingState));
-		lines.push("");
-	}
-
+	const lines: string[] = [
+		EPUB_BOOKMARK_PAGE_MAINTENANCE_NOTE,
+		"",
+		`# 📚 ${input.displayTitle || input.bookTitle || "EPUB 书籍"}`,
+		"",
+		"---",
+		"",
+	];
+	lines.push(...renderBookInfoSection(input));
+	lines.push("", "---", "");
+	lines.push(...renderReadingProgressSection(input, flat));
+	lines.push("", "---", "");
+	lines.push(...renderAnnotationStatsSection(input.analytics, flat));
+	lines.push("", "---", "");
 	lines.push(...renderBookmarksSection(input, linkService));
-	lines.push("");
+	lines.push("", "---", "");
 
 	const excerptRows = input.analytics?.recentExcerpts || [];
-	if (excerptRows.length > 0) {
-		lines.push(...renderExcerptIndexSection(excerptRows));
-		lines.push("");
-	}
+	lines.push(...renderRecentExcerptsSection(excerptRows));
+	lines.push("", "---", "");
 
 	if (input.analytics && input.analytics.highlightCount > 0) {
-		lines.push(...renderAnalyticsSection(input.analytics));
-		lines.push("");
+		lines.push(...renderReadingAnalysisSection(input.analytics));
+		lines.push("", "---", "");
+	} else {
+		lines.push("## 📈 阅读分析", "", "暂无高亮数据", "", "---", "");
 	}
 
-	if (input.user && hasUserMetadata(input.user)) {
-		lines.push(...renderUserNotesSection(input.user));
-		lines.push("");
-	}
-
-	lines.push("---", "", `*${EPUB_BOOKMARK_FILE_FORMAT_V2} · 由 Weave EPUB 阅读器自动维护*`);
+	const linkedNotePaths = input.analytics?.linkedNotePaths || [];
+	lines.push(...renderLinkedNotesSection(linkedNotePaths));
+	lines.push("", "---", "");
+	lines.push(...renderUserNotesSection(input.user));
+	lines.push("", "---", "", `*${EPUB_BOOKMARK_FILE_FORMAT_V3} · Weave EPUB 自动维护*`);
 	return lines.join("\n").trimEnd();
 }
 
-function renderOverviewSection(
-	input: EpubBookmarkPageRenderInput,
-	flat: EpubBookmarkFlatProperties
-): string[] {
-	const stats = input.readingState?.readingStats;
-	const lines = ["## 概览", "", "| | |", "| :-- | --: |"];
-	lines.push(`| 累计阅读 | ${formatDurationMinutes(flat["reading-total-minutes"])} |`);
+function renderBookInfoSection(input: EpubBookmarkPageRenderInput): string[] {
+	const lines = ["## 📖 书籍信息", "", "| | |", "| :-- | :-- |"];
+	const coverCell = input.coverPath
+		? `![[${input.coverPath}|200]]`
+		: "（暂无封面）";
 
-	if (flat["reading-wpm"] > 0) {
-		lines.push(`| 阅读速度 | ${flat["reading-wpm"]} 字/分钟 |`);
+	lines.push(`| 封面 | ${coverCell} |`);
+	lines.push(`| 书名 | ${input.displayTitle || input.bookTitle} |`);
+
+	if (input.bookAuthor) {
+		lines.push(`| 作者 | ${input.bookAuthor} |`);
 	}
+	if (input.translator) {
+		lines.push(`| 译者 | ${input.translator} |`);
+	}
+	if (input.publisher) {
+		lines.push(`| 出版社 | ${input.publisher} |`);
+	}
+	if (input.publishDate) {
+		lines.push(`| 出版时间 | ${formatPublishDate(input.publishDate)} |`);
+	}
+	if (input.isbn) {
+		lines.push(`| ISBN | ${input.isbn} |`);
+	}
+	if (input.subjects?.length) {
+		lines.push(`| 分类 | ${input.subjects.join(" · ")} |`);
+	}
+	if (typeof input.wordCount === "number" && input.wordCount > 0) {
+		lines.push(`| 字数 | ${formatWordCount(input.wordCount)} |`);
+	}
+	if (typeof input.chapterCount === "number" && input.chapterCount > 0) {
+		lines.push(`| 章节 | ${input.chapterCount} 章 |`);
+	}
+	if (input.bookLanguage) {
+		lines.push(`| 语言 | ${input.bookLanguage} |`);
+	}
+	lines.push(`| 书籍文件 | [[${input.bookPath}|📂 打开书籍]] |`);
 
-	lines.push(`| 高亮 | ${flat["highlight-count"]} 处 |`);
-	lines.push(`| 关联笔记 | ${flat["excerpt-note-count"]} 篇 |`);
-	lines.push(`| 书签 | ${input.bookmarks.length} 个 |`);
-
-	const lastRead = formatTimestamp(stats?.lastReadTime ?? 0);
-	if (lastRead) {
-		lines.push(`| 最近阅读 | ${lastRead} |`);
+	const description = String(input.description || "").trim();
+	if (description) {
+		lines.push("", "**📄 简介**", "", truncateDescription(description));
 	}
 
 	return lines;
 }
 
-function renderContinueReadingTip(state: EpubBookmarkReadingStatePayload): string[] {
-	const bookmark = state.currentPosition;
-	const percent = formatPercent(bookmark.percent);
-	const chapterIndex = bookmark.chapterIndex;
+function renderReadingProgressSection(
+	input: EpubBookmarkPageRenderInput,
+	flat: EpubBookmarkFlatProperties
+): string[] {
+	const stats = input.readingState?.readingStats;
+	const chapterIndex = input.readingState?.currentPosition?.chapterIndex ?? -1;
 	const chapterLabel =
-		chapterIndex >= 0 ? `第 ${chapterIndex + 1} 章` : "当前章节";
+		chapterIndex >= 0 ? `第 ${chapterIndex + 1} 章` : "—";
+	const statusLabel = formatReadingStatusLabel(flat["reading-status"]);
+	const speedLabel =
+		flat["reading-wpm"] > 0 ? `${flat["reading-wpm"]} 字/分钟` : "—";
+	const lastRead = formatTimestamp(flat["last-read-at"]) || "—";
 
+	const lines = [
+		"## 📊 阅读进度",
+		"",
+		"| 项目 | 值 |",
+		"| :-- | :-- |",
+		`| 状态 | ${statusLabel} |`,
+		`| 进度 | ${flat["reading-progress"]}% |`,
+		`| 当前章节 | ${chapterLabel} |`,
+		`| 累计阅读 | ${formatDurationMinutes(flat["reading-total-minutes"])} |`,
+		`| 阅读速度 | ${speedLabel} |`,
+		`| 最近阅读 | ${lastRead} |`,
+	];
+
+	if (input.readingState && flat["reading-status"] !== "unstarted") {
+		const percent = formatPercent(input.readingState.currentPosition.percent);
+		lines.push(
+			"",
+			"> [!tip] 📍 继续阅读",
+			`> 当前停在 **${chapterLabel}**（约 ${percent}）。在阅读器中打开本书即可续读。`
+		);
+	}
+
+	if (stats && flat["reading-status"] === "unstarted") {
+		lines.push(
+			"",
+			"> [!tip] 📍 继续阅读",
+			"> 尚未开始阅读。打开书籍即可记录进度。"
+		);
+	}
+
+	return lines;
+}
+
+function renderAnnotationStatsSection(
+	analytics: EpubBookmarkAnalytics | undefined,
+	flat: EpubBookmarkFlatProperties
+): string[] {
 	return [
-		"> [!tip] 继续阅读",
-		`> 当前停在 **${chapterLabel}**（约 ${percent}）。`,
-		"> 在 EPUB 阅读器中打开本书即可从上次位置继续。",
+		"## ✨ 标注统计",
+		"",
+		"| 项目 | 数量 |",
+		"| :-- | --: |",
+		`| 🖍️ 高亮 | ${flat["highlight-count"]} |`,
+		`| 📝 关联笔记 | ${flat["excerpt-note-count"]} |`,
+		`| 🔖 书签 | ${flat["bookmark-count"]} |`,
+		`| 💬 批注 | ${analytics?.commentCount ?? 0} |`,
 	];
 }
 
@@ -233,7 +340,7 @@ function renderBookmarksSection(
 	input: EpubBookmarkPageRenderInput,
 	linkService: EpubLinkService
 ): string[] {
-	const lines = ["## 书签", ""];
+	const lines = ["## 🔖 书签", ""];
 
 	if (input.bookmarks.length === 0) {
 		lines.push("暂无书签");
@@ -253,64 +360,73 @@ function renderBookmarksSection(
 			undefined,
 			input.sourceId
 		);
+		const jumpLink = link.replace(/\|[^\]|]+\]\]$/, "|↗️ 跳转]]");
 
 		lines.push(`> [!note]- ${chapterTitle}`);
-		lines.push(`> **${pageLabel}** · ${createdLabel}`);
-		lines.push(">");
-		if (bookmark.preview) {
-			lines.push(`> > ${normalizeInlineText(bookmark.preview)}`);
-			lines.push(">");
-		}
-		lines.push(`> ${link}`);
+		lines.push(`> 📄 ${pageLabel} · 🕐 ${createdLabel}`);
+		lines.push(`> ${jumpLink}`);
 		lines.push("");
+	}
+
+	if (lines[lines.length - 1] === "") {
+		lines.pop();
 	}
 
 	return lines;
 }
 
-function renderExcerptIndexSection(
+function renderRecentExcerptsSection(
 	rows: Array<{
 		chapterTitle: string;
 		preview: string;
 		notePath?: string;
+		createdTime: number;
 	}>
 ): string[] {
-	const lines = [
-		"## 摘录索引",
-		"",
-		"高亮全文保存在关联笔记中；此处仅列出最近条目。",
-		"",
-		"| 章节 | 摘录预览 | 笔记 |",
-		"| :-- | :-- | :-- |",
-	];
+	const lines = ["## 💡 最近摘录", ""];
 
+	if (rows.length === 0) {
+		lines.push("暂无摘录");
+		return lines;
+	}
+
+	let currentChapter = "";
 	for (const row of rows) {
-		const noteCell = row.notePath ? `[[${row.notePath}]]` : "—";
-		lines.push(`| ${row.chapterTitle} | ${row.preview} | ${noteCell} |`);
+		if (row.chapterTitle !== currentChapter) {
+			currentChapter = row.chapterTitle;
+			if (lines[lines.length - 1] !== "") {
+				lines.push("");
+			}
+			lines.push(`### ${currentChapter}`, "");
+		}
+
+		const noteLink = row.notePath ? `[[${row.notePath}]]` : "—";
+		lines.push(`> 📌 ${normalizeInlineText(row.preview)}`);
+		lines.push(`> ⏱ ${formatExcerptTimestamp(row.createdTime)} · ${noteLink}`);
+		lines.push("");
+	}
+
+	if (lines[lines.length - 1] === "") {
+		lines.pop();
 	}
 
 	return lines;
 }
 
-function renderAnalyticsSection(analytics: EpubBookmarkAnalytics): string[] {
+function renderReadingAnalysisSection(analytics: EpubBookmarkAnalytics): string[] {
 	const lines = [
-		"## 阅读分析",
-		"",
-		"> [!info] 派生数据",
-		"> 由插件根据 vault 内 EPUB 溯源链接定期汇总；权威计数见 YAML `analytics`。",
-		"",
-		"**高亮分布**",
+		"## 📈 阅读分析",
 		"",
 		"| 颜色 | 数量 |",
 		"| :-- | --: |",
 	];
 
 	const colorLabels: Record<string, string> = {
-		yellow: "黄",
-		green: "绿",
-		blue: "蓝",
-		red: "红",
-		purple: "紫",
+		yellow: "🟡 黄",
+		green: "🟢 绿",
+		blue: "🔵 蓝",
+		red: "🔴 红",
+		purple: "🟣 紫",
 	};
 
 	for (const [color, count] of Object.entries(analytics.highlightsByColor)) {
@@ -321,69 +437,71 @@ function renderAnalyticsSection(analytics: EpubBookmarkAnalytics): string[] {
 	}
 
 	if (analytics.topChaptersByHighlights.length > 0) {
-		lines.push("", "**高亮最多的章节**", "");
+		lines.push("", "**🏆 高亮最多的章节**", "");
 		analytics.topChaptersByHighlights.forEach((entry, index) => {
 			lines.push(`${index + 1}. ${entry.title} — ${entry.count} 处`);
 		});
 	}
 
-	if (typeof analytics.referenceHeatMax === "number" && analytics.referenceHeatMax > 0) {
-		lines.push("", `**引用热度** · 最高单段被引用 **${analytics.referenceHeatMax}** 次`);
+	return lines;
+}
+
+function renderLinkedNotesSection(linkedNotePaths: string[]): string[] {
+	const lines = ["## 🔗 关联笔记", ""];
+
+	if (linkedNotePaths.length === 0) {
+		lines.push("暂无关联笔记");
+		return lines;
+	}
+
+	for (const notePath of linkedNotePaths) {
+		lines.push(`- [[${notePath}]]`);
 	}
 
 	return lines;
 }
 
-function renderUserNotesSection(user: EpubBookmarkUserMetadata): string[] {
+function renderUserNotesSection(user?: EpubBookmarkUserMetadata): string[] {
 	const lines = [
-		"## 我的标注",
+		"## ✏️ 我的标注",
 		"",
-		"> [!quote] 可编辑区",
-		"> 以下内容不会被插件覆盖。",
-		"",
+		"| 项目 | 内容 |",
+		"| :-- | :-- |",
 	];
 
-	const tags = Array.isArray(user.tags)
-		? user.tags.map((tag) => String(tag || "").trim()).filter(Boolean)
+	const tags = Array.isArray(user?.tags)
+		? user.tags.map((tag) => `#${String(tag || "").trim().replace(/^#+/, "")}`).filter(Boolean)
 		: [];
-	if (tags.length > 0) {
-		lines.push(`**标签** ${tags.map((tag) => `#${tag.replace(/^#+/, "")}`).join(" ")}`, "");
-	}
+	const rating =
+		typeof user?.rating === "number" && user.rating > 0
+			? `${"★".repeat(Math.max(1, Math.min(5, Math.round(user.rating))))}${"☆".repeat(
+					5 - Math.max(1, Math.min(5, Math.round(user.rating)))
+				)}（${Math.round(user.rating)} / 5）`
+			: "";
+	const priority = user?.priority ? formatPriorityLabel(user.priority) : "";
+	const notes = String(user?.notes || "").trim();
 
-	if (typeof user.rating === "number" && user.rating > 0) {
-		const rounded = Math.max(1, Math.min(5, Math.round(user.rating)));
-		lines.push(`**评分** ${"★".repeat(rounded)}${"☆".repeat(5 - rounded)}（${rounded} / 5）`, "");
-	}
-
-	if (user.priority) {
-		lines.push(`**优先级** ${formatPriorityLabel(user.priority)}`, "");
-	}
-
-	const notes = String(user.notes || "").trim();
-	if (notes) {
-		lines.push("**备注**", "", notes, "");
-	}
+	lines.push(`| 🏷️ 标签 | ${tags.join(" ") || ""} |`);
+	lines.push(`| ⭐ 评分 | ${rating} |`);
+	lines.push(`| 🚩 优先级 | ${priority} |`);
+	lines.push(`| 📋 备注 | ${notes.replace(/\n/g, " ") || ""} |`);
+	lines.push(
+		"",
+		"> [!quote] ✏️ 可编辑区",
+		"> 在上方表格或此处自由书写；插件不会覆盖本节。"
+	);
 
 	return lines;
-}
-
-function hasUserMetadata(user: EpubBookmarkUserMetadata): boolean {
-	return (
-		(Array.isArray(user.tags) && user.tags.length > 0) ||
-		(typeof user.rating === "number" && user.rating > 0) ||
-		Boolean(String(user.priority || "").trim()) ||
-		Boolean(String(user.notes || "").trim())
-	);
 }
 
 function formatReadingStatusLabel(status: EpubBookmarkReadingStatusCode): string {
 	switch (status) {
 		case "finished":
-			return "已读完";
+			return "✅ 已读完";
 		case "reading":
-			return "阅读中";
+			return "🟢 阅读中";
 		default:
-			return "未开始";
+			return "⚪ 未开始";
 	}
 }
 
@@ -394,7 +512,7 @@ function formatPriorityLabel(priority: string): string {
 		case "low":
 			return "低";
 		default:
-			return "中";
+			return priority || "中";
 	}
 }
 
@@ -406,6 +524,31 @@ function formatDurationMinutes(totalMinutes: number): string {
 	const hours = Math.floor(safeMinutes / 60);
 	const minutes = safeMinutes % 60;
 	return minutes > 0 ? `${hours} 小时 ${minutes} 分钟` : `${hours} 小时`;
+}
+
+function formatWordCount(wordCount: number): string {
+	if (wordCount >= 10_000) {
+		return `${(wordCount / 10_000).toFixed(1).replace(/\.0$/, "")} 万`;
+	}
+	return `${wordCount}`;
+}
+
+function formatPublishDate(value: string): string {
+	const normalized = String(value || "").trim();
+	if (!normalized) {
+		return "—";
+	}
+	return normalized.replace(/T.+$/, "").replace(/\s00:00:00$/, "");
+}
+
+function truncateDescription(value: string, maxLength = 240): string {
+	const normalized = String(value || "")
+		.replace(/\s+/g, " ")
+		.trim();
+	if (normalized.length <= maxLength) {
+		return normalized;
+	}
+	return `${normalized.slice(0, maxLength)}…`;
 }
 
 function buildPageLabel(bookmark: EpubBookmarkPageBookmark): string {
@@ -426,6 +569,19 @@ function formatPercent(percent: number): string {
 function formatTimestamp(timestamp: number): string {
 	if (!timestamp) {
 		return "";
+	}
+	const date = new Date(timestamp);
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, "0");
+	const day = String(date.getDate()).padStart(2, "0");
+	const hours = String(date.getHours()).padStart(2, "0");
+	const minutes = String(date.getMinutes()).padStart(2, "0");
+	return `${year}-${month}-${day} ${hours}:${minutes}`;
+}
+
+function formatExcerptTimestamp(timestamp: number): string {
+	if (!timestamp) {
+		return "—";
 	}
 	const date = new Date(timestamp);
 	const year = date.getFullYear();

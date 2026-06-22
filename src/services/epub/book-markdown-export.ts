@@ -5,11 +5,14 @@ import {
 	generateUniqueVaultFilePath,
 	resolveIRReadableMarkdownTargetFolder,
 } from "./epub-markdown-path-resolver";
+import { replaceBookNotesExportSection } from "./book-notes-export/book-notes-export";
 import { sanitizeExportFileName } from "../../utils/sanitize-export-filename";
 import { openFileWithExistingLeaf } from "../../utils/workspace-navigation";
 import { createContentWithMetadata } from "../../utils/yaml-utils";
 import { isSupportedBookFile } from "./book-format";
 import { i18n } from "../../utils/i18n";
+
+export type BookNotesExportTargetMode = "new" | "append";
 
 export interface BookMarkdownExportAsset {
 	placeholder: string;
@@ -37,6 +40,8 @@ export interface ExportBookNotesToMarkdownInput {
 	sourceLink?: string;
 	bookTitle?: string;
 	lastSelectedFolder?: string | null;
+	targetMode?: BookNotesExportTargetMode;
+	appendTargetPath?: string | null;
 }
 
 function sanitizeBookMarkdownTitle(title: string, fallback: string): string {
@@ -232,6 +237,30 @@ async function finalizeMarkdownExport(
 	return createdFile;
 }
 
+async function finalizeMarkdownAppend(
+	app: App,
+	targetPath: string,
+	content: string
+): Promise<TFile> {
+	const targetFile = app.vault.getAbstractFileByPath(normalizePath(String(targetPath || "").trim()));
+	if (!(targetFile instanceof TFile)) {
+		throw new Error(i18n.t("epub.reader.exportNotesPopover.appendTargetMissing"));
+	}
+
+	const existingContent = await app.vault.read(targetFile);
+	const nextContent = replaceBookNotesExportSection(existingContent, content);
+	await app.vault.modify(
+		targetFile,
+		nextContent.endsWith("\n") ? nextContent : `${nextContent}\n`
+	);
+	await openFileWithExistingLeaf(app, targetFile, { openInNewTab: true, focus: true });
+	new Notice(
+		i18n.t("epub.reader.exportNotesPopover.appendSuccess", { fileName: targetFile.basename }),
+		3000
+	);
+	return targetFile;
+}
+
 function resolveSupportedSourceFile(app: App, filePath: string): TFile {
 	const sourceFile = app.vault.getAbstractFileByPath(String(filePath || "").trim());
 	if (!(sourceFile instanceof TFile) || !isSupportedBookFile(sourceFile)) {
@@ -271,6 +300,20 @@ export async function exportBookNotesToMarkdown(
 	app: App,
 	input: ExportBookNotesToMarkdownInput
 ): Promise<TFile> {
+	resolveSupportedSourceFile(app, input.filePath);
+	const normalizedMarkdown = buildBookNotesMarkdownContent({
+		markdown: input.markdown,
+		sourceLink: input.targetMode === "append" ? undefined : input.sourceLink,
+	});
+
+	if (input.targetMode === "append") {
+		const appendTargetPath = normalizePath(String(input.appendTargetPath || "").trim());
+		if (!appendTargetPath) {
+			throw new Error(i18n.t("epub.reader.exportNotesPopover.appendTargetRequired"));
+		}
+		return await finalizeMarkdownAppend(app, appendTargetPath, normalizedMarkdown);
+	}
+
 	const sourceFile = resolveSupportedSourceFile(app, input.filePath);
 	const exportFolder = resolveIRReadableMarkdownTargetFolder(app, {
 		lastSelectedFolder: input.lastSelectedFolder,
@@ -282,9 +325,5 @@ export async function exportBookNotesToMarkdown(
 		sourceFile.basename
 	);
 	const targetPath = await prepareMarkdownExportPath(app, exportFolder, `${bookTitle} - 阅读笔记`);
-	const content = buildBookNotesMarkdownContent({
-		markdown: input.markdown,
-		sourceLink: input.sourceLink,
-	});
-	return await finalizeMarkdownExport(app, targetPath, content);
+	return await finalizeMarkdownExport(app, targetPath, normalizedMarkdown);
 }

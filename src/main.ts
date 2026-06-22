@@ -1,4 +1,5 @@
 import "./utils/group-by-compat";
+import "./utils/blob-url-registry";
 import { Menu, Notice, Plugin, TAbstractFile, TFile, normalizePath } from "obsidian";
 import { domInstanceOf } from "./utils/dom-instance-of";
 
@@ -10,7 +11,12 @@ import {
 	EpubStorageService,
 	exportBookNotesToMarkdown,
 	exportBookSectionToMarkdown,
+	loadPublicationTocItems,
+	navigateToPublicationChapter,
+	buildPublicationChapterMarkdownLink,
 	normalizeEpubBookmarkFolderPath,
+	resetEpubStorageServiceCache,
+	type TocItem,
 } from "./services/epub";
 import {
 	DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_ENABLED,
@@ -251,6 +257,37 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			this.epubStorageService = new EpubStorageService(this.app);
 		}
 		return this.epubStorageService;
+	}
+
+	/** standalone IR 导入 EPUB/书籍时读取目录；宿主通过 `plugins.getPlugin("weave-epub-reader")` 调用 */
+	async loadPublicationTocItems(filePath: string): Promise<TocItem[]> {
+		return loadPublicationTocItems(this.app, filePath);
+	}
+
+	/** standalone IR 打开章节阅读点；优先于 IR 侧直接写 leaf state */
+	async navigateToPublicationChapter(
+		filePath: string,
+		tocHref: string,
+		options?: { sourceId?: string; sourceMarkdownPath?: string }
+	): Promise<void> {
+		return navigateToPublicationChapter(this.app, filePath, tocHref, options);
+	}
+
+	buildPublicationChapterMarkdownLink(
+		filePath: string,
+		tocHref: string,
+		chapterTitle?: string,
+		sourceId?: string,
+		chapterIndex?: number
+	): string {
+		return buildPublicationChapterMarkdownLink(
+			this.app,
+			filePath,
+			tocHref,
+			chapterTitle,
+			sourceId,
+			chapterIndex
+		);
 	}
 
 	getOfficialAPI(): EpubWeaveOfficialAPI {
@@ -619,6 +656,9 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.registerEvent(
 			this.app.workspace.on("layout-ready", () => {
 				bootstrapEpubAnnotationIndex(this.app);
+				void import("./services/epub/epub-bookmark-migration").then(({ maybePromptEpubBookmarkV3Migration }) =>
+					maybePromptEpubBookmarkV3Migration(this.app)
+				);
 			})
 		);
 		scheduleEpubAnnotationIndexWarmup(this.app);
@@ -670,6 +710,8 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			window.clearTimeout(this.pendingBookshelfRefreshTimer);
 			this.pendingBookshelfRefreshTimer = null;
 		}
+		this.epubStorageService = null;
+		resetEpubStorageServiceCache(this.app);
 		logger.setDebugMode(false);
 		unregisterEpubHost(this.app);
 	}

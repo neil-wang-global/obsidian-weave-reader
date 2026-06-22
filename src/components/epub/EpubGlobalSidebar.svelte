@@ -11,7 +11,7 @@
   	import type { EpubNavigationRequest, EpubSharedState } from '../../stores/epub-active-document-store';
 	import EpubSearchInput from './EpubSearchInput.svelte';
   	import TableOfContents from './TableOfContents.svelte';
-	import { resolveLastReadTocHref } from '../../utils/epub-toc-reading-position';
+	import { resolveLastReadTocHref, resolveActiveTocHref } from '../../utils/epub-toc-reading-position';
 	import EpubBookmarksPanel from './EpubBookmarksPanel.svelte';
   	import NotesPanel from './NotesPanel.svelte';
   	import BookshelfView from './BookshelfView.svelte';
@@ -84,6 +84,15 @@
 		void state.progress;
 		void state.bookmarkRevision;
 		return resolveLastReadTocHref(state.book, state.readerService, tocItems);
+	});
+	let activeTocHref = $derived.by(() => {
+		const state = sharedState;
+		if (!state?.chapterHref || tocItems.length === 0) {
+			return null;
+		}
+		void state.chapterHref;
+		void state.progress;
+		return resolveActiveTocHref(tocItems, state.chapterHref);
 	});
 	let sidebarProgressSegments = $derived(
 		Array.from({ length: SIDEBAR_PROGRESS_SEGMENT_COUNT }, (_, index) => ({
@@ -928,8 +937,9 @@
 						items={tocItems}
 						loading={tocLoading && tocItems.length === 0}
 						loadFailed={tocLoadFailed && !tocLoading}
-						activeHref={sharedState?.chapterHref ?? null}
+						activeHref={activeTocHref}
 						lastReadHref={lastReadTocHref}
+						autoScrollToActive={activeTab === 'toc' && !isSearchActive}
 						onNavigate={handleTocNavigate}
 						onAddToIncrementalReading={sharedState?.onCreateChapterReadingPoint ? handleTocCreateReadingPoint : undefined}
 					/>
@@ -1053,7 +1063,7 @@
 		font-size: var(--font-ui-small);
 		line-height: 1.5;
 		color: var(--text-muted);
-		margin-bottom: var(--size-4-2);
+		margin-bottom: var(--size-2-1);
 	}
 
 	.epub-global-sidebar-header .book-progress-track {

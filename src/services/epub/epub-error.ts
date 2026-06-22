@@ -1,6 +1,8 @@
 import { extractErrorMessage } from "../../types/utility-types";
 import { i18n } from "../../utils/i18n";
 import { logger } from "../../utils/logger";
+import { BOOK_LOAD_HARD_TIMEOUT_MS } from "./book-load-session";
+import { getBookFormatDisplayLabel, isSupportedBookPath } from "./book-format";
 
 export type EpubErrorCode =
 	| "file_not_found"
@@ -40,26 +42,33 @@ function isEpubError(error: unknown): error is EpubError {
 	return error instanceof EpubError;
 }
 
+export interface ClassifyEpubErrorOptions {
+	filePath?: string;
+}
+
 export function classifyEpubError(
 	error: unknown,
-	operation: EpubErrorOperation = "open"
+	operation: EpubErrorOperation = "open",
+	options: ClassifyEpubErrorOptions = {}
 ): ClassifiedEpubError {
 	const message = extractErrorMessage(error);
 	const code = resolveEpubErrorCode(error, message, operation);
+	const filePath = String(options.filePath || "").trim();
 	return {
 		code,
 		operation,
-		userMessage: buildUserMessage(code, operation, message),
-		logMessage: buildLogMessage(code, operation, message),
+		userMessage: buildUserMessage(code, operation, message, filePath),
+		logMessage: buildLogMessage(code, operation, message, filePath),
 		context: isEpubError(error) ? error.context : undefined,
 	};
 }
 
 export function reportEpubError(
 	error: unknown,
-	operation: EpubErrorOperation = "open"
+	operation: EpubErrorOperation = "open",
+	options: ClassifyEpubErrorOptions = {}
 ): ClassifiedEpubError {
-	const classified = classifyEpubError(error, operation);
+	const classified = classifyEpubError(error, operation, options);
 	logger.error(classified.logMessage, {
 		context: classified.context,
 		error,
@@ -77,7 +86,11 @@ function resolveEpubErrorCode(
 	}
 
 	const normalizedMessage = String(message || "").toLowerCase();
-	if (normalizedMessage.includes("加载超时") || normalizedMessage.includes("timeout")) {
+	if (
+		normalizedMessage.includes("加载超时") ||
+		normalizedMessage.includes("timeout") ||
+		normalizedMessage.includes("timed out")
+	) {
 		return "load_timeout";
 	}
 	if (
@@ -121,16 +134,28 @@ function resolveEpubErrorCode(
 	return "unknown";
 }
 
+function resolveBookFormatLabel(filePath: string): string | null {
+	if (!filePath || !isSupportedBookPath(filePath)) {
+		return null;
+	}
+	return getBookFormatDisplayLabel(filePath);
+}
+
 function buildUserMessage(
 	code: EpubErrorCode,
 	operation: EpubErrorOperation,
-	rawMessage: string
+	rawMessage: string,
+	filePath = ""
 ): string {
+	const format = resolveBookFormatLabel(filePath);
 	switch (code) {
 		case "file_not_found":
 			return i18n.t("epub.errors.fileNotFound");
 		case "load_timeout":
-			return i18n.t("epub.errors.loadTimeout");
+			return i18n.t("epub.errors.loadTimeout", {
+				format: format || "EPUB",
+				seconds: String(Math.round(BOOK_LOAD_HARD_TIMEOUT_MS / 1000)),
+			});
 		case "invalid_archive":
 			return i18n.t("epub.errors.invalidArchive");
 		case "missing_container":
@@ -160,7 +185,9 @@ function buildUserMessage(
 function buildLogMessage(
 	code: EpubErrorCode,
 	operation: EpubErrorOperation,
-	message: string
+	message: string,
+	filePath = ""
 ): string {
-	return `[EPUB:${operation}:${code}] ${message}`;
+	const format = resolveBookFormatLabel(filePath) || "EPUB";
+	return `[${format}:${operation}:${code}] ${message}`;
 }

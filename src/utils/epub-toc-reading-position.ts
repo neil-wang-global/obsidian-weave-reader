@@ -23,6 +23,31 @@ export function normalizeTocHref(href: string): string {
 	return (hashIndex >= 0 ? normalized.slice(0, hashIndex) : normalized).trim();
 }
 
+function tocHrefBasename(href: string): string {
+	const path = normalizeTocHref(href);
+	const segments = path.split("/").filter(Boolean);
+	return (segments[segments.length - 1] || path).toLowerCase();
+}
+
+function tocHrefFragment(href: string): string {
+	const trimmed = String(href || "").trim();
+	const hashIndex = trimmed.indexOf("#");
+	return hashIndex >= 0 ? trimmed.slice(hashIndex) : "";
+}
+
+function tocHrefPathsMatch(normalizedTarget: string, normalizedItemHref: string): boolean {
+	if (!normalizedTarget || !normalizedItemHref) {
+		return false;
+	}
+	return (
+		normalizedTarget === normalizedItemHref
+		|| normalizedTarget.startsWith(`${normalizedItemHref}/`)
+		|| normalizedItemHref.startsWith(`${normalizedTarget}/`)
+		|| normalizedTarget.endsWith(`/${normalizedItemHref}`)
+		|| normalizedItemHref.endsWith(`/${normalizedTarget}`)
+	);
+}
+
 export function resolveSavedReadingSectionHref(
 	book: EpubBook | null | undefined,
 	readerService: EpubReaderEngine | null | undefined
@@ -80,8 +105,41 @@ export function findTocHrefForSectionHref(
 	const trimmedTarget = String(sectionHref || "").trim();
 
 	for (const item of flatItems) {
-		if (item.href === trimmedTarget || normalizeTocHref(item.href) === normalizedTarget) {
+		if (item.href === trimmedTarget) {
 			return item.href;
+		}
+	}
+
+	for (const item of flatItems) {
+		if (normalizeTocHref(item.href) === normalizedTarget) {
+			return item.href;
+		}
+	}
+
+	const targetBasename = tocHrefBasename(trimmedTarget);
+	const targetFragment = tocHrefFragment(trimmedTarget);
+	if (targetBasename) {
+		let basenameMatch: FlatTocItem | null = null;
+		for (const item of flatItems) {
+			if (tocHrefBasename(item.href) !== targetBasename) {
+				continue;
+			}
+			if (targetFragment) {
+				const itemFragment = tocHrefFragment(item.href);
+				if (itemFragment && itemFragment !== targetFragment) {
+					continue;
+				}
+				if (!basenameMatch || item.depth > basenameMatch.depth) {
+					basenameMatch = item;
+				}
+				continue;
+			}
+			if (!basenameMatch || item.depth < basenameMatch.depth) {
+				basenameMatch = item;
+			}
+		}
+		if (basenameMatch) {
+			return basenameMatch.href;
 		}
 	}
 
@@ -92,12 +150,7 @@ export function findTocHrefForSectionHref(
 			continue;
 		}
 
-		const matchesSection =
-			normalizedTarget === normalizedItemHref
-			|| normalizedTarget.startsWith(`${normalizedItemHref}/`)
-			|| normalizedItemHref.startsWith(`${normalizedTarget}/`);
-
-		if (!matchesSection) {
+		if (!tocHrefPathsMatch(normalizedTarget, normalizedItemHref)) {
 			continue;
 		}
 
@@ -116,4 +169,22 @@ export function resolveLastReadTocHref(
 ): string | null {
 	const sectionHref = resolveSavedReadingSectionHref(book, readerService);
 	return findTocHrefForSectionHref(tocItems, sectionHref);
+}
+
+export function resolveActiveTocHref(
+	tocItems: TocItem[],
+	sectionHref: string | null | undefined
+): string | null {
+	return findTocHrefForSectionHref(tocItems, sectionHref);
+}
+
+export function isTocHrefActive(
+	itemHref: string,
+	activeHref: string | null | undefined
+): boolean {
+	const trimmedActive = String(activeHref || "").trim();
+	if (!trimmedActive) {
+		return false;
+	}
+	return String(itemHref || "").trim() === trimmedActive;
 }

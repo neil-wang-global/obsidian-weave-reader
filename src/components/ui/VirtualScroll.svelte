@@ -222,16 +222,7 @@
 
   .virtual-scroll-item {
     display: flex;
-    align-items: center;
-    border-bottom: 1px solid var(--background-modifier-border);
-    transition: background-color 0.1s ease;
-  }
-
-  .virtual-scroll-item:hover {
-    background-color: var(--background-modifier-hover);
-  }
-
-  .virtual-scroll-item:last-child {
+    align-items: stretch;
     border-bottom: none;
   }
 
@@ -268,10 +259,6 @@
   @media (max-width: 768px) {
     .virtual-scroll-container::-webkit-scrollbar {
       width: 4px;
-    }
-    
-    .virtual-scroll-item {
-      padding: 0.5rem;
     }
   }
 </style>

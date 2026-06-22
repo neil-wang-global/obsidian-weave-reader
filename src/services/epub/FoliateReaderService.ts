@@ -22,6 +22,52 @@ import type {
 	ReaderSelectionChange,
 	ReaderViewportGeometry,
 } from "./reader-engine-types";
+import type { EpubChapterLocationFormat } from "./epub-excerpt-settings";
+import { buildReaderChapterStyles } from "./reader-chapter-styles";
+import { resolveReaderHighlightTint } from "./reader-highlight-tints";
+import {
+	buildReaderNavigationRectTargets,
+	resolveReaderSourceNavigationViewTargets,
+} from "./reader-navigation-targets";
+import { applyReaderThemeHostSurfaces } from "./reader-theme-host";
+import {
+	readConcealmentPalette,
+	readObsidianColorScheme,
+	readObsidianCssVar,
+} from "./reader-theme-tokens";
+import {
+	applyRendererLayoutAttributes,
+	computePaginatorLayoutMetrics,
+	isFoliatePaginatorRenderer,
+} from "./reader-renderer-layout";
+import {
+	ReaderPaginatedLayoutRecoveryScheduler,
+	shouldRecoverPaginatedLayout,
+} from "./reader-paginated-layout-recovery";
+import {
+	createRenderedFoliateAnnotation,
+	isSameFoliateAnnotation,
+	shouldRenderAnnotationAsConceal,
+	type ReaderFoliateAnnotation,
+	type RenderedReaderFoliateAnnotation,
+} from "./reader-annotation-model";
+import {
+	buildHighlightClickInfo,
+	createAnchorPointFromRect,
+	createElementViewportRect,
+	createViewportRectFromRawRect,
+	extractRangeBoundingRect,
+	extractRangeClientRects,
+	hasUsableOverlayRects,
+} from "./reader-highlight-geometry";
+import { resolveHighlightOverlayRects } from "./reader-highlight-overlay-rects";
+import { resolveHighlightSectionIndexForView } from "./reader-highlight-section-resolver";
+import { resolveHighlightViewportGeometry } from "./reader-highlight-viewport-geometry";
+import { mapRawRectToViewport } from "./reader-viewport-rect-map";
+import {
+	type FoliateOverlayerModule,
+	ReaderAnnotationOverlayRenderer,
+} from "./reader-annotation-overlayer";
 import type {
 	EpubBook,
 	EpubFootnoteClickAction,
@@ -49,7 +95,11 @@ import {
 	type PaceAnchorSnapshot,
 	type SectionReadingSlice,
 } from "./reading-pace";
-import { i18n } from "../../utils/i18n";
+import {
+	isAtChapterEndByPositionMetrics,
+	isScrolledRendererAtSectionBottom,
+	resolveScrolledChapterEndState,
+} from "./scrolled-chapter-end";
 import { logger } from "../../utils/logger";
 import { domInstanceOf } from "../../utils/dom-instance-of";
 import {
@@ -74,21 +124,13 @@ import {
 	normalizeHighlightQuoteText,
 } from "./highlight/highlight-identity";
 import { EpubLinkService } from "./EpubLinkService";
-import { setSvgInteractionAttributes } from "./svg-interaction";
 
 function logFootnoteDiag(message: string): void {
 	logger.debugWithTag("FootnoteDiag", message);
 }
 
-type FoliateAnnotation = ReaderHighlight & {
-	value: string;
-	focusColor?: string;
-};
-
-type RenderedFoliateAnnotation = {
-	annotation: FoliateAnnotation;
-	renderSignature: string;
-};
+type FoliateAnnotation = ReaderFoliateAnnotation;
+type RenderedFoliateAnnotation = RenderedReaderFoliateAnnotation;
 
 type VisibleFrameWithIndex = {
 	index: number;
@@ -102,6 +144,9 @@ type FoliateRenderer = HTMLElement & {
 	setStyles?: (styles: string | [string, string]) => void;
 	render?: () => void;
 	getContents?: () => Array<{ index?: number; doc?: Document | null }>;
+	flow?: string;
+	viewSize?: number;
+	end?: number;
 };
 
 type FoliateViewElement = HTMLElement & {
@@ -247,39 +292,9 @@ const PARAGRAPH_BOILERPLATE_PATTERNS = [
 	/\bEPUB_\d{10,}\b/u,
 ];
 
-type FoliateOverlayerModule = {
-	Overlayer: {
-		highlight: (rects: unknown[], options?: unknown) => SVGElement;
-	};
-};
-
 export class FoliateReaderService implements EpubReaderEngine {
 	readonly engineType = "foliate" as const;
 
-	private static readonly HIGHLIGHT_TINT_MAP: Record<"light" | "dark", Record<string, string>> = {
-		light: {
-			yellow: "rgb(250, 204, 21)",
-			green: "rgb(22, 163, 74)",
-			blue: "rgb(37, 99, 235)",
-			red: "rgb(220, 38, 38)",
-			purple: "rgb(147, 51, 234)",
-		},
-		dark: {
-			yellow: "rgb(255, 222, 89)",
-			green: "rgb(74, 222, 128)",
-			blue: "rgb(96, 165, 250)",
-			red: "rgb(248, 113, 113)",
-			purple: "rgb(196, 181, 253)",
-		},
-	};
-	private static readonly HIGHLIGHT_OPACITY_MAP: Record<"light" | "dark", string> = {
-		light: "0.72",
-		dark: "0.68",
-	};
-	private static readonly HIGHLIGHT_BLEND_MODE_MAP: Record<"light" | "dark", string> = {
-		light: "normal",
-		dark: "normal",
-	};
 	private static readonly FOOTNOTE_PREVIEW_RESOLVE_TIMEOUT_MS = 2200;
 	private static readonly FOOTNOTE_PREVIEW_CANDIDATE_TIMEOUT_MS = 480;
 	private static readonly NAVIGATION_TIMEOUT_MS = 5000;
@@ -288,6 +303,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private readonly parser: FoliateVaultPublicationParser;
 	private readonly footnotePreviewResolver: FootnotePreviewResolver;
 	private readonly footnotePreviewController: FootnotePreviewController;
+	private readonly annotationOverlayRenderer: ReaderAnnotationOverlayRenderer;
 
 	private currentBook: EpubBook | null = null;
 	private currentPosition: ReadingPosition = {
@@ -312,6 +328,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private paragraphFootnotePreviewSession = 0;
 	private paragraphAnchorSyncDepth = 0;
 	private relocatedCallbacks = new Set<(position: ReadingPosition) => void>();
+	private scrolledChapterEndCallbacks = new Set<(atEnd: boolean) => void>();
+	private scrolledChapterEndMonitorCleanup: (() => void) | null = null;
+	private scrolledChapterEndSyncFrame = 0;
+	private atCurrentChapterEndCached = false;
 	private footnotePreviewCallbacks = new Set<(info: ReaderFootnotePreviewInfo | null) => void>();
 	private selectionChangeCallbacks = new Set<(event: ReaderSelectionChange) => void>();
 	private highlightClickCallbacks = new Set<(info: HighlightClickInfo) => void>();
@@ -333,9 +353,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private renderContainerWheelCleanup: (() => void) | null = null;
 	private themeChangeCleanup: (() => void) | null = null;
 	private pendingThemeRefreshFrame: number | null = null;
-	private pendingLayoutRecoveryFrame: number | null = null;
 	private themeRefreshToken = 0;
-	private layoutRecoveryToken = 0;
+	private readonly paginatedLayoutRecovery = new ReaderPaginatedLayoutRecoveryScheduler();
 	private readonly sessionGuard = new FoliateSessionGuard<FoliateViewElement>();
 	private wheelTurnInFlight = false;
 	private wheelDeltaAccumulator = 0;
@@ -385,6 +404,15 @@ export class FoliateReaderService implements EpubReaderEngine {
 				this.buildFootnotePreviewInfo(doc, anchor),
 			notifyPreview: (info: ReaderFootnotePreviewInfo | null) => this.notifyFootnotePreview(info),
 			resolveTimeoutMs: FoliateReaderService.FOOTNOTE_PREVIEW_RESOLVE_TIMEOUT_MS,
+		});
+		this.annotationOverlayRenderer = new ReaderAnnotationOverlayRenderer({
+			resolveHighlightTint: (color) => this.resolveHighlightTint(color),
+			getObsidianCSSVar: (varName, fallback) => this.getObsidianCSSVar(varName, fallback),
+			getConcealmentPalette: () => this.getConcealmentPalette(),
+			onCommentMarkerClick: (cfiRange, markerElement, anchorRect) =>
+				this.notifyCommentMarkerClick(cfiRange, markerElement, anchorRect),
+			onReferenceBadgeClick: (cfiRange, geometry) =>
+				this.notifyReferenceBadgeClick(cfiRange, geometry),
 		});
 	}
 
@@ -537,6 +565,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			);
 			await this.refreshHighlights();
 			this.attachReadingPaceListeners();
+			this.syncScrolledChapterEndMonitor();
 		} catch (error) {
 			if (this.sessionGuard.isActiveViewSession(viewSessionToken, this.foliateView, view)) {
 				await this.destroyViewOnly();
@@ -730,6 +759,14 @@ export class FoliateReaderService implements EpubReaderEngine {
 		};
 	}
 
+	onScrolledChapterEndChange(callback: (atEnd: boolean) => void): () => void {
+		this.scrolledChapterEndCallbacks.add(callback);
+		callback(this.resolveScrolledChapterEndState());
+		return () => {
+			this.scrolledChapterEndCallbacks.delete(callback);
+		};
+	}
+
 	async setLayoutMode(
 		mode: EpubLayoutMode,
 		flowMode: EpubFlowMode,
@@ -781,6 +818,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			await this.refreshHighlights();
 		} finally {
 			this.layoutChangeInFlight = false;
+			this.syncScrolledChapterEndMonitor();
 		}
 	}
 
@@ -859,23 +897,12 @@ export class FoliateReaderService implements EpubReaderEngine {
 	}
 
 	private buildNavigationRectTargets(options: ReaderNavigationRectOptions): string[] {
-		const targets = new Set<string>();
-		const primaryTarget = String(options.cfi || options.href || "").trim();
-		if (primaryTarget) {
-			targets.add(primaryTarget);
-		}
-
-		const currentCfi = String(this.currentPosition.cfi || "").trim();
-		if (currentCfi) {
-			targets.add(currentCfi);
-		}
-
-		const currentHref = String(this.currentChapterHref || "").trim();
-		if (currentHref) {
-			targets.add(currentHref);
-		}
-
-		return Array.from(targets);
+		return buildReaderNavigationRectTargets({
+			cfi: options.cfi,
+			href: options.href,
+			currentCfi: this.currentPosition.cfi,
+			currentHref: this.currentChapterHref,
+		});
 	}
 
 	private getRenderContainerRect(): DOMRect | null {
@@ -888,6 +915,14 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 	getCurrentChapterTitle(): string {
 		return this.currentChapterTitle;
+	}
+
+	getChapterLocationLabel(format: EpubChapterLocationFormat = "leaf"): string {
+		const chapterIndex = this.getCurrentChapterIndex();
+		if (chapterIndex < 0) {
+			return "";
+		}
+		return this.parser.getSectionLocationLabelByIndex(chapterIndex, format) || this.currentChapterTitle;
 	}
 
 	getCurrentChapterIndex(): number {
@@ -1214,11 +1249,55 @@ export class FoliateReaderService implements EpubReaderEngine {
 		}, "nextChapter");
 	}
 
+	async prevChapter(): Promise<boolean> {
+		return this.enqueueNavigation(async (positionOperationToken) => {
+			const currentChapterIndex = this.currentPosition.chapterIndex ?? 0;
+			if (currentChapterIndex <= 0) {
+				return false;
+			}
+
+			const prevHref = this.parser.getSectionHrefByIndex(currentChapterIndex - 1);
+			if (!prevHref) {
+				return false;
+			}
+
+			this.clearSelections();
+			await this.navigateViewWithFallback(prevHref, prevHref, positionOperationToken);
+			await this.syncCurrentPositionFromTarget(prevHref, undefined, positionOperationToken);
+			return true;
+		}, "prevChapter");
+	}
+
 	isAtCurrentChapterEnd(): boolean {
 		if (this.currentFlowMode !== "scrolled") {
 			return false;
 		}
+		return this.resolveScrolledChapterEndState();
+	}
 
+	private resolveScrolledChapterEndState(): boolean {
+		return resolveScrolledChapterEndState({
+			atSectionBottom: this.isScrolledRendererAtSectionBottom(),
+			atChapterEndByMetrics: this.isAtCurrentChapterEndByPositionMetrics(),
+		});
+	}
+
+	private isScrolledRendererAtSectionBottom(): boolean {
+		const renderer = this.foliateView?.renderer as FoliateRenderer | undefined;
+		if (!renderer || renderer.getAttribute("flow") !== "scrolled") {
+			return false;
+		}
+
+		const viewSize = renderer.viewSize;
+		const scrollEnd = renderer.end;
+		if (typeof viewSize !== "number" || typeof scrollEnd !== "number") {
+			return false;
+		}
+
+		return isScrolledRendererAtSectionBottom(viewSize, scrollEnd);
+	}
+
+	private isAtCurrentChapterEndByPositionMetrics(): boolean {
 		const sectionIndex = this.currentPosition.chapterIndex ?? 0;
 		const section = this.parser.getSectionReadingMetrics(sectionIndex);
 		if (!section) {
@@ -1227,8 +1306,81 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 		const totalPositions = this.parser.getTotalPositions();
 		const currentPage = this.normalizeCurrentPage(totalPositions);
-		const chapterEndPage = section.positionStart + Math.max(section.positionCount, 1);
-		return currentPage >= chapterEndPage;
+		return isAtChapterEndByPositionMetrics({
+			currentPage,
+			positionStart: section.positionStart,
+			positionCount: section.positionCount,
+			sectionProgression: this.currentSectionProgression,
+		});
+	}
+
+	private syncScrolledChapterEndMonitor(): void {
+		this.detachScrolledChapterEndMonitor();
+		if (this.currentFlowMode === "scrolled" && this.foliateView?.renderer) {
+			this.attachScrolledChapterEndMonitor();
+			this.publishScrolledChapterEndStateIfChanged();
+			return;
+		}
+		this.publishScrolledChapterEndState(false);
+	}
+
+	private attachScrolledChapterEndMonitor(): void {
+		const renderer = this.foliateView?.renderer as FoliateRenderer | undefined;
+		if (!renderer || renderer.getAttribute("flow") !== "scrolled") {
+			return;
+		}
+
+		const schedulePublish = () => {
+			if (this.scrolledChapterEndSyncFrame) {
+				return;
+			}
+			this.scrolledChapterEndSyncFrame = window.requestAnimationFrame(() => {
+				this.scrolledChapterEndSyncFrame = 0;
+				this.publishScrolledChapterEndStateIfChanged();
+			});
+		};
+		const onScroll = () => schedulePublish();
+		const onRelocate = () => schedulePublish();
+
+		renderer.addEventListener("scroll", onScroll, { passive: true });
+		this.foliateView?.addEventListener("relocate", onRelocate as EventListener);
+		this.scrolledChapterEndMonitorCleanup = () => {
+			if (this.scrolledChapterEndSyncFrame) {
+				window.cancelAnimationFrame(this.scrolledChapterEndSyncFrame);
+				this.scrolledChapterEndSyncFrame = 0;
+			}
+			renderer.removeEventListener("scroll", onScroll);
+			this.foliateView?.removeEventListener("relocate", onRelocate as EventListener);
+		};
+	}
+
+	private detachScrolledChapterEndMonitor(): void {
+		if (this.scrolledChapterEndMonitorCleanup) {
+			this.scrolledChapterEndMonitorCleanup();
+			this.scrolledChapterEndMonitorCleanup = null;
+		}
+		if (this.scrolledChapterEndSyncFrame) {
+			window.cancelAnimationFrame(this.scrolledChapterEndSyncFrame);
+			this.scrolledChapterEndSyncFrame = 0;
+		}
+	}
+
+	private publishScrolledChapterEndStateIfChanged(): void {
+		this.publishScrolledChapterEndState(this.resolveScrolledChapterEndState());
+	}
+
+	private publishScrolledChapterEndState(atEnd: boolean): void {
+		if (atEnd === this.atCurrentChapterEndCached) {
+			return;
+		}
+		this.atCurrentChapterEndCached = atEnd;
+		for (const callback of this.scrolledChapterEndCallbacks) {
+			try {
+				callback(atEnd);
+			} catch (error) {
+				logger.warn("[FoliateReaderService] Scrolled chapter end listener failed:", error);
+			}
+		}
 	}
 
 	isAtBookEnd(): boolean {
@@ -1368,7 +1520,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (!geometry?.rect) {
 			return null;
 		}
-		return this.buildHighlightClickInfo(highlight, geometry, interactionTarget);
+		return buildHighlightClickInfo(highlight, geometry, interactionTarget);
 	}
 
 	getSelectionViewportGeometry(cfiRange: string): ReaderViewportGeometry | null {
@@ -1379,7 +1531,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		return {
 			rect: geometry.rect,
 			rects: geometry.rects,
-			anchorPoint: this.createAnchorPointFromRect(geometry.rect),
+			anchorPoint: createAnchorPointFromRect(geometry.rect),
 		};
 	}
 
@@ -1653,7 +1805,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			};
 		}
 
-		const info = this.buildHighlightClickInfo(
+		const info = buildHighlightClickInfo(
 			highlight,
 			{
 				rect,
@@ -1726,27 +1878,23 @@ export class FoliateReaderService implements EpubReaderEngine {
 		rawTarget: string,
 		text?: string
 	): { viewTarget: string; fallbackTarget: string } {
-		const defaultViewTarget = rawHref && !rawCfi ? rawHref : canonical || rawTarget;
-		const defaultFallbackTarget =
-			rawHref ||
-			resolved?.href ||
-			this.getSectionHrefFallbackTarget(canonical || rawCfi || rawTarget);
-
-		if (!resolved || !this.usesGenericBookLoader() || !String(text || "").trim()) {
-			return {
-				viewTarget: defaultViewTarget,
-				fallbackTarget: defaultFallbackTarget,
-			};
-		}
-
-		const sectionEntryCfi = this.parser.getSectionEntryCfi(resolved.index);
-		const sectionHref =
-			resolved.href || this.parser.getSectionHrefByIndex(resolved.index) || "";
-		const sectionTarget = sectionHref || sectionEntryCfi || defaultViewTarget;
-		return {
-			viewTarget: sectionTarget,
-			fallbackTarget: sectionHref || sectionEntryCfi || defaultFallbackTarget,
-		};
+		return resolveReaderSourceNavigationViewTargets({
+			resolved,
+			rawCfi,
+			rawHref,
+			canonical,
+			rawTarget,
+			text,
+			usesGenericBookLoader: this.usesGenericBookLoader(),
+			sectionEntryCfi: resolved ? this.parser.getSectionEntryCfi(resolved.index) : null,
+			sectionHref: resolved
+				? resolved.href || this.parser.getSectionHrefByIndex(resolved.index) || ""
+				: null,
+			fallbackTarget:
+				rawHref
+				|| resolved?.href
+				|| this.getSectionHrefFallbackTarget(canonical || rawCfi || rawTarget),
+		});
 	}
 
 	private async waitForVisibleSectionIndex(
@@ -2046,7 +2194,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		frame: { frameElement?: HTMLElement | null },
 		range: Range
 	): HighlightClickInfo["rect"] | null {
-		const rawRect = this.extractRangeBoundingRect(range);
+		const rawRect = extractRangeBoundingRect(range);
 		if (!rawRect) {
 			return null;
 		}
@@ -2057,7 +2205,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		frame: { frameElement?: HTMLElement | null },
 		range: Range
 	): HighlightClickInfo["rect"][] | null {
-		const rects = this.extractRangeClientRects(range)
+		const rects = extractRangeClientRects(range)
 			.map((rect) => this.mapRawRectToViewport(frame.frameElement, rect))
 			.filter((rect): rect is HighlightClickInfo["rect"] => Boolean(rect));
 		return rects.length ? rects : null;
@@ -2071,8 +2219,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (frame) {
 			return this.createViewportRect(frame, range);
 		}
-		const rawRect = this.extractRangeBoundingRect(range);
-		return rawRect ? this.createViewportRectFromRawRect(rawRect) : null;
+		const rawRect = extractRangeBoundingRect(range);
+		return rawRect ? createViewportRectFromRawRect(rawRect) : null;
 	}
 
 	private createViewportRectFromElement(
@@ -2090,7 +2238,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			/* ignore */
 		}
 
-		const fallbackRect = this.createElementViewportRect(element);
+		const fallbackRect = createElementViewportRect(element);
 		if (!fallbackRect) {
 			return null;
 		}
@@ -2106,55 +2254,6 @@ export class FoliateReaderService implements EpubReaderEngine {
 		});
 	}
 
-	private extractRangeBoundingRect(range: Range): {
-		left: number;
-		top: number;
-		width: number;
-		height: number;
-	} | null {
-		const rect = range.getBoundingClientRect?.();
-		if (rect && (rect.width > 0 || rect.height > 0)) {
-			return {
-				left: rect.left,
-				top: rect.top,
-				width: rect.width,
-				height: rect.height,
-			};
-		}
-		return this.extractRangeClientRects(range)[0] || null;
-	}
-
-	private extractRangeClientRects(range: Range): Array<{
-		left: number;
-		top: number;
-		width: number;
-		height: number;
-	}> {
-		const rects = Array.from(range.getClientRects?.() || [])
-			.map((rect) => ({
-				left: rect.left,
-				top: rect.top,
-				width: rect.width,
-				height: rect.height,
-			}))
-			.filter((rect) => rect.width > 0 || rect.height > 0);
-		if (rects.length > 0) {
-			return rects;
-		}
-		const fallbackRect = range.getBoundingClientRect?.();
-		if (fallbackRect && (fallbackRect.width > 0 || fallbackRect.height > 0)) {
-			return [
-				{
-					left: fallbackRect.left,
-					top: fallbackRect.top,
-					width: fallbackRect.width,
-					height: fallbackRect.height,
-				},
-			];
-		}
-		return [];
-	}
-
 	private mapRawRectToViewport(
 		frameElement: HTMLElement | null | undefined,
 		rawRect: {
@@ -2164,16 +2263,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			height: number;
 		}
 	): HighlightClickInfo["rect"] | null {
-		if (!frameElement) {
-			return this.createViewportRectFromRawRect(rawRect);
-		}
-		const iframeRect = frameElement.getBoundingClientRect();
-		return this.createViewportRectFromRawRect({
-			left: rawRect.left + iframeRect.left,
-			top: rawRect.top + iframeRect.top,
-			width: rawRect.width,
-			height: rawRect.height,
-		});
+		return mapRawRectToViewport(frameElement, rawRect);
 	}
 
 	private isFootnoteReference(anchor: HTMLAnchorElement): boolean {
@@ -2689,6 +2779,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 				logger.warn("[FoliateReaderService] Relocate listener failed:", error);
 			}
 		}
+		this.publishScrolledChapterEndStateIfChanged();
 	}
 
 	private computeSectionProgression(doc: Document, range: Range): number {
@@ -4831,7 +4922,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		event.stopPropagation();
 		this.clearSelections();
 		this.notifyHighlightClick(
-			this.buildHighlightClickInfo(highlight, geometry, "highlight")
+			buildHighlightClickInfo(highlight, geometry, "highlight")
 		);
 	}
 
@@ -5454,45 +5545,18 @@ export class FoliateReaderService implements EpubReaderEngine {
 			Math.round(this.renderContainer?.getBoundingClientRect().width || 0)
 		);
 		const renderer = this.foliateView?.renderer as FoliateRenderer | undefined;
-		const hostWidth = Math.max(
-			renderContainerWidth,
+		const rendererClientWidth = Math.max(
 			0,
 			this.foliateView?.clientWidth || this.foliateView?.offsetWidth || renderer?.clientWidth || 0
 		);
-		const isEdgeWidth = this.currentWidthMode === "edge";
-		const isFitWidth = this.currentWidthMode === "fit";
-		const isDoublePaginated =
-			this.currentLayoutMode === "double" && this.currentFlowMode === "paginated";
-		const isDoubleFitWidth = isFitWidth && isDoublePaginated;
-		const paginatorMargin = isEdgeWidth
-			? 0
-			: isDoubleFitWidth
-			? Math.min(32, Math.max(16, Math.round(this.currentPageMargin * 0.5)))
-			: Math.max(0, Math.round(this.currentPageMargin));
-		const fitInlineSize = Math.max(hostWidth - paginatorMargin * 2, 0);
-		const doubleFitInlineSize = Math.max(Math.floor(fitInlineSize / 2), 0);
-		const inlineSize = isEdgeWidth
-			? `${Math.max(hostWidth, 0)}px`
-			: isFitWidth
-			? `${isDoublePaginated ? doubleFitInlineSize : fitInlineSize}px`
-			: this.currentWidthMode === "full"
-			? "920px"
-			: "720px";
-		const gap =
-			this.currentFlowMode === "scrolled"
-				? "4%"
-				: isDoubleFitWidth
-				? "6%"
-				: this.currentLayoutMode === "double"
-				? "10%"
-				: "7%";
-
-		return {
-			hostWidth,
-			inlineSize,
-			paginatorMargin,
-			gap,
-		};
+		return computePaginatorLayoutMetrics({
+			renderContainerWidth,
+			rendererClientWidth,
+			currentWidthMode: this.currentWidthMode,
+			currentLayoutMode: this.currentLayoutMode,
+			currentFlowMode: this.currentFlowMode,
+			currentPageMargin: this.currentPageMargin,
+		});
 	}
 
 	private applyRendererLayout(): void {
@@ -5500,29 +5564,14 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (!renderer) {
 			return;
 		}
-		const { inlineSize, paginatorMargin, gap } = this.computePaginatorLayoutMetrics();
-
-		const tagName = renderer.tagName.toLowerCase();
-		if (tagName === "foliate-paginator") {
-			renderer.setAttribute("flow", this.currentFlowMode === "scrolled" ? "scrolled" : "paginated");
-			renderer.setAttribute("max-column-count", this.currentLayoutMode === "double" ? "2" : "1");
-			renderer.setAttribute("max-inline-size", inlineSize);
-			renderer.setAttribute("max-block-size", "1440px");
-			renderer.setAttribute("margin", `${paginatorMargin}px`);
-			renderer.setAttribute("gap", gap);
-			renderer.setAttribute("animated", "");
-			renderer.render?.();
-			return;
-		}
-
-		if (tagName === "foliate-fxl") {
-			renderer.setAttribute(
-				"zoom",
-				this.currentWidthMode === "full" || this.currentWidthMode === "edge"
-					? "fit-width"
-					: "fit-page"
-			);
-		}
+		const metrics = this.computePaginatorLayoutMetrics();
+		applyRendererLayoutAttributes(
+			renderer,
+			metrics,
+			this.currentFlowMode,
+			this.currentLayoutMode,
+			this.currentWidthMode
+		);
 	}
 
 	private applyRendererAppearance(): void {
@@ -5537,27 +5586,12 @@ export class FoliateReaderService implements EpubReaderEngine {
 	}
 
 	private applyHostThemeSurface(): void {
-		const background = this.getObsidianCSSVar("--background-primary", "rgb(255, 255, 255)");
-		const textColor = this.getObsidianCSSVar("--text-normal", "rgb(28, 29, 31)");
-		const colorScheme = this.getCurrentColorScheme();
-		const renderer = this.foliateView?.renderer as HTMLElement | undefined;
-		const targets = [this.renderContainer, this.foliateView as HTMLElement | null, renderer].filter(
-			Boolean
-		) as HTMLElement[];
-
-		for (const target of targets) {
-			if (!domInstanceOf(target, HTMLElement) || !target.style) {
-				continue;
-			}
-			target.style.backgroundColor = background;
-			target.style.color = textColor;
-			target.style.colorScheme = colorScheme;
-		}
-
-		for (const iframe of Array.from(this.renderContainer?.querySelectorAll("iframe") || [])) {
-			iframe.style.backgroundColor = background;
-			iframe.style.colorScheme = colorScheme;
-		}
+		applyReaderThemeHostSurfaces({
+			styleSource: this.getObsidianStyleSource(),
+			renderContainer: this.renderContainer,
+			foliateView: (this.foliateView as HTMLElement | null) ?? null,
+			renderer: this.foliateView?.renderer as HTMLElement | undefined,
+		});
 	}
 
 	private schedulePaginatedLayoutRecovery(): void {
@@ -5565,32 +5599,31 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return;
 		}
 		const renderer = this.foliateView.renderer as FoliateRenderer | undefined;
-		if (!renderer || renderer.tagName.toLowerCase() !== "foliate-paginator") {
+		if (!isFoliatePaginatorRenderer(renderer)) {
 			return;
 		}
-		const recoveryToken = ++this.layoutRecoveryToken;
-		if (this.pendingLayoutRecoveryFrame !== null) {
-			window.cancelAnimationFrame(this.pendingLayoutRecoveryFrame);
-		}
-		this.pendingLayoutRecoveryFrame = window.requestAnimationFrame(() => {
-			this.pendingLayoutRecoveryFrame = null;
-			void this.recoverPaginatedLayoutIfNeeded(recoveryToken);
-		});
+		this.paginatedLayoutRecovery.schedule((token) => this.recoverPaginatedLayoutIfNeeded(token));
 	}
 
 	private async recoverPaginatedLayoutIfNeeded(recoveryToken: number): Promise<void> {
-		if (recoveryToken !== this.layoutRecoveryToken) {
+		if (!this.paginatedLayoutRecovery.isCurrentToken(recoveryToken)) {
 			return;
 		}
 		await this.waitForAnimationFrame();
-		if (recoveryToken !== this.layoutRecoveryToken || !this.shouldRecoverPaginatedLayout()) {
+		if (
+			!this.paginatedLayoutRecovery.isCurrentToken(recoveryToken) ||
+			!this.shouldRecoverPaginatedLayout()
+		) {
 			return;
 		}
 
 		this.applyRendererLayout();
 
 		await this.waitForAnimationFrame();
-		if (recoveryToken !== this.layoutRecoveryToken || !this.shouldRecoverPaginatedLayout()) {
+		if (
+			!this.paginatedLayoutRecovery.isCurrentToken(recoveryToken) ||
+			!this.shouldRecoverPaginatedLayout()
+		) {
 			return;
 		}
 
@@ -5602,142 +5635,31 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return false;
 		}
 		const renderer = this.foliateView.renderer as FoliateRenderer | undefined;
-		if (!renderer || renderer.tagName.toLowerCase() !== "foliate-paginator") {
+		if (!isFoliatePaginatorRenderer(renderer)) {
 			return false;
 		}
 
 		const { hostWidth } = this.computePaginatorLayoutMetrics();
-		if (hostWidth < 480) {
-			return false;
-		}
-
 		const visibleFrames = this.getVisibleFramesWithIndex();
-		if (!visibleFrames.length) {
-			return false;
-		}
-
-		const narrowestViewportWidth = visibleFrames.reduce((smallest, frame) => {
-			const docWidth = Math.max(
-				frame.frameDocument.documentElement?.clientWidth || 0,
-				frame.frameDocument.body?.clientWidth || 0
-			);
-			if (docWidth <= 0) {
-				return smallest;
-			}
-			return Math.min(smallest, docWidth);
-		}, Number.POSITIVE_INFINITY);
-
-		if (!Number.isFinite(narrowestViewportWidth)) {
-			return false;
-		}
-
-		return narrowestViewportWidth <= Math.max(180, hostWidth * 0.33);
+		return shouldRecoverPaginatedLayout({
+			hostWidth,
+			frameViewportWidths: visibleFrames.map((frame) =>
+				Math.max(
+					frame.frameDocument.documentElement?.clientWidth || 0,
+					frame.frameDocument.body?.clientWidth || 0
+				)
+			),
+		});
 	}
 
 	private buildReaderStyles(): string {
-		const background = this.getObsidianCSSVar("--background-primary", "rgb(255, 255, 255)");
-		const textColor = this.getObsidianCSSVar("--text-normal", "rgb(28, 29, 31)");
-		const linkColor = this.getObsidianCSSVar("--link-color", "rgb(80, 110, 214)");
-		const selectionBackground = this.getObsidianCSSVar(
-			"--text-selection",
-			"rgba(120, 140, 255, 0.32)"
-		);
-		const selectionTextColor = this.getObsidianCSSVar("--text-on-accent", textColor);
-		const fontFamily = this.getObsidianFontStack();
-		const monospaceFontFamily = this.getObsidianMonospaceFontStack();
-		const fontSize = this.getObsidianTextFontSize();
-		const colorScheme = this.getCurrentColorScheme();
-		const concealment = this.getConcealmentPalette();
-		const highlightOpacity = FoliateReaderService.HIGHLIGHT_OPACITY_MAP[colorScheme];
-		const highlightBlendMode = FoliateReaderService.HIGHLIGHT_BLEND_MODE_MAP[colorScheme];
-		const letterSpacing = `${this.currentLetterSpacing.toFixed(3)}em`;
-		const horizontalPageMargin = `${
-			this.currentWidthMode === "edge" ? 0 : Math.max(0, Math.round(this.currentPageMargin))
-		}px`;
-		const darkModeTextSelectors =
-			"article, section, main, aside, header, footer, nav, p, div, span, li, dd, dt, blockquote, figcaption, td, th, caption, label, legend, h1, h2, h3, h4, h5, h6, em, strong, i, b, u, small, sub, sup, mark";
-		const darkModeOverrides =
-			colorScheme === "dark"
-				? `
-html[data-weave-host-scheme="dark"] body :is(${darkModeTextSelectors}) {
-	color: ${textColor} !important;
-	-webkit-text-fill-color: currentColor !important;
-	background-color: transparent !important;
-}
-html[data-weave-host-scheme="dark"] body :is(table, thead, tbody, tfoot, tr) {
-	background-color: transparent !important;
-}`
-				: "";
-
-		return `:root {
-	color-scheme: ${colorScheme};
-	--overlayer-highlight-opacity: ${highlightOpacity};
-	--overlayer-highlight-blend-mode: ${highlightBlendMode};
-	--weave-reader-font-family: ${fontFamily};
-	--weave-reader-monospace-font-family: ${monospaceFontFamily};
-	--weave-reader-font-size: ${fontSize};
-	--weave-reader-letter-spacing: ${letterSpacing};
-	--weave-reader-page-margin-inline: ${horizontalPageMargin};
-}
-html {
-	background: ${background} !important;
-	color: ${textColor} !important;
-	font-family: var(--weave-reader-font-family) !important;
-	font-size: var(--weave-reader-font-size) !important;
-	line-height: ${this.currentLineHeight} !important;
-	letter-spacing: var(--weave-reader-letter-spacing) !important;
-	-webkit-text-size-adjust: 100%;
-}
-	body {
-		background: ${background} !important;
-		color: ${textColor} !important;
-		font-family: var(--weave-reader-font-family) !important;
-	font-size: inherit !important;
-	line-height: inherit !important;
-	letter-spacing: inherit !important;
-	margin: 0 var(--weave-reader-page-margin-inline) !important;
-	text-rendering: optimizeLegibility;
-	font-kerning: normal;
-	-webkit-touch-callout: none;
-}
-body :is(article, section, main, aside, header, footer, nav, p, div, span, li, dd, dt, blockquote, figcaption, td, th, caption, label, legend) {
-	font-family: inherit !important;
-	font-size: inherit !important;
-	letter-spacing: inherit !important;
-}
-body :is(p, div, li, dd, dt, blockquote, figcaption) {
-	line-height: inherit !important;
-}
-body :is(h1, h2, h3, h4, h5, h6) {
-	font-family: inherit !important;
-	line-height: inherit !important;
-}
-body :is(p, div, span, li, dd, dt, blockquote, figcaption, h1, h2, h3, h4, h5, h6, td, th, caption, label, legend) {
-	color: inherit;
-}
-body :is(a, a:link, a:visited) {
-	color: ${linkColor} !important;
-	font-family: inherit !important;
-	font-size: inherit !important;
-}
-body :is(pre, code, kbd, samp) {
-	font-family: var(--weave-reader-monospace-font-family) !important;
-	white-space: pre-wrap !important;
-	word-break: break-word;
-}
-body :is(img, svg, video, canvas) {
-	max-width: 100% !important;
-	height: auto !important;
-}
-body ::selection {
-	background: ${selectionBackground} !important;
-	color: ${selectionTextColor} !important;
-}
-body .weave-foliate-concealment {
-	fill: ${concealment.base};
-	stroke: ${concealment.border};
-	stroke-width: 1;
-}${darkModeOverrides}`;
+		return buildReaderChapterStyles({
+			styleSource: this.getObsidianStyleSource(),
+			currentLineHeight: this.currentLineHeight,
+			currentLetterSpacing: this.currentLetterSpacing,
+			currentPageMargin: this.currentPageMargin,
+			currentWidthMode: this.currentWidthMode,
+		});
 	}
 
 	private getVisibleSectionKey(): string {
@@ -5818,16 +5740,23 @@ body .weave-foliate-concealment {
 			if (!visibleHighlight) {
 				continue;
 			}
-			const sectionIndex = await this.resolveHighlightSectionIndexForView(
+			const sectionIndex = resolveHighlightSectionIndexForView(
 				visibleHighlight,
-				visibleFrames
+				visibleFrames,
+				this.parser
 			);
 			if (sectionIndex === null || !visibleIndexes.has(sectionIndex)) {
 				continue;
 			}
 			desiredVisible.set(
 				key,
-				this.createRenderedAnnotation(persistentHighlight, temporaryHighlight)
+				createRenderedFoliateAnnotation({
+					persistentHighlight,
+					temporaryHighlight,
+					currentStrikethroughPresentation: this.currentStrikethroughPresentation,
+					colorScheme: this.getCurrentColorScheme(),
+					temporarilyRevealedConcealmentKeys: this.temporarilyRevealedConcealmentTimers,
+				})
 			);
 		}
 
@@ -5836,7 +5765,7 @@ body .weave-foliate-concealment {
 			if (
 				!desired ||
 				rendered.renderSignature !== desired.renderSignature ||
-				!this.isSameAnnotation(rendered.annotation, desired.annotation)
+				!isSameFoliateAnnotation(rendered.annotation, desired.annotation)
 			) {
 				try {
 					await view.deleteAnnotation(rendered.annotation);
@@ -5866,140 +5795,8 @@ body .weave-foliate-concealment {
 		}
 	}
 
-	private createAnnotation(highlight: ReaderHighlight, focusColor?: string): FoliateAnnotation {
-		const annotation: FoliateAnnotation = {
-			...highlight,
-			// Foliate resolves navigation and overlayer keys from `value`; must stay a valid CFI.
-			value: highlight.cfiRange,
-		};
-		if (focusColor) {
-			annotation.focusColor = focusColor;
-		}
-		return annotation;
-	}
-
-	private buildHighlightClickInfo(
-		highlight: ReaderHighlight,
-		geometry: {
-			rect: HighlightClickInfo["rect"];
-			rects?: HighlightClickInfo["rects"];
-			anchorPoint?: HighlightClickInfo["anchorPoint"];
-		},
-		interactionTarget: HighlightClickInfo["interactionTarget"] = "highlight"
-	): HighlightClickInfo {
-		return {
-			cfiRange: highlight.cfiRange,
-			color: highlight.color,
-			style: highlight.style,
-			text: highlight.text || "",
-			commentText: highlight.commentText,
-			hasCommentDivider: highlight.hasCommentDivider,
-			sourceFile: highlight.sourceFile || "",
-			sourceRef: highlight.sourceRef,
-			excerptId: highlight.excerptId,
-			sourceLocators: highlight.sourceLocators,
-			createdTime: highlight.createdTime,
-			temporary: highlight.temporary,
-			presentation: highlight.presentation,
-			interactionTarget,
-			rect: geometry.rect,
-			rects: geometry.rects,
-			anchorPoint: geometry.anchorPoint,
-		};
-	}
-
 	private getCurrentHighlightByCfi(cfiRange: string): ReaderHighlight | null {
 		return this.findHighlightForAnnotationValue(cfiRange);
-	}
-
-	private createElementViewportRect(element: Element): HighlightClickInfo["rect"] | null {
-		const rect = element.getBoundingClientRect?.();
-		if (!rect || (!rect.width && !rect.height)) {
-			return null;
-		}
-		return {
-			top: rect.top,
-			left: rect.left,
-			bottom: rect.bottom,
-			right: rect.right,
-			width: rect.width,
-			height: rect.height,
-		};
-	}
-
-	private createAnchorPointFromRect(
-		rect: HighlightClickInfo["rect"] | null | undefined
-	): HighlightClickInfo["anchorPoint"] | undefined {
-		if (!rect) {
-			return undefined;
-		}
-		return {
-			x: rect.left + rect.width / 2,
-			y: rect.top + rect.height / 2,
-		};
-	}
-
-	private createViewportRectFromRawRect(rect: {
-		left: number;
-		top: number;
-		width: number;
-		height: number;
-	}): HighlightClickInfo["rect"] | null {
-		if (
-			!Number.isFinite(rect.left) ||
-			!Number.isFinite(rect.top) ||
-			rect.width <= 0 ||
-			rect.height <= 0
-		) {
-			return null;
-		}
-		return {
-			top: rect.top,
-			left: rect.left,
-			bottom: rect.top + rect.height,
-			right: rect.left + rect.width,
-			width: rect.width,
-			height: rect.height,
-		};
-	}
-
-	private createViewportRectListFromRawRectList(
-		rects: Array<{
-			left: number;
-			top: number;
-			width: number;
-			height: number;
-		}>
-	): HighlightClickInfo["rect"][] {
-		return rects
-			.map((rect) => this.createViewportRectFromRawRect(rect))
-			.filter((rect): rect is HighlightClickInfo["rect"] => Boolean(rect));
-	}
-
-	private createViewportRectFromRawRectList(
-		rects: Array<{
-			left: number;
-			top: number;
-			width: number;
-			height: number;
-		}>
-	): HighlightClickInfo["rect"] | null {
-		const validRects = this.createViewportRectListFromRawRectList(rects);
-		if (!validRects.length) {
-			return null;
-		}
-		const left = Math.min(...validRects.map((rect) => rect.left));
-		const top = Math.min(...validRects.map((rect) => rect.top));
-		const right = Math.max(...validRects.map((rect) => rect.right));
-		const bottom = Math.max(...validRects.map((rect) => rect.bottom));
-		return {
-			top,
-			left,
-			bottom,
-			right,
-			width: right - left,
-			height: bottom - top,
-		};
 	}
 
 	private notifyCommentMarkerClick(
@@ -6012,18 +5809,18 @@ body .weave-foliate-concealment {
 			return;
 		}
 		const rangeGeometry = this.getCurrentHighlightViewportGeometry(cfiRange);
-		const markerRect = this.createElementViewportRect(markerElement);
+		const markerRect = createElementViewportRect(markerElement);
 		const rect = markerRect || anchorRect || rangeGeometry?.rect;
 		if (!rect) {
 			return;
 		}
 		this.notifyHighlightClick(
-			this.buildHighlightClickInfo(
+			buildHighlightClickInfo(
 				highlight,
 				{
 					rect,
 					rects: markerRect ? [markerRect] : rangeGeometry?.rects,
-					anchorPoint: this.createAnchorPointFromRect(markerRect || anchorRect || rect),
+					anchorPoint: createAnchorPointFromRect(markerRect || anchorRect || rect),
 				},
 				"comment-marker"
 			)
@@ -6034,143 +5831,25 @@ body .weave-foliate-concealment {
 		cfiRange: string,
 		textHint?: string
 	): { rect: HighlightClickInfo["rect"]; rects?: HighlightClickInfo["rect"][] } | null {
-		const highlight = this.getCurrentHighlightByCfi(cfiRange);
-		const resolvedTextHint = String(textHint || highlight?.text || "").trim();
-		const preferredChapter =
-			typeof highlight?.chapterIndex === "number" && Number.isFinite(highlight.chapterIndex)
-				? highlight.chapterIndex
-				: this.parser.getSectionIndexForCfi(cfiRange);
-
-		const frames = this.getVisibleFramesWithIndex();
-		const orderedFrames =
-			typeof preferredChapter === "number"
-				? [
-						...frames.filter((frame) => frame.index === preferredChapter),
-						...frames.filter((frame) => frame.index !== preferredChapter),
-					]
-				: frames;
-
-		for (const frame of orderedFrames) {
-			const range = this.parser.resolveRangeInLoadedSection(
-				cfiRange,
-				frame.frameDocument,
-				frame.index,
-				resolvedTextHint || undefined
-			);
-			if (!range) {
-				continue;
-			}
-			const rect = this.createViewportRect(frame, range);
-			if (rect) {
-				const rects = this.createViewportRectList(frame, range);
-				return {
-					rect,
-					rects: rects?.length ? rects : undefined,
-				};
-			}
-		}
-		return null;
-	}
-
-	private async resolveHighlightSectionIndexForView(
-		highlight: ReaderHighlight,
-		visibleFrames: VisibleFrameWithIndex[]
-	): Promise<number | null> {
-		const textHint = String(highlight.text || "").trim();
-		const visibleIndexes = new Set(visibleFrames.map((frame) => frame.index));
-
-		const direct = this.parser.getSectionIndexForCfi(highlight.cfiRange);
-		if (direct !== null && visibleIndexes.has(direct)) {
-			return direct;
-		}
-
-		if (!textHint) {
-			return direct !== null && visibleIndexes.has(direct) ? direct : null;
-		}
-
-		const preferredChapter =
-			typeof highlight.chapterIndex === "number" && Number.isFinite(highlight.chapterIndex)
-				? highlight.chapterIndex
-				: direct;
-		const orderedFrames =
-			typeof preferredChapter === "number"
-				? [
-						...visibleFrames.filter((frame) => frame.index === preferredChapter),
-						...visibleFrames.filter((frame) => frame.index !== preferredChapter),
-					]
-				: visibleFrames;
-
-		for (const frame of orderedFrames) {
-			const range = this.parser.resolveRangeInLoadedSection(
-				highlight.cfiRange,
-				frame.frameDocument,
-				frame.index,
-				textHint
-			);
-			if (range) {
-				return frame.index;
-			}
-		}
-
-		return direct !== null && visibleIndexes.has(direct) ? direct : null;
-	}
-
-	private createRenderedAnnotation(
-		persistentHighlight?: ReaderHighlight,
-		temporaryHighlight?: ReaderHighlight
-	): RenderedFoliateAnnotation {
-		const annotation = this.composeVisibleAnnotationHighlight(
-			persistentHighlight,
-			temporaryHighlight
-		);
-		return {
-			annotation,
-			renderSignature: this.getAnnotationRenderSignature(annotation),
-		};
-	}
-
-	private shouldRenderAnnotationAsConceal(
-		annotation: Pick<FoliateAnnotation, "cfiRange" | "presentation" | "style">
-	): boolean {
-		if (annotation.presentation === "conceal") {
-			return true;
-		}
-		return (
-			annotation.style === "strikethrough" && this.currentStrikethroughPresentation === "conceal"
-		);
-	}
-
-	private composeVisibleAnnotationHighlight(
-		persistentHighlight?: ReaderHighlight,
-		temporaryHighlight?: ReaderHighlight
-	): FoliateAnnotation {
-		if (persistentHighlight && temporaryHighlight) {
-			return this.createAnnotation(persistentHighlight, temporaryHighlight.color);
-		}
-
-		const highlight = temporaryHighlight || persistentHighlight;
-		if (!highlight) {
-			throw new Error("Cannot compose annotation without a highlight");
-		}
-
-		if (temporaryHighlight) {
-			return this.createAnnotation(temporaryHighlight, temporaryHighlight.color);
-		}
-
-		return this.createAnnotation(highlight);
+		return resolveHighlightViewportGeometry(cfiRange, {
+			highlight: this.getCurrentHighlightByCfi(cfiRange),
+			textHint,
+			frames: this.getVisibleFramesWithIndex(),
+			port: this.parser,
+			createViewportRect: (frame, range) => this.createViewportRect(frame, range),
+			createViewportRectList: (frame, range) => this.createViewportRectList(frame, range),
+		});
 	}
 
 	private async drawAnnotation(
 		annotation: FoliateAnnotation,
 		draw: (draw: (rects: unknown[], options?: unknown) => SVGElement, options?: unknown) => void
 	): Promise<void> {
-		if (this.shouldRenderAnnotationAsConceal(annotation)) {
+		if (shouldRenderAnnotationAsConceal(annotation, this.currentStrikethroughPresentation)) {
 			const key = getReaderHighlightIdentityKey(annotation);
 			if (!this.temporarilyRevealedConcealmentTimers.has(key)) {
 				draw((rects) =>
-					this.createConcealmentOverlay(
-						this.resolveAnnotationDrawRects(annotation, rects)
-					)
+					this.createConcealmentOverlay(this.resolveAnnotationDrawRects(annotation, rects))
 				);
 				return;
 			}
@@ -6186,21 +5865,11 @@ body .weave-foliate-concealment {
 		);
 	}
 
-	private hasUsableOverlayRects(rects: unknown[]): boolean {
-		if (!Array.isArray(rects) || rects.length === 0) {
-			return false;
-		}
-		return rects.some((rect) => {
-			const candidate = rect as { width?: number; height?: number };
-			return Number(candidate.width) > 0 || Number(candidate.height) > 0;
-		});
-	}
-
 	private resolveAnnotationDrawRects(
 		annotation: FoliateAnnotation,
 		suppliedRects: unknown[]
 	): unknown[] {
-		if (this.hasUsableOverlayRects(suppliedRects)) {
+		if (hasUsableOverlayRects(suppliedRects)) {
 			return suppliedRects;
 		}
 		return this.resolveHighlightOverlayRects(annotation);
@@ -6211,42 +5880,7 @@ body .weave-foliate-concealment {
 		text?: string;
 		chapterIndex?: number;
 	}): Array<{ left: number; top: number; width: number; height: number }> {
-		const textHint = String(highlight.text || "").trim();
-		if (!textHint) {
-			return [];
-		}
-
-		const preferredChapter =
-			typeof highlight.chapterIndex === "number" && Number.isFinite(highlight.chapterIndex)
-				? highlight.chapterIndex
-				: this.parser.getSectionIndexForCfi(highlight.cfiRange);
-
-		const frames = this.getVisibleFramesWithIndex();
-		const orderedFrames =
-			typeof preferredChapter === "number"
-				? [
-						...frames.filter((frame) => frame.index === preferredChapter),
-						...frames.filter((frame) => frame.index !== preferredChapter),
-					]
-				: frames;
-
-		for (const frame of orderedFrames) {
-			const range = this.parser.resolveRangeInLoadedSection(
-				highlight.cfiRange,
-				frame.frameDocument,
-				frame.index,
-				textHint
-			);
-			if (!range) {
-				continue;
-			}
-			const rects = this.extractRangeClientRects(range);
-			if (rects.length > 0) {
-				return rects;
-			}
-		}
-
-		return [];
+		return resolveHighlightOverlayRects(highlight, this.getVisibleFramesWithIndex(), this.parser);
 	}
 
 	private getOverlayerModule(): Promise<FoliateOverlayerModule> {
@@ -6261,381 +5895,24 @@ body .weave-foliate-concealment {
 	private createCompositeAnnotationOverlay(
 		annotation: FoliateAnnotation,
 		rects: unknown[],
-		overlayer?: {
-			Overlayer: {
-				highlight: (rects: unknown[], options?: unknown) => SVGElement;
-			};
-		}
+		overlayer?: FoliateOverlayerModule
 	): SVGElement {
-		const svgNS = "http://www.w3.org/2000/svg";
-		const group = activeDocument.createElementNS(svgNS, "g");
-
-		if (annotation.style) {
-			group.appendChild(
-				this.createStyledAnnotationOverlay(rects, annotation.style, annotation.color)
-			);
-		} else if (overlayer) {
-			group.appendChild(
-				overlayer.Overlayer.highlight(rects, {
-					color: this.resolveHighlightTint(annotation.color),
-					padding: 1,
-				})
-			);
-		}
-
-		if (annotation.hasCommentDivider) {
-			group.appendChild(this.createCommentMarkerOverlay(annotation, rects));
-		}
-
-		if (annotation.focusColor) {
-			group.appendChild(this.createTemporaryFocusOverlay(rects, annotation.focusColor));
-		}
-
-		// 添加引用次数角标
-		if (annotation.referenceCount && annotation.referenceCount > 1) {
-			group.appendChild(this.createReferenceBadgeOverlay(annotation, rects));
-		}
-
-		return group;
+		return this.annotationOverlayRenderer.createCompositeAnnotationOverlay(
+			annotation,
+			rects,
+			overlayer
+		);
 	}
 
-	private createConcealmentOverlay = (rects: unknown[]): SVGElement => {
-		const palette = this.getConcealmentPalette();
-		const svgNS = "http://www.w3.org/2000/svg";
-		const group = activeDocument.createElementNS(svgNS, "g");
-
-		for (const rect of rects as Array<{
-			left: number;
-			top: number;
-			width: number;
-			height: number;
-		}>) {
-			const background = activeDocument.createElementNS(svgNS, "rect");
-			background.setAttribute("x", String(rect.left));
-			background.setAttribute("y", String(rect.top));
-			background.setAttribute("width", String(rect.width));
-			background.setAttribute("height", String(rect.height));
-			background.setAttribute("rx", "4");
-			background.setAttribute("fill", palette.base);
-			background.setAttribute("stroke", palette.border);
-			group.appendChild(background);
-
-			const stripeWidth = 9;
-			for (let x = rect.left; x < rect.left + rect.width; x += stripeWidth * 2) {
-				const stripe = activeDocument.createElementNS(svgNS, "rect");
-				stripe.setAttribute("x", String(x));
-				stripe.setAttribute("y", String(rect.top));
-				stripe.setAttribute("width", String(Math.min(stripeWidth, rect.left + rect.width - x)));
-				stripe.setAttribute("height", String(rect.height));
-				stripe.setAttribute("fill", palette.stripe);
-				stripe.setAttribute("opacity", "0.92");
-				group.appendChild(stripe);
-			}
-		}
-
-		return group;
-	};
+	private createConcealmentOverlay = (rects: unknown[]): SVGElement =>
+		this.annotationOverlayRenderer.createConcealmentOverlay(rects);
 
 	private createCommentMarkerOverlay(annotation: FoliateAnnotation, rects: unknown[]): SVGElement {
-		const svgNS = "http://www.w3.org/2000/svg";
-		const group = activeDocument.createElementNS(svgNS, "g");
-		group.setAttribute("data-weave-comment-marker", "group");
-		const rectList = rects as Array<{
-			left: number;
-			top: number;
-			width: number;
-			height: number;
-		}>;
-		const anchorRect = this.createViewportRectFromRawRectList(rectList);
-		const targetRect = [...rectList].reverse().find((rect) => rect.width > 0 && rect.height > 0);
-		if (!targetRect) {
-			return group;
-		}
-
-		const accentColor = annotation.color
-			? this.resolveHighlightTint(annotation.color)
-			: this.getObsidianCSSVar("--interactive-accent", "#7c3aed");
-		const fillColor = this.getObsidianCSSVar("--background-primary", "#ffffff");
-		const accentTextColor = this.getObsidianCSSVar("--text-on-accent", "#ffffff");
-		const inset = Math.max(1.15, Math.min(2.1, targetRect.height * 0.1));
-		const availableWidth = Math.max(12, targetRect.width - inset * 2);
-		const availableHeight = Math.max(9.5, targetRect.height - inset * 2);
-		const bubbleHeight = Math.min(
-			Math.max(10.2, Math.min(12.8, targetRect.height * 0.62)),
-			availableHeight
-		);
-		const tailSize = Math.min(
-			Math.max(1.9, Math.min(2.8, bubbleHeight * 0.24)),
-			Math.max(1.5, bubbleHeight * 0.26)
-		);
-		const bubbleBodyHeight = Math.max(7.5, bubbleHeight - tailSize);
-		const badgeWidth = Math.min(
-			Math.max(14.8, Math.min(20.5, bubbleBodyHeight * 1.78)),
-			availableWidth
-		);
-		const cornerRadius = Math.max(4.2, Math.min(6.6, bubbleBodyHeight * 0.5));
-		const badgeX = Math.max(
-			targetRect.left + inset,
-			targetRect.left + targetRect.width - badgeWidth - inset
-		);
-		const badgeY = targetRect.top + inset;
-		const bubbleBackdrop = activeDocument.createElementNS(svgNS, "rect");
-		bubbleBackdrop.setAttribute("data-weave-comment-marker", "backdrop");
-		bubbleBackdrop.setAttribute("x", String(badgeX));
-		bubbleBackdrop.setAttribute("y", String(badgeY));
-		bubbleBackdrop.setAttribute("width", String(badgeWidth));
-		bubbleBackdrop.setAttribute("height", String(bubbleBodyHeight));
-		bubbleBackdrop.setAttribute("rx", String(cornerRadius));
-		bubbleBackdrop.setAttribute("ry", String(cornerRadius));
-		bubbleBackdrop.setAttribute("fill", accentColor);
-		bubbleBackdrop.setAttribute("fill-opacity", "0.16");
-		setSvgInteractionAttributes(bubbleBackdrop, { pointerEvents: "none" });
-		const bubbleBody = activeDocument.createElementNS(svgNS, "rect");
-		bubbleBody.setAttribute("data-weave-comment-marker", "bubble");
-		bubbleBody.setAttribute("x", String(badgeX));
-		bubbleBody.setAttribute("y", String(badgeY));
-		bubbleBody.setAttribute("width", String(badgeWidth));
-		bubbleBody.setAttribute("height", String(bubbleBodyHeight));
-		bubbleBody.setAttribute("rx", String(cornerRadius));
-		bubbleBody.setAttribute("ry", String(cornerRadius));
-		bubbleBody.setAttribute("fill", accentColor);
-		bubbleBody.setAttribute("fill-opacity", "0.12");
-		bubbleBody.setAttribute("stroke", accentColor);
-		bubbleBody.setAttribute("stroke-width", "1.75");
-		bubbleBody.setAttribute("opacity", "1");
-		setSvgInteractionAttributes(bubbleBody, { pointerEvents: "none" });
-
-		const bubbleInner = activeDocument.createElementNS(svgNS, "rect");
-		bubbleInner.setAttribute("data-weave-comment-marker", "inner");
-		bubbleInner.setAttribute("x", String(badgeX + 1.15));
-		bubbleInner.setAttribute("y", String(badgeY + 1.1));
-		bubbleInner.setAttribute("width", String(Math.max(7, badgeWidth - 2.3)));
-		bubbleInner.setAttribute("height", String(Math.max(4.8, bubbleBodyHeight - 2.25)));
-		bubbleInner.setAttribute("rx", String(Math.max(3.2, cornerRadius - 1.2)));
-		bubbleInner.setAttribute("ry", String(Math.max(3.2, cornerRadius - 1.2)));
-		bubbleInner.setAttribute("fill", fillColor);
-		bubbleInner.setAttribute("fill-opacity", "0.2");
-		setSvgInteractionAttributes(bubbleInner, { pointerEvents: "none" });
-
-		const bubbleTail = activeDocument.createElementNS(svgNS, "path");
-		bubbleTail.setAttribute("data-weave-comment-marker", "tail");
-		bubbleTail.setAttribute(
-			"d",
-			[
-				`M ${badgeX + badgeWidth * 0.56} ${badgeY + bubbleBodyHeight - 0.18}`,
-				`L ${badgeX + badgeWidth * 0.78} ${badgeY + bubbleHeight - 0.12}`,
-				`L ${badgeX + badgeWidth * 0.44} ${badgeY + bubbleBodyHeight + 0.28}`,
-				"Z",
-			].join(" ")
-		);
-		bubbleTail.setAttribute("fill", accentColor);
-		bubbleTail.setAttribute("fill-opacity", "0.12");
-		bubbleTail.setAttribute("stroke", accentColor);
-		bubbleTail.setAttribute("stroke-width", "1.55");
-		bubbleTail.setAttribute("stroke-linejoin", "round");
-		setSvgInteractionAttributes(bubbleTail, { pointerEvents: "none" });
-
-		const dotRadius = Math.max(1.08, Math.min(1.55, bubbleBodyHeight * 0.15));
-		const dotCenterY = badgeY + bubbleBodyHeight * 0.56;
-		const dots: SVGCircleElement[] = [];
-		for (const ratio of [0.3, 0.5, 0.7]) {
-			const dot = activeDocument.createElementNS(svgNS, "circle");
-			dot.setAttribute("data-weave-comment-marker", "dot");
-			dot.setAttribute("cx", String(badgeX + badgeWidth * ratio));
-			dot.setAttribute("cy", String(dotCenterY));
-			dot.setAttribute("r", String(dotRadius));
-			dot.setAttribute("fill", accentColor);
-			setSvgInteractionAttributes(dot, { pointerEvents: "none" });
-			dots.push(dot);
-		}
-
-		const stickerSize = Math.max(2.4, Math.min(3.4, bubbleBodyHeight * 0.26));
-		const sticker = activeDocument.createElementNS(svgNS, "circle");
-		sticker.setAttribute("data-weave-comment-marker", "sticker");
-		sticker.setAttribute("cx", String(badgeX + badgeWidth - stickerSize - 1.15));
-		sticker.setAttribute("cy", String(badgeY + stickerSize + 0.85));
-		sticker.setAttribute("r", String(stickerSize));
-		sticker.setAttribute("fill", accentColor);
-		sticker.setAttribute("stroke", fillColor);
-		sticker.setAttribute("stroke-width", "0.95");
-		setSvgInteractionAttributes(sticker, { pointerEvents: "none" });
-
-		const stickerHighlight = activeDocument.createElementNS(svgNS, "circle");
-		stickerHighlight.setAttribute("data-weave-comment-marker", "sticker-highlight");
-		stickerHighlight.setAttribute("cx", String(badgeX + badgeWidth - stickerSize - 1.9));
-		stickerHighlight.setAttribute("cy", String(badgeY + stickerSize + 0.1));
-		stickerHighlight.setAttribute("r", String(Math.max(0.7, stickerSize * 0.34)));
-		stickerHighlight.setAttribute("fill", accentTextColor);
-		stickerHighlight.setAttribute("fill-opacity", "0.78");
-		setSvgInteractionAttributes(stickerHighlight, { pointerEvents: "none" });
-
-		const hitAreaX = Math.max(targetRect.left, badgeX - 1.5);
-		const hitAreaY = Math.max(targetRect.top, badgeY - 1.5);
-		const hitAreaRight = Math.min(targetRect.left + targetRect.width, badgeX + badgeWidth + 1.5);
-		const hitAreaBottom = Math.min(targetRect.top + targetRect.height, badgeY + bubbleHeight + 2);
-		const hitArea = activeDocument.createElementNS(svgNS, "rect");
-		hitArea.setAttribute("data-weave-comment-marker", "hit-area");
-		hitArea.setAttribute("x", String(hitAreaX));
-		hitArea.setAttribute("y", String(hitAreaY));
-		hitArea.setAttribute("width", String(Math.max(6, hitAreaRight - hitAreaX)));
-		hitArea.setAttribute("height", String(Math.max(6, hitAreaBottom - hitAreaY)));
-		hitArea.setAttribute("rx", String(cornerRadius + 1.5));
-		hitArea.setAttribute("ry", String(cornerRadius + 1.5));
-		hitArea.setAttribute("fill", "#000000");
-		hitArea.setAttribute("fill-opacity", "0.001");
-		hitArea.setAttribute("role", "button");
-		hitArea.setAttribute("aria-label", i18n.t("epub.reader.commentMarkerAria"));
-		setSvgInteractionAttributes(hitArea, { cursor: "pointer", pointerEvents: "auto" });
-
-		const handleMarkerClick = (event: Event) => {
-			event.preventDefault();
-			event.stopPropagation();
-			this.notifyCommentMarkerClick(annotation.cfiRange, bubbleBody, anchorRect);
-		};
-		hitArea.addEventListener("click", handleMarkerClick);
-		group.appendChild(hitArea);
-		group.appendChild(bubbleBackdrop);
-		group.appendChild(bubbleBody);
-		group.appendChild(bubbleInner);
-		group.appendChild(bubbleTail);
-		for (const dot of dots) {
-			group.appendChild(dot);
-		}
-		group.appendChild(sticker);
-		group.appendChild(stickerHighlight);
-		return group;
+		return this.annotationOverlayRenderer.createCommentMarkerOverlay(annotation, rects);
 	}
 
 	private createReferenceBadgeOverlay(annotation: FoliateAnnotation, rects: unknown[]): SVGElement {
-		const svgNS = "http://www.w3.org/2000/svg";
-		const group = activeDocument.createElementNS(svgNS, "g");
-		group.setAttribute("data-weave-reference-badge", "group");
-
-		const rectList = rects as Array<{
-			left: number;
-			top: number;
-			width: number;
-			height: number;
-		}>;
-
-		// 找到最后一个有效的矩形（高亮的末尾）
-		const targetRect = [...rectList].reverse().find((rect) => rect.width > 0 && rect.height > 0);
-
-		if (!targetRect) {
-			return group;
-		}
-
-		const count = annotation.referenceCount || 0;
-		const heat = annotation.referenceHeat || 0;
-		const badgeColor = this.getReferenceBadgeColor(heat);
-		const fillColor = this.getObsidianCSSVar("--background-primary", "#ffffff");
-		const inset = Math.max(0.85, Math.min(1.8, targetRect.height * 0.1));
-		const availableWidth = Math.max(9.5, targetRect.width - inset * 2);
-		const availableHeight = Math.max(8.2, targetRect.height - inset * 2);
-		const badgeHeight = Math.min(
-			Math.max(8.8, Math.min(12.6, targetRect.height * 0.58)),
-			availableHeight
-		);
-		const badgeWidth = Math.min(
-			Math.max(badgeHeight + 2, Math.min(18.5, count >= 10 ? 16.5 : count >= 5 ? 14.8 : 13.2)),
-			availableWidth
-		);
-		const badgeX = Math.max(
-			targetRect.left + inset,
-			targetRect.left + targetRect.width - badgeWidth - inset
-		);
-		const badgeY = targetRect.top + inset;
-		const cornerRadius = Math.max(3.6, Math.min(6.2, badgeHeight * 0.52));
-
-		const background = activeDocument.createElementNS(svgNS, "rect");
-		background.setAttribute("data-weave-reference-badge", "background");
-		background.setAttribute("x", String(badgeX));
-		background.setAttribute("y", String(badgeY));
-		background.setAttribute("width", String(badgeWidth));
-		background.setAttribute("height", String(badgeHeight));
-		background.setAttribute("rx", String(cornerRadius));
-		background.setAttribute("ry", String(cornerRadius));
-		background.setAttribute("fill", badgeColor);
-		background.setAttribute("stroke", fillColor);
-		background.setAttribute("stroke-width", "0.8");
-		setSvgInteractionAttributes(background, { pointerEvents: "none" });
-
-		const inner = activeDocument.createElementNS(svgNS, "rect");
-		inner.setAttribute("data-weave-reference-badge", "inner");
-		inner.setAttribute("x", String(badgeX + 0.9));
-		inner.setAttribute("y", String(badgeY + 0.8));
-		inner.setAttribute("width", String(Math.max(5.5, badgeWidth - 1.8)));
-		inner.setAttribute("height", String(Math.max(4.8, badgeHeight - 1.6)));
-		inner.setAttribute("rx", String(Math.max(2.8, cornerRadius - 0.9)));
-		inner.setAttribute("ry", String(Math.max(2.8, cornerRadius - 0.9)));
-		inner.setAttribute("fill", "#ffffff");
-		inner.setAttribute("fill-opacity", "0.14");
-		setSvgInteractionAttributes(inner, { pointerEvents: "none" });
-
-		const text = activeDocument.createElementNS(svgNS, "text");
-		text.setAttribute("data-weave-reference-badge", "text");
-		text.setAttribute("x", String(badgeX + badgeWidth / 2));
-		text.setAttribute("y", String(badgeY + badgeHeight * 0.56));
-		text.setAttribute("text-anchor", "middle");
-		text.setAttribute("dominant-baseline", "middle");
-		text.setAttribute("fill", "#ffffff");
-		text.setAttribute("font-size", String(Math.max(7.2, Math.min(9.6, badgeHeight * 0.56))));
-		text.setAttribute("font-weight", "700");
-		text.setAttribute("font-family", "system-ui, -apple-system, sans-serif");
-		text.textContent = String(count);
-		setSvgInteractionAttributes(text, { pointerEvents: "none" });
-
-		const hitArea = activeDocument.createElementNS(svgNS, "rect");
-		hitArea.setAttribute("data-weave-reference-badge", "hit-area");
-		hitArea.setAttribute("x", String(Math.max(targetRect.left, badgeX - 1.25)));
-		hitArea.setAttribute("y", String(Math.max(targetRect.top, badgeY - 1.25)));
-		hitArea.setAttribute(
-			"width",
-			String(Math.max(6, Math.min(targetRect.width, badgeWidth + 2.5)))
-		);
-		hitArea.setAttribute(
-			"height",
-			String(Math.max(6, Math.min(targetRect.height, badgeHeight + 2.5)))
-		);
-		hitArea.setAttribute("rx", String(cornerRadius + 1.1));
-		hitArea.setAttribute("ry", String(cornerRadius + 1.1));
-		hitArea.setAttribute("fill", "#000000");
-		hitArea.setAttribute("fill-opacity", "0.001");
-		hitArea.setAttribute("role", "button");
-		hitArea.setAttribute("aria-label", i18n.t("epub.reader.referenceBadgeAria", { count }));
-		setSvgInteractionAttributes(hitArea, { cursor: "pointer", pointerEvents: "auto" });
-		const badgeRect = this.createViewportRectFromRawRect({
-			left: Math.max(targetRect.left, badgeX - 1.25),
-			top: Math.max(targetRect.top, badgeY - 1.25),
-			width: Math.max(6, Math.min(targetRect.width, badgeWidth + 2.5)),
-			height: Math.max(6, Math.min(targetRect.height, badgeHeight + 2.5)),
-		});
-		const badgeAnchorPoint = this.createAnchorPointFromRect(badgeRect);
-		const highlightRects = this.createViewportRectListFromRawRectList(rectList);
-
-		const handleBadgeClick = (event: Event) => {
-			event.preventDefault();
-			event.stopPropagation();
-			this.notifyReferenceBadgeClick(annotation.cfiRange, {
-				rect: badgeRect,
-				rects: highlightRects,
-				anchorPoint: badgeAnchorPoint,
-			});
-		};
-		hitArea.addEventListener("click", handleBadgeClick);
-
-		group.appendChild(hitArea);
-		group.appendChild(background);
-		group.appendChild(inner);
-		group.appendChild(text);
-		return group;
-	}
-
-	private getReferenceBadgeColor(heat: number): string {
-		if (heat >= 80) return "#ef4444"; // red
-		if (heat >= 50) return "#f97316"; // orange
-		if (heat >= 20) return "#eab308"; // yellow
-		return "#667eea"; // purple
+		return this.annotationOverlayRenderer.createReferenceBadgeOverlay(annotation, rects);
 	}
 
 	private notifyReferenceBadgeClick(
@@ -6650,7 +5927,7 @@ body .weave-foliate-concealment {
 		let info: HighlightClickInfo | null = null;
 
 		if (highlight && geometry?.rect) {
-			info = this.buildHighlightClickInfo(
+			info = buildHighlightClickInfo(
 				highlight,
 				{
 					rect: geometry.rect,
@@ -6695,109 +5972,11 @@ body .weave-foliate-concealment {
 		rects: unknown[],
 		style: EpubHighlightStyle,
 		color?: string
-	): SVGElement => {
-		const svgNS = "http://www.w3.org/2000/svg";
-		const group = activeDocument.createElementNS(svgNS, "g");
-		const strokeColor = this.resolveHighlightTint(color);
+	): SVGElement =>
+		this.annotationOverlayRenderer.createStyledAnnotationOverlay(rects, style, color);
 
-		for (const rect of rects as Array<{
-			left: number;
-			top: number;
-			width: number;
-			height: number;
-		}>) {
-			if (rect.width <= 0 || rect.height <= 0) {
-				continue;
-			}
-			if (style === "underline") {
-				group.appendChild(
-					this.createStraightLineOverlay(rect, strokeColor, rect.top + rect.height - 1.5)
-				);
-				continue;
-			}
-			if (style === "strikethrough") {
-				group.appendChild(
-					this.createStraightLineOverlay(rect, strokeColor, rect.top + rect.height * 0.58)
-				);
-				continue;
-			}
-			group.appendChild(this.createWavyLineOverlay(rect, strokeColor));
-		}
-		return group;
-	};
-
-	private createStraightLineOverlay(
-		rect: { left: number; top: number; width: number; height: number },
-		strokeColor: string,
-		y: number
-	): SVGElement {
-		const svgNS = "http://www.w3.org/2000/svg";
-		const line = activeDocument.createElementNS(svgNS, "line");
-		line.setAttribute("x1", String(rect.left));
-		line.setAttribute("y1", String(y));
-		line.setAttribute("x2", String(rect.left + rect.width));
-		line.setAttribute("y2", String(y));
-		line.setAttribute("stroke", strokeColor);
-		line.setAttribute("stroke-width", String(Math.max(1.5, Math.min(2.6, rect.height * 0.11))));
-		line.setAttribute("stroke-linecap", "round");
-		line.setAttribute("stroke-opacity", "0.96");
-		return line;
-	}
-
-	private createWavyLineOverlay(
-		rect: { left: number; top: number; width: number; height: number },
-		strokeColor: string
-	): SVGElement {
-		const svgNS = "http://www.w3.org/2000/svg";
-		const path = activeDocument.createElementNS(svgNS, "path");
-		const baseY = rect.top + rect.height - 2;
-		const amplitude = Math.max(1.2, Math.min(2.8, rect.height * 0.12));
-		const wavelength = Math.max(6, Math.min(12, rect.height * 0.8));
-		let currentX = rect.left;
-		let d = `M ${rect.left} ${baseY}`;
-		while (currentX < rect.left + rect.width) {
-			const nextX = Math.min(currentX + wavelength, rect.left + rect.width);
-			const midX = currentX + (nextX - currentX) / 2;
-			d += ` Q ${currentX + wavelength * 0.25} ${baseY - amplitude}, ${midX} ${baseY}`;
-			d += ` Q ${currentX + wavelength * 0.75} ${baseY + amplitude}, ${nextX} ${baseY}`;
-			currentX = nextX;
-		}
-		path.setAttribute("d", d);
-		path.setAttribute("fill", "none");
-		path.setAttribute("stroke", strokeColor);
-		path.setAttribute("stroke-width", String(Math.max(1.4, Math.min(2.2, rect.height * 0.1))));
-		path.setAttribute("stroke-linecap", "round");
-		path.setAttribute("stroke-linejoin", "round");
-		path.setAttribute("stroke-opacity", "0.96");
-		return path;
-	}
-
-	private createTemporaryFocusOverlay = (rects: unknown[], color: string): SVGElement => {
-		const svgNS = "http://www.w3.org/2000/svg";
-		const group = activeDocument.createElementNS(svgNS, "g");
-		const strokeColor = this.resolveHighlightTint(color);
-
-		for (const rect of rects as Array<{
-			left: number;
-			top: number;
-			width: number;
-			height: number;
-		}>) {
-			const outline = activeDocument.createElementNS(svgNS, "rect");
-			outline.setAttribute("x", String(rect.left - 1.5));
-			outline.setAttribute("y", String(rect.top - 1.5));
-			outline.setAttribute("width", String(rect.width + 3));
-			outline.setAttribute("height", String(rect.height + 3));
-			outline.setAttribute("rx", "5");
-			outline.setAttribute("fill", "none");
-			outline.setAttribute("stroke", strokeColor);
-			outline.setAttribute("stroke-width", "2");
-			outline.setAttribute("stroke-opacity", "0.95");
-			group.appendChild(outline);
-		}
-
-		return group;
-	};
+	private createTemporaryFocusOverlay = (rects: unknown[], color: string): SVGElement =>
+		this.annotationOverlayRenderer.createTemporaryFocusOverlay(rects, color);
 
 	private async addResolvedHighlight(
 		highlight: ReaderHighlight,
@@ -6831,7 +6010,7 @@ body .weave-foliate-concealment {
 			if (typeof durationMs === "number" && durationMs > 0) {
 				const timer = window.setTimeout(() => {
 					this.temporaryHighlightTimers.delete(key);
-					this.removeTemporaryHighlight(normalizedHighlight.cfiRange);
+					void this.removeTemporaryHighlight(normalizedHighlight.cfiRange);
 				}, durationMs);
 				this.temporaryHighlightTimers.set(key, timer);
 			}
@@ -6852,7 +6031,7 @@ body .weave-foliate-concealment {
 		await this.refreshHighlights();
 	}
 
-	private removeTemporaryHighlight(cfiRange: string): void {
+	private async removeTemporaryHighlight(cfiRange: string): Promise<void> {
 		const highlight = this.findStoredHighlightByCfi(cfiRange, "temporary");
 		const key = highlight ? getReaderHighlightIdentityKey(highlight) : this.normalizeLocationKey(cfiRange);
 		const existingTimer = this.temporaryHighlightTimers.get(key);
@@ -6862,7 +6041,7 @@ body .weave-foliate-concealment {
 		}
 		this.temporaryHighlightDataMap.delete(key);
 		this.invalidateParagraphPresentation();
-		void this.queueAnnotationSync(true);
+		await this.refreshHighlights();
 	}
 
 	private dedupeHighlights(highlights: ReaderHighlight[]): ReaderHighlight[] {
@@ -7281,11 +6460,7 @@ body .weave-foliate-concealment {
 			window.cancelAnimationFrame(this.pendingThemeRefreshFrame);
 			this.pendingThemeRefreshFrame = null;
 		}
-		this.layoutRecoveryToken += 1;
-		if (this.pendingLayoutRecoveryFrame !== null) {
-			window.cancelAnimationFrame(this.pendingLayoutRecoveryFrame);
-			this.pendingLayoutRecoveryFrame = null;
-		}
+		this.paginatedLayoutRecovery.bumpToken();
 		if (this.renderContainerWheelCleanup) {
 			this.renderContainerWheelCleanup();
 			this.renderContainerWheelCleanup = null;
@@ -7293,6 +6468,8 @@ body .weave-foliate-concealment {
 		this.layoutChangeInFlight = false;
 		this.resetWheelPageTurnState();
 		this.wheelTurnInFlight = false;
+		this.detachScrolledChapterEndMonitor();
+		this.publishScrolledChapterEndState(false);
 
 		const currentContainer = this.renderContainer;
 		const currentView = this.foliateView;
@@ -7336,6 +6513,7 @@ body .weave-foliate-concealment {
 		this.parser.dispose();
 		this.resetReaderState();
 		this.relocatedCallbacks.clear();
+		this.scrolledChapterEndCallbacks.clear();
 		this.footnotePreviewCallbacks.clear();
 		this.selectionChangeCallbacks.clear();
 		this.highlightClickCallbacks.clear();
@@ -7558,50 +6736,7 @@ body .weave-foliate-concealment {
 	}
 
 	private resolveHighlightTint(color?: string): string {
-		const palette = FoliateReaderService.HIGHLIGHT_TINT_MAP[this.getCurrentColorScheme()];
-		if (!color) {
-			return palette.yellow;
-		}
-		return palette[color] || color;
-	}
-
-	private isSameAnnotation(a: FoliateAnnotation, b: FoliateAnnotation): boolean {
-		return (
-			a.value === b.value &&
-			a.color === b.color &&
-			a.style === b.style &&
-			a.hasCommentDivider === b.hasCommentDivider &&
-			a.focusColor === b.focusColor &&
-			a.text === b.text &&
-			a.sourceFile === b.sourceFile &&
-			a.sourceRef === b.sourceRef &&
-			a.excerptId === b.excerptId &&
-			a.createdTime === b.createdTime &&
-			a.referenceCount === b.referenceCount &&
-			a.referenceHeat === b.referenceHeat &&
-			a.temporary === b.temporary &&
-			a.presentation === b.presentation
-		);
-	}
-
-	private getAnnotationRenderSignature(annotation: FoliateAnnotation): string {
-		const key = getReaderHighlightIdentityKey(annotation);
-		const isTemporarilyRevealed =
-			this.shouldRenderAnnotationAsConceal(annotation) &&
-			this.temporarilyRevealedConcealmentTimers.has(key);
-
-		return [
-			`presentation:${annotation.presentation || "highlight"}`,
-			`color:${annotation.color || "yellow"}`,
-			`style:${annotation.style || "highlight"}`,
-			`comment:${annotation.hasCommentDivider ? "visible" : "hidden"}`,
-			`references:${annotation.referenceCount || 0}`,
-			`heat:${annotation.referenceHeat || 0}`,
-			`focus:${annotation.focusColor || ""}`,
-			`strikethrough:${this.currentStrikethroughPresentation}`,
-			`scheme:${this.getCurrentColorScheme()}`,
-			`concealment:${isTemporarilyRevealed ? "revealed" : "concealed"}`,
-		].join("|");
+		return resolveReaderHighlightTint(this.getCurrentColorScheme(), color);
 	}
 
 	private normalizeCurrentPage(totalPositions: number): number {
@@ -7623,19 +6758,7 @@ body .weave-foliate-concealment {
 		stripe: string;
 		border: string;
 	} {
-		if (this.getCurrentColorScheme() === "dark") {
-			return {
-				base: "rgba(86, 92, 104, 0.96)",
-				stripe: "rgba(112, 119, 132, 0.98)",
-				border: "rgba(255, 255, 255, 0.12)",
-			};
-		}
-
-		return {
-			base: "rgba(247, 243, 239, 0.96)",
-			stripe: "rgba(232, 225, 216, 0.98)",
-			border: "rgba(89, 79, 69, 0.12)",
-		};
+		return readConcealmentPalette(this.getCurrentColorScheme());
 	}
 
 	private getObsidianStyleSource(): HTMLElement {
@@ -7643,94 +6766,11 @@ body .weave-foliate-concealment {
 	}
 
 	private getObsidianCSSVar(varName: string, fallback: string): string {
-		try {
-			const styleSource = this.getObsidianStyleSource();
-			const primary = getComputedStyle(styleSource).getPropertyValue(varName).trim();
-			if (primary) {
-				return primary;
-			}
-			const bodyValue = getComputedStyle(activeDocument.body).getPropertyValue(varName).trim();
-			if (bodyValue) {
-				return bodyValue;
-			}
-			const rootValue = getComputedStyle(activeDocument.documentElement).getPropertyValue(varName).trim();
-			return rootValue || fallback;
-		} catch {
-			return fallback;
-		}
-	}
-
-	private getObsidianFontStack(): string {
-		const fontText = this.getObsidianCSSVar("--font-text", "").trim();
-		const fontInterface = this.getObsidianCSSVar("--font-interface", "").trim();
-		const baseFont = fontText || fontInterface;
-		if (!baseFont) {
-			return '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif';
-		}
-		return `${baseFont}, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif`;
-	}
-
-	private getObsidianMonospaceFontStack(): string {
-		const monoFont = this.getObsidianCSSVar("--font-monospace", "").trim();
-		if (!monoFont) {
-			return 'ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace';
-		}
-		return `${monoFont}, ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace`;
-	}
-
-	private getObsidianTextFontSize(): string {
-		const directTextSize = this.getObsidianCSSVar("--font-text-size", "").trim();
-		if (this.isConcreteCssSizeValue(directTextSize)) {
-			return directTextSize;
-		}
-
-		const directEditorSize = this.getObsidianCSSVar("--editor-font-size", "").trim();
-		if (this.isConcreteCssSizeValue(directEditorSize)) {
-			return directEditorSize;
-		}
-
-		const resolvedSize = this.getResolvedStyleSourceFontSize();
-		if (resolvedSize) {
-			return resolvedSize;
-		}
-
-		const rawSize = this.getObsidianCSSVar(
-			"--font-text-size",
-			this.getObsidianCSSVar("--editor-font-size", "16px")
-		).trim();
-		return rawSize || "16px";
-	}
-
-	private isConcreteCssSizeValue(value: string): boolean {
-		if (!value) {
-			return false;
-		}
-		return !value.includes("var(");
-	}
-
-	private getResolvedStyleSourceFontSize(): string | null {
-		try {
-			const resolvedSize = getComputedStyle(this.getObsidianStyleSource()).fontSize.trim();
-			return resolvedSize || null;
-		} catch {
-			return null;
-		}
+		return readObsidianCssVar(this.getObsidianStyleSource(), varName, fallback);
 	}
 
 	private getCurrentColorScheme(): "light" | "dark" {
-		if (
-			activeDocument.body.classList.contains("theme-dark") ||
-			activeDocument.documentElement.classList.contains("theme-dark")
-		) {
-			return "dark";
-		}
-		if (
-			activeDocument.body.classList.contains("theme-light") ||
-			activeDocument.documentElement.classList.contains("theme-light")
-		) {
-			return "light";
-		}
-		return UnifiedThemeManager.getInstance().getCurrentTheme().isDark ? "dark" : "light";
+		return readObsidianColorScheme();
 	}
 
 	private clamp(value: number, min: number, max: number): number {

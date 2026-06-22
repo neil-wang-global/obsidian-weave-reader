@@ -1,11 +1,9 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readEpubReaderStylesheet } from "./epub-reader-styles-test-utils";
 
 describe("epub continuous scrollbar styling", () => {
 	it("maps Obsidian styled scrollbars onto the foliate scrolled container part", () => {
-		const stylesheetPath = resolve(process.cwd(), "src/styles/epub/epub-reader.css");
-		const stylesheet = readFileSync(stylesheetPath, "utf8");
+		const stylesheet = readEpubReaderStylesheet();
 
 		expect(stylesheet).toContain(
 			'.epub-reader-root[data-flow="scrolled"] .epub-viewer-container > .weave-epub-reader-host::part(container)'
@@ -19,8 +17,7 @@ describe("epub continuous scrollbar styling", () => {
 	});
 
 	it("keeps standard scrollbar-color as a fallback instead of the primary Chromium path", () => {
-		const stylesheetPath = resolve(process.cwd(), "src/styles/epub/epub-reader.css");
-		const stylesheet = readFileSync(stylesheetPath, "utf8");
+		const stylesheet = readEpubReaderStylesheet();
 
 		expect(stylesheet).toContain("@supports not selector(::-webkit-scrollbar)");
 		expect(stylesheet).toContain("scrollbar-width: auto;");

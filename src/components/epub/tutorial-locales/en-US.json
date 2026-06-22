@@ -16,7 +16,7 @@
         {
           "items": [
             "TOC: jump quickly by chapter.",
-            "Notes: review synced highlights, comments, and related content for the current book.",
+            "Notes: review synced highlights, thoughts, and related content for the current book.",
             "Bookmarks: manage bookmarks for the current page.",
             "My Bookshelf: browse book files in the vault and return from the bookshelf subview to the current book sidebar."
           ]
@@ -60,7 +60,6 @@
           "items": [
             "The typography panel adjusts line height, letter spacing, and page margins, and can restore defaults.",
             "Scrolled mode can independently toggle the right-side page buttons.",
-            "Top stickers support auto, inline, and right-rail layouts.",
             "Footnote marker clicks can switch between showing a footnote popover and jumping directly to the footnote."
           ]
         }
@@ -113,10 +112,10 @@
       ]
     },
     {
-      "title": "Comment bubbles and footnote popovers",
+      "title": "Thought bubbles and footnote popovers",
       "paragraphs": [
-        "Comment bubbles in the text are additional cues. They do not replace or weaken the highlight, underline, strikethrough, or wavy underline itself.",
-        "As long as the excerpt contains a `---div---` separator, the reader shows a comment bubble beside the highlight. You can edit it from the bubble or from the toolbar comment action.",
+        "Thought bubbles in the text are additional cues. They do not replace or weaken the highlight, underline, strikethrough, or wavy underline itself.",
+        "As long as the excerpt contains a `---div---` separator, the reader shows a thought bubble beside the highlight. You can edit it from the bubble or from the toolbar thought action.",
         "Footnote marker clicks can be configured to show a popover preview or jump directly to the footnote location."
       ]
     },
@@ -125,7 +124,7 @@
       "listGroups": [
         {
           "items": [
-            "Highlights, styles, and comments automatically reappear when you reopen the same book.",
+            "Highlights, styles, and thoughts automatically reappear when you reopen the same book.",
             "Data sources consistently support Markdown, Canvas, and card data instead of relying on a separate black-box database.",
             "Source links are the authoritative record for restoring and locating excerpts. As long as the link remains valid, you can freely rewrite the excerpt body.",
             "When a note file changes, the reader reloads the related highlights so the book view and note view stay in sync."
@@ -154,9 +153,9 @@
       "title": "Excerpt format and source links",
       "paragraphs": [
         "The reader tries to attach precise location data to excerpts so you can jump back from notes to the source passage.",
-        "If an excerpt includes a comment, putting it after the `---div---` separator is recommended so the comment bubble can appear in the text automatically."
+        "If an excerpt includes a thought, putting it after the `---div---` separator is recommended so the thought bubble can appear in the text automatically."
       ],
-      "code": "> [!EPUB|yellow] [[book.epub#^chapter-anchor|Chapter 1]]\n> Excerpt body\n> ---div---\n> Comment body"
+      "code": "> [!EPUB|yellow] [[book.epub#^chapter-anchor|Chapter 1]]\n> Excerpt body\n> ---div---\n> Thought body"
     },
     {
       "title": "Bookmarks and reading positions",

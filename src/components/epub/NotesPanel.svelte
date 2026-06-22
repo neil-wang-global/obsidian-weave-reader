@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { App } from 'obsidian';
-	import { Menu, Notice } from 'obsidian';
+	import { Menu, Notice, setIcon } from 'obsidian';
 	import { tr } from '../../utils/i18n';
 	import { showObsidianConfirm } from '../../utils/obsidian-confirm';
 	import { logger } from '../../utils/logger';
@@ -84,6 +84,16 @@
 		onNavigate,
 	}: Props = $props();
 	let t = $derived($tr);
+
+	function iconAction(node: HTMLElement, name: string) {
+		setIcon(node, name);
+		return {
+			update(newName: string) {
+				node.replaceChildren();
+				setIcon(node, newName);
+			},
+		};
+	}
 
 	let highlights = $state<EpubDisplayHighlight[]>([]);
 	let preparing = $state(false);
@@ -312,11 +322,29 @@
 				return false;
 			}
 
-			if ([t('epub.notes.commented').toLowerCase(), '有', 'true', 'yes', '1', 'commented'].includes(normalizedValue)) {
+			if ([
+				t('epub.notes.commented').toLowerCase(),
+				'有批注',
+				'有想法',
+				'有',
+				'true',
+				'yes',
+				'1',
+				'commented',
+			].includes(normalizedValue)) {
 				return highlight.hasCommentDivider;
 			}
 
-			if ([t('epub.notes.uncommented').toLowerCase(), '无', 'false', 'no', '0', 'none'].includes(normalizedValue)) {
+			if ([
+				t('epub.notes.uncommented').toLowerCase(),
+				'无批注',
+				'无想法',
+				'无',
+				'false',
+				'no',
+				'0',
+				'none',
+			].includes(normalizedValue)) {
 				return !highlight.hasCommentDivider;
 			}
 
@@ -375,6 +403,13 @@
 
 	let selectedHighlights = $derived.by(() =>
 		filteredHighlights.filter((highlight) => selectedKeys.has(getHighlightSelectionKey(highlight)))
+	);
+
+	let selectionCountLabel = $derived(
+		t('epub.notes.selectionCount', {
+			selected: selectedHighlights.length,
+			total: filteredHighlights.length,
+		})
 	);
 
 	$effect(() => {
@@ -852,37 +887,47 @@
 		</div>
 	{:else}
 		{#if selectionMode}
-			<div class="epub-notes-selection-bar" aria-live="polite">
-				<span>{t('epub.notes.selectionCount', { selected: selectedHighlights.length, total: filteredHighlights.length })}</span>
+			<div
+				class="epub-notes-selection-float"
+				role="toolbar"
+				aria-label={t('epub.notes.menu.batchSelect')}
+				aria-live="polite"
+			>
+				<span class="epub-notes-selection-count" aria-label={selectionCountLabel}>
+					<span class="epub-notes-selection-count-selected">{selectedHighlights.length}</span>
+					<span class="epub-notes-selection-count-sep">/</span>
+					<span class="epub-notes-selection-count-total">{filteredHighlights.length}</span>
+				</span>
+				<span class="epub-notes-selection-divider" aria-hidden="true"></span>
 				<div class="epub-notes-selection-actions">
 					<button
 						type="button"
-						class="clickable-icon epub-notes-selection-btn"
+						class="clickable-icon epub-notes-selection-icon-btn"
 						title={t('epub.notes.menu.exportSelected')}
 						aria-label={t('epub.notes.menu.exportSelected')}
 						disabled={selectedHighlights.length === 0 || !onExportHighlights}
 						onclick={() => void exportSelectedHighlights()}
 					>
-						<span class="epub-notes-selection-btn-label">{t('epub.notes.menu.exportSelected')}</span>
+						<span use:iconAction={'download'}></span>
 					</button>
 					<button
 						type="button"
-						class="clickable-icon epub-notes-selection-btn"
+						class="clickable-icon epub-notes-selection-icon-btn epub-notes-selection-icon-btn--danger"
 						title={t('epub.notes.menu.deleteSelected')}
 						aria-label={t('epub.notes.menu.deleteSelected')}
 						disabled={selectedHighlights.length === 0 || !onDeleteHighlight || batchDeleting}
 						onclick={() => void deleteSelectedHighlights()}
 					>
-						<span class="epub-notes-selection-btn-label">{t('epub.notes.menu.deleteSelected')}</span>
+						<span use:iconAction={'trash-2'}></span>
 					</button>
 					<button
 						type="button"
-						class="clickable-icon epub-notes-selection-btn"
+						class="clickable-icon epub-notes-selection-icon-btn"
 						title={t('epub.notes.menu.exitBatchSelect')}
 						aria-label={t('epub.notes.menu.exitBatchSelect')}
 						onclick={exitSelectionMode}
 					>
-						<span class="epub-notes-selection-btn-label">{t('epub.notes.menu.exitBatchSelect')}</span>
+						<span use:iconAction={'x'}></span>
 					</button>
 				</div>
 			</div>
@@ -928,50 +973,113 @@
 		flex-direction: column;
 		gap: 16px;
 		padding: 14px 12px 22px;
+		position: relative;
+		min-height: 100%;
+		box-sizing: border-box;
 	}
 
-	.epub-notes-selection-bar {
+	.epub-notes-panel.selection-mode {
+		padding-top: 6px;
+	}
+
+	.epub-notes-selection-float {
+		position: sticky;
+		top: 6px;
+		z-index: 6;
 		display: flex;
-		flex-direction: column;
+		align-items: center;
 		gap: 8px;
-		padding: 8px 10px;
-		border-radius: 12px;
-		background: color-mix(in srgb, var(--background-modifier-hover) 72%, transparent);
-		color: var(--text-muted);
+		margin-bottom: 10px;
+		padding: 6px 8px 6px 12px;
+		border-radius: 999px;
+		border: 1px solid color-mix(in srgb, var(--background-modifier-border) 72%, transparent);
+		background: color-mix(in srgb, var(--background-primary) 88%, transparent);
+		box-shadow:
+			0 10px 28px rgba(0, 0, 0, 0.16),
+			0 1px 0 color-mix(in srgb, white 8%, transparent) inset;
+		backdrop-filter: blur(14px);
+		-webkit-backdrop-filter: blur(14px);
+		align-self: center;
+		width: fit-content;
+		max-width: calc(100% - 8px);
+		margin-inline: auto;
+	}
+
+	.epub-notes-selection-count {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 1px;
 		font-size: var(--font-ui-smaller);
+		font-variant-numeric: tabular-nums;
+		line-height: 1;
+		color: var(--text-muted);
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+
+	.epub-notes-selection-count-selected {
+		font-weight: 700;
+		color: var(--text-normal);
+	}
+
+	.epub-notes-selection-count-sep {
+		opacity: 0.55;
+		padding-inline: 1px;
+	}
+
+	.epub-notes-selection-divider {
+		width: 1px;
+		height: 18px;
+		background: color-mix(in srgb, var(--background-modifier-border) 88%, transparent);
+		flex-shrink: 0;
 	}
 
 	.epub-notes-selection-actions {
 		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
+		align-items: center;
+		gap: 2px;
 	}
 
-	:global(.epub-notes-panel .epub-notes-selection-btn) {
+	:global(.epub-notes-panel .epub-notes-selection-icon-btn) {
 		display: inline-flex;
 		align-items: center;
-		min-height: 28px;
-		padding: 0 8px;
+		justify-content: center;
+		width: 30px;
+		height: 30px;
+		padding: 0;
 		border: none;
 		border-radius: var(--clickable-icon-radius);
 		background: transparent;
 		box-shadow: none;
 		color: var(--text-muted);
+		flex-shrink: 0;
 	}
 
-	:global(.epub-notes-panel .epub-notes-selection-btn:hover:not(:disabled)) {
+	:global(.epub-notes-panel .epub-notes-selection-icon-btn .svg-icon) {
+		width: var(--icon-s);
+		height: var(--icon-s);
+	}
+
+	:global(.epub-notes-panel .epub-notes-selection-icon-btn:hover:not(:disabled)) {
 		background: var(--background-modifier-hover);
 		color: var(--text-normal);
 	}
 
-	:global(.epub-notes-panel .epub-notes-selection-btn:disabled) {
-		opacity: 0.45;
+	:global(.epub-notes-panel .epub-notes-selection-icon-btn--danger:hover:not(:disabled)) {
+		background: color-mix(in srgb, var(--text-error) 12%, transparent);
+		color: var(--text-error);
+	}
+
+	:global(.epub-notes-panel .epub-notes-selection-icon-btn:disabled) {
+		opacity: 0.38;
 		cursor: not-allowed;
 	}
 
-	.epub-notes-selection-btn-label {
-		font-size: var(--font-ui-smaller);
-		line-height: 1.2;
+	@media (prefers-reduced-motion: reduce) {
+		.epub-notes-selection-float {
+			backdrop-filter: none;
+			-webkit-backdrop-filter: none;
+		}
 	}
 
 	.epub-placeholder {

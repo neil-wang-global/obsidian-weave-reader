@@ -136,6 +136,10 @@ jobs:
       - name: Verify release assets
         run: npm run verify:release
         continue-on-error: false
+
+      - name: Check bundle footprint
+        run: npm run check:bundle-footprint
+        continue-on-error: false
       
       - name: Check build size
         run: |

@@ -84,6 +84,7 @@ interface ParsedEpubCallout {
 	chapterTitle?: string;
 	fullMatch: string;
 	createdTime?: number;
+	excerptBlockId?: string;
 }
 
 type JsonCardLike = {
@@ -4106,7 +4107,7 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 				chapterTitle: callout.chapterTitle,
 				sourceFile,
 				sourceRef,
-				excerptId: resolvedLink.excerptId,
+				excerptId: resolvedLink.excerptId || callout.excerptBlockId,
 				createdTime: callout.createdTime,
 			});
 		}
@@ -4142,11 +4143,23 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 				j++;
 			}
 
+			let excerptBlockId: string | undefined;
+			if (j < lines.length) {
+				const blockRefMatch = lines[j].match(/^\^([A-Za-z0-9-]+)\s*$/);
+				if (blockRefMatch?.[1]) {
+					excerptBlockId = blockRefMatch[1];
+					j++;
+				}
+			}
+
 			const dividerIndex = bodyLines.findIndex((line) => this.isCommentDividerLine(line));
 			const quoteLines = dividerIndex >= 0 ? bodyLines.slice(0, dividerIndex) : bodyLines;
 			const commentLines = dividerIndex >= 0 ? bodyLines.slice(dividerIndex + 1) : [];
 			const commentBlock = dividerIndex >= 0 ? bodyLines.slice(dividerIndex).join("\n") : "";
 			const blockLines = [header, ...bodyLines];
+			if (excerptBlockId) {
+				blockLines.push(`^${excerptBlockId}`);
+			}
 			const fullMatch = `${blockLines.join("\n")}${j < lines.length ? "\n" : ""}`;
 			const appearance = EpubLinkService.parseHighlightCalloutMeta(headerMatch[1] || "");
 			results.push({
@@ -4160,6 +4173,7 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 				chapterTitle: this.parseCalloutChapterTitle(rest.slice(linkEnd).trim()),
 				fullMatch,
 				createdTime: this.parseCalloutTimestamp(rest.slice(linkEnd).trim()),
+				excerptBlockId,
 			});
 			i = j - 1;
 		}
@@ -4199,7 +4213,7 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 			cfi: parsed.cfi,
 			chapter: parsed.chapter,
 			sourceId: parsed.sourceId,
-			excerptId: parsed.excerptId,
+			excerptId: parsed.excerptId || callout.excerptBlockId,
 		};
 	}
 

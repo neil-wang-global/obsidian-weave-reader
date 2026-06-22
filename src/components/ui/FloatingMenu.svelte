@@ -243,8 +243,4 @@
   :global(body > .floating-menu) {
     position: fixed !important;
   }
-
-  :global(.menu) {
-    z-index: var(--weave-z-dropdown, 1600);
-  }
 </style>

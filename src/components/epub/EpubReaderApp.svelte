@@ -9,6 +9,7 @@
 	import EpubLoadingState from './EpubLoadingState.svelte';
 	import SelectionToolbar from './SelectionToolbar.svelte';
 	import ParagraphReadingOverlay from './ParagraphReadingOverlay.svelte';
+	import BookNotesExportPopover from './BookNotesExportPopover.svelte';
 	import ScreenshotOverlay from './ScreenshotOverlay.svelte';
 	import EpubTutorial from './EpubTutorial.svelte';
 	import EpubHighlightToolbar from './EpubHighlightToolbar.svelte';
@@ -16,9 +17,7 @@
 	import EpubFootnotePreviewPopover from './EpubFootnotePreviewPopover.svelte';
 	import ReferenceDetailModal from './ReferenceDetailModal.svelte';
 	import EpubPremiumFeaturePopover from './EpubPremiumFeaturePopover.svelte';
-	import EpubReadingReferenceSticker from './EpubReadingReferenceSticker.svelte';
-	import EpubRemainingReadingSticker from './EpubRemainingReadingSticker.svelte';
-	import { canUseEpubCanvasExcerpts, canUseEpubChapterExport, canUseEpubExcerptNotes, canUseEpubFootnotePreview, canUseEpubParagraphMode, canUseEpubReadingProgress, canUseEpubReadingReference, canUseEpubSourceLocation, canUseEpubStyledExcerpts, createEpubReaderEngine, DEFAULT_EPUB_EXCERPT_SETTINGS, ensureBookSourceLocationAccess, ensureEpubPremiumFeature, EPUB_RUNTIME, EpubAnnotationService, EpubLinkService, EpubLocationMigrationService, getEpubAnnotationIndexService, getEpubBacklinkHighlightService, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, resolveEpubHost, resolveEpubWeaveOfficialAPI, warmEpubAnnotationIndexForPaths } from '../../services/epub';
+	import { canUseEpubCanvasExcerpts, canUseEpubChapterExport, canUseEpubExcerptNotes, canUseEpubFootnotePreview, canUseEpubParagraphMode, canUseEpubReadingProgress, canUseEpubReadingReference, canUseEpubSourceLocation, canUseEpubStyledExcerpts, createEpubReaderEngine, DEFAULT_EPUB_EXCERPT_SETTINGS, ensureBookSourceLocationAccess, ensureEpubPremiumFeature, EPUB_RUNTIME, EpubAnnotationService, EpubLinkService, EpubLocationMigrationService, flushEpubPendingProgress, getEpubAnnotationIndexService, getEpubBacklinkHighlightService, getEpubHighlightViewSnapshotService, getEpubStorageService, isBookCompleted, resolveDisplayProgress, resolveEpubHost, resolveEpubWeaveOfficialAPI, warmEpubAnnotationIndexForPaths } from '../../services/epub';
 	import { EpubBookmarkService } from '../../services/epub/EpubBookmarkService';
 	import { EpubReferenceStatsService } from '../../services/epub/EpubReferenceStatsService';
 	import {
@@ -35,9 +34,25 @@
 		type WeaveEpubCanvasLayoutDirectionPayload,
 	} from '../../services/epub/canvas-excerpt-anchor';
 	import type { EpubVisibleFrameLike, ScreenshotRect } from '../../services/epub/EpubScreenshotService';
-	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubHostCapabilities, EpubLastOpenBookmark, EpubLayoutMode, EpubParagraphModeReadingPosition, EpubParagraphModeTransitionStyle, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, EpubWeaveExcerptRemovalMode, EpubWeaveOfficialAPI, EpubWeaveRemoveExcerptResult, FlashStyle, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderParagraph, ReadingPosition, TocItem } from '../../services/epub';
+	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubHighlightStyle, EpubHostCapabilities, EpubLayoutMode, EpubParagraphModeReadingPosition, EpubParagraphModeTransitionStyle, EpubReaderEngine, EpubReaderSettings, EpubReadingReferencePoint, EpubWeaveExcerptRemovalMode, EpubWeaveOfficialAPI, EpubWeaveRemoveExcerptResult, FlashStyle, HighlightClickInfo, PaginationInfo, ReaderFootnotePreviewInfo, ReaderHighlight, ReaderParagraph, ReadingPosition, TocItem } from '../../services/epub';
 	import { PremiumFeatureGuard, PREMIUM_FEATURES } from '../../services/premium/PremiumFeatureGuard';
-	import { isSupportedBookFile } from '../../services/epub/book-format';
+	import { getBookFormatDisplayLabel, isSupportedBookFile } from '../../services/epub/book-format';
+	import {
+		BookLoadCancelledError,
+		buildBookLoadSlowWarningMessage,
+		runBookLoadSession,
+	} from '../../services/epub/book-load-session';
+	import {
+		canReuseExistingBook,
+		resolveBookLoadRestoredPosition,
+	} from '../../services/epub/epub-reader-book-load-helpers';
+	import {
+		ensureDefaultBookNotesExportTemplates,
+		isMarkdownVaultFile,
+		buildBookNotesExportLabelsFromTranslator,
+		renderBookNotesMarkdown,
+	} from '../../services/epub/book-notes-export/book-notes-export';
+	import { resolveBookNotesExportTemplateFolder } from '../../services/epub/book-notes-export/template-folder';
 	import {
 		getBookshelfDisplayModeOptions,
 		getBookshelfDisplayModeOption,
@@ -96,6 +111,7 @@
 		onPremiumUiStateChange?: () => void;
 		onReaderSettingsLoaded?: (settings: EpubReaderSettings) => void;
 		onBackFromBookshelf?: () => void | Promise<void>;
+		onCancelBookLoad?: () => void | Promise<void>;
 		onActionsReady?: (actions: {
 			setAutoInsert: (enabled: boolean) => void;
 			setScreenshotMode: (active: boolean) => void;
@@ -120,14 +136,11 @@
 			showPremiumFeaturePreview?: (featureId: string) => void;
 			saveReadingReferencePoint?: () => Promise<void>;
 			openReadingPositionMenu?: (event: MouseEvent | KeyboardEvent) => void;
-			saveLastOpenBookmark?: () => Promise<void>;
 			getReadingPositionAutoSaveEnabled?: () => boolean;
 			setReadingPositionAutoSaveEnabled?: (enabled: boolean) => Promise<boolean>;
 			bindCanvasPath: (canvasPath: string) => void;
 			unbindCanvas: () => void;
 			getCanvasService: () => EpubCanvasService;
-			canMarkIRResumePoint: () => boolean;
-			markIRResumePoint: (event?: MouseEvent) => Promise<void>;
 			exportCurrentChapterToMarkdown?: () => Promise<void>;
 			exportCurrentChapterHighlightsToMarkdown?: () => Promise<void>;
 			exportBookHighlightsToMarkdown?: (event?: MouseEvent) => Promise<void>;
@@ -156,6 +169,7 @@
 		onPremiumUiStateChange,
 		onReaderSettingsLoaded, 
 		onBackFromBookshelf,
+		onCancelBookLoad,
 		onActionsReady, 
 		onSwitchBook, 
 		onCanvasStateChange,
@@ -179,38 +193,8 @@
 		return getDefaultReaderSettings().flowMode;
 	}
 
-	function getDefaultTopStickerLayout(): EpubReaderSettings['topStickerLayout'] {
-		return 'auto';
-	}
-
-	function getDefaultShowTopSticker(): boolean {
-		return true;
-	}
-
 	function isDesktopScrolledSideNavVisible(): boolean {
 		return settings.flowMode === 'scrolled' && settings.showScrolledSideNav && !isMobileReader();
-	}
-
-	function getEffectiveTopStickerLayout(): 'inline' | 'sidebar' {
-		if (settings.topStickerLayout === 'inline' || settings.topStickerLayout === 'sidebar') {
-			return settings.topStickerLayout;
-		}
-		return isDesktopScrolledSideNavVisible() ? 'sidebar' : 'inline';
-	}
-
-	function shouldShowTopSticker(): boolean {
-		return settings.showTopSticker !== false;
-	}
-
-	function shouldRenderTopStickerRail(): boolean {
-		return shouldShowTopSticker() && Boolean(
-			getRemainingReadingStickerProps()
-			|| (hasReadingReferenceCapability() && readingReferencePoint)
-		);
-	}
-
-	function getTopStickerLayoutState(): 'hidden' | 'inline' | 'sidebar' {
-		return shouldRenderTopStickerRail() ? getEffectiveTopStickerLayout() : 'hidden';
 	}
 
 	function getReaderRootStyle(): string {
@@ -235,11 +219,12 @@
 
 	let book = $state<EpubBook | null>(null);
 	let loading = $state(true);
+	let bookLoadSlowWarning = $state(false);
 	let errorMsg = $state('');
 	let readingProgress = $state(0);
 	let paginationInfo = $state<PaginationInfo>({ currentPage: 0, totalPages: 0 });
 	let currentChapterIndex = $state(0);
-	let showNextChapterAction = $state(false);
+	let showScrolledChapterNavActions = $state(false);
 	let readerVersion = $state(0);
 	let autoInsert = $state(untrack(() => initialAutoInsert));
 	let screenshotMode = $state(false);
@@ -249,7 +234,6 @@
 	let transientStatusText = $state('');
 	let readingReferencePoint = $state<EpubReadingReferencePoint | null>(null);
 	let sessionReadingStartPercent = $state<number | null>(null);
-	let remainingReadingTime = $state<{ bookMs?: number; chapterMs?: number; wordsPerMinute?: number }>({});
 	let bookCompletionPromptOpen = false;
 	let bookCompletionPromptDismissedBookId = '';
 	let premiumFeaturePreviewEnabled = $state(false);
@@ -281,7 +265,6 @@
 	let rootEl = $state<HTMLDivElement | null>(null);
 	let viewportEl = $state<HTMLDivElement | null>(null);
 	let readingViewportLockEl = $derived(resolveReadingViewportLockTarget(rootEl));
-	let topStickerRailEl = $state<HTMLDivElement | null>(null);
 	let exportNotesPopoverEl = $state<HTMLDivElement | null>(null);
 	let exportNotesPopoverOpen = $state(false);
 	let exportNotesSubmitting = $state(false);
@@ -313,6 +296,7 @@
 	let migratedLocationBookIds = new Set<string>();
 	let migratingLocationBookId: string | null = null;
 	let referenceBadgeClickCleanup: (() => void) | null = null;
+	let scrolledChapterEndCleanup: (() => void) | null = null;
 	const sourceLocateOverlay = getSourceLocateOverlayService();
 	let hasPendingBookLocate = $state(false);
 	const epubNavigation = untrack(() =>
@@ -330,11 +314,8 @@
 	let deferredHighlightReloadTimer: ReturnType<typeof setTimeout> | null = null;
 	let componentDisposed = false;
 	let activeBookLoadToken = 0;
-	let remainingReadingTimeRequestToken = 0;
-	let remainingReadingTimeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 	let readerStoreSyncTimer: ReturnType<typeof setTimeout> | null = null;
 	let pendingReaderStorePatch: Record<string, unknown> = {};
-	const REMAINING_READING_TIME_DEBOUNCE_MS = 4000;
 	const READER_STORE_SYNC_MS = 350;
 
 	function icon(node: HTMLElement, name: string) {
@@ -359,9 +340,6 @@
 		flowMode: getDefaultReaderFlowMode(),
 		showScrolledSideNav: true,
 		footnoteClickAction: 'preview',
-		showTopSticker: getDefaultShowTopSticker(),
-		topStickerLayout: getDefaultTopStickerLayout(),
-		topStickerWiggleEnabled: true,
 		paragraphModeEnabled: false,
 		paragraphModeFontSize: 'medium',
 		paragraphModeFontScale: 100,
@@ -1319,9 +1297,6 @@
 			widthMode: settings.layoutMode === 'double' ? 'fit' : getDefaultReaderWidthMode(),
 			showScrolledSideNav: true,
 			footnoteClickAction: 'preview',
-			showTopSticker: getDefaultShowTopSticker(),
-			topStickerLayout: getDefaultTopStickerLayout(),
-			topStickerWiggleEnabled: true,
 			paragraphModeFontSize: 'medium',
 			paragraphModeFontScale: 100,
 			paragraphModeSurfaceStyle: 'spotlight',
@@ -1353,21 +1328,6 @@
 		sessionReadingStartPercent = typeof value === 'number' && Number.isFinite(value)
 			? Math.max(0, value)
 			: null;
-	}
-
-	function clearRemainingReadingTimeDebounceTimer() {
-		if (remainingReadingTimeDebounceTimer) {
-			clearTimeout(remainingReadingTimeDebounceTimer);
-			remainingReadingTimeDebounceTimer = null;
-		}
-	}
-
-	function scheduleRemainingReadingTimeEstimateRefresh() {
-		clearRemainingReadingTimeDebounceTimer();
-		remainingReadingTimeDebounceTimer = setTimeout(() => {
-			remainingReadingTimeDebounceTimer = null;
-			void refreshRemainingReadingTimeEstimate();
-		}, REMAINING_READING_TIME_DEBOUNCE_MS);
 	}
 
 	function clearReaderStoreSyncTimer() {
@@ -1415,28 +1375,6 @@
 				epubActiveDocumentStore.setSharedState(nextPatch);
 			}
 		}, READER_STORE_SYNC_MS);
-	}
-
-	async function refreshRemainingReadingTimeEstimate() {
-		const requestToken = ++remainingReadingTimeRequestToken;
-		if (!book || !readerReady || typeof readerService.getRemainingReadingTimeEstimate !== 'function') {
-			remainingReadingTime = {};
-			return;
-		}
-
-		try {
-			const estimate = await readerService.getRemainingReadingTimeEstimate();
-			if (componentDisposed || requestToken !== remainingReadingTimeRequestToken) {
-				return;
-			}
-			remainingReadingTime = estimate || {};
-		} catch (error) {
-			if (componentDisposed || requestToken !== remainingReadingTimeRequestToken) {
-				return;
-			}
-			logger.warn('[EpubReaderApp] Failed to refresh remaining reading time estimate:', error);
-			remainingReadingTime = {};
-		}
 	}
 
 	function isStaleBookLoad(loadToken: number): boolean {
@@ -1590,11 +1528,11 @@
 
 	async function persistCurrentReadingProgress(targetBook: EpubBook | null = book): Promise<void> {
 		if (!hasReadingProgressCapability()) {
-			await storageService.flushPendingProgress();
+			await flushEpubPendingProgress(storageService);
 			return;
 		}
 		if (!targetBook?.id) {
-			await storageService.flushPendingProgress();
+			await flushEpubPendingProgress(storageService);
 			return;
 		}
 
@@ -1619,7 +1557,7 @@
 			: fallbackPosition;
 
 		if (!position?.cfi) {
-			await storageService.flushPendingProgress();
+			await flushEpubPendingProgress(storageService);
 			return;
 		}
 
@@ -1630,7 +1568,7 @@
 		}
 		targetBook.currentPosition = position;
 		await storageService.saveProgress(targetBook.id, position, readingStats);
-		await storageService.flushPendingProgress();
+		await flushEpubPendingProgress(storageService);
 	}
 
 	const BOOKSHELF_DATA_CHANGED_EVENT = EPUB_RUNTIME.events.bookshelfDataChanged;
@@ -1928,10 +1866,6 @@
 		return Boolean(getEpubActionHost()?.scheduleEpubChapterForIncrementalReading);
 	}
 
-	function hasMarkIRResumePointCapability(): boolean {
-		return Boolean(getEpubActionHost()?.markEpubResumePointFromReader);
-	}
-
 	function getIncrementalReadingHost(): EpubHostCapabilities | null {
 		const host = getEpubActionHost();
 		if (!host) {
@@ -1942,33 +1876,6 @@
 
 	function applyAndPersistReaderSettings(nextSettings: EpubReaderSettings) {
 		applyReaderSettingsState(nextSettings, true);
-	}
-
-	function canReuseExistingBook(existingBook: EpubBook | null, vaultFile: TFile): existingBook is EpubBook {
-		if (!existingBook) {
-			return false;
-		}
-
-		const storedSize = typeof existingBook.sourceSize === 'number' && Number.isFinite(existingBook.sourceSize)
-			? existingBook.sourceSize
-			: null;
-		const storedMtime = typeof existingBook.sourceMtime === 'number' && Number.isFinite(existingBook.sourceMtime)
-			? existingBook.sourceMtime
-			: null;
-
-		if (storedSize === null && storedMtime === null) {
-			return true;
-		}
-
-		if (storedSize !== null && storedSize !== vaultFile.stat.size) {
-			return false;
-		}
-
-		if (storedMtime !== null && storedMtime !== vaultFile.stat.mtime) {
-			return false;
-		}
-
-		return true;
 	}
 
 	async function finalizeBookLoad(
@@ -2021,6 +1928,18 @@
 		}
 	}
 
+	async function cancelSlowBookLoad() {
+		activeBookLoadToken += 1;
+		bookLoadSlowWarning = false;
+		loading = false;
+		errorMsg = '';
+		try {
+			await onCancelBookLoad?.();
+		} catch (error) {
+			logger.warn('[EpubReaderApp] Failed to cancel book load:', error);
+		}
+	}
+
 	async function loadBook() {
 		syncBookSessionForPath(filePath);
 		const loadToken = ++activeBookLoadToken;
@@ -2030,6 +1949,7 @@
 			void persistCurrentReadingProgress(previousBook);
 		}
 		loading = true;
+		bookLoadSlowWarning = false;
 		errorMsg = '';
 		readerReady = false;
 		highlightReloading = false;
@@ -2041,8 +1961,6 @@
 		commentEditorSaving = false;
 		updateReadingReferencePointState(null);
 		updateSessionReadingStartPercent(null);
-		remainingReadingTime = {};
-		remainingReadingTimeRequestToken += 1;
 		try {
 			const canonicalFilePath =
 				storageService.resolveSupportedBookFilePath(targetFilePath) || targetFilePath;
@@ -2075,14 +1993,24 @@
 			const reusableBook = canReuseExistingBook(existingBook, vaultFile) ? existingBook : null;
 			if (existingBook && !reusableBook) {
 				await storageService.removeBookByFilePath(canonicalFilePath);
-				showTransientStatus(t('epub.reader.fileUpdatedRebuilt'), 3200);
+				showTransientStatus(
+					t('epub.reader.fileUpdatedRebuilt', {
+						format: getBookFormatDisplayLabel(canonicalFilePath),
+					}),
+					3200
+				);
 			}
-			const loadedBook = await Promise.race([
-				readerService.loadEpub(canonicalFilePath, reusableBook?.id),
-				new Promise<never>((_, reject) => {
-					window.setTimeout(() => reject(new Error(t('epub.reader.loadTimeout'))), 15000);
-				})
-			]);
+			const loadedBook = await runBookLoadSession({
+				filePath: canonicalFilePath,
+				fileSizeBytes: vaultFile.stat.size,
+				loadPromise: readerService.loadEpub(canonicalFilePath, reusableBook?.id),
+				onSlowLoad: () => {
+					if (!isStaleBookLoad(loadToken)) {
+						bookLoadSlowWarning = true;
+					}
+				},
+				isCancelled: () => isStaleBookLoad(loadToken),
+			});
 
 			if (isStaleBookLoad(loadToken)) {
 				return;
@@ -2099,20 +2027,36 @@
 				}
 			}
 
-			const migratedProgress = hasReadingProgressCapability()
-				? await storageService.loadProgress(loadedBook.id)
-				: null;
+			const sourceEntry = await storageService.ensureSourceIdentity(canonicalFilePath, {
+				preferredSourceId: reusableBook?.sourceId,
+				preferredSourceFingerprint: reusableBook?.sourceFingerprint,
+			});
 			if (isStaleBookLoad(loadToken)) {
 				return;
 			}
-			if (hasReadingProgressCapability() && migratedProgress) {
-				loadedBook.currentPosition = migratedProgress;
-				await readerService.setRestoredPosition?.(migratedProgress);
-			} else if (hasReadingProgressCapability() && reusableBook?.currentPosition) {
-				loadedBook.currentPosition = reusableBook.currentPosition;
-				await readerService.setRestoredPosition?.(reusableBook.currentPosition);
+			if (sourceEntry) {
+				loadedBook.sourceId = sourceEntry.sourceId;
+				loadedBook.sourceFingerprint = sourceEntry.sourceFingerprint;
+				loadedBook.sourceSize = sourceEntry.sourceSize;
+				loadedBook.sourceMtime = sourceEntry.sourceMtime;
+				loadedBook.filePath = sourceEntry.filePath;
 			} else if (reusableBook?.sourceId) {
 				loadedBook.sourceId = reusableBook.sourceId;
+				loadedBook.sourceFingerprint = reusableBook.sourceFingerprint;
+			}
+
+			const restoredPosition = await resolveBookLoadRestoredPosition({
+				hasProgressCapability: hasReadingProgressCapability(),
+				reusableBook,
+				loadedBook,
+				loadProgress: (bookId, book) => storageService.loadProgress(bookId, book),
+			});
+			if (isStaleBookLoad(loadToken)) {
+				return;
+			}
+			if (hasReadingProgressCapability() && restoredPosition?.cfi) {
+				loadedBook.currentPosition = restoredPosition;
+				await readerService.setRestoredPosition?.(restoredPosition);
 			}
 
 			book = loadedBook;
@@ -2120,7 +2064,7 @@
 			currentChapterIndex = loadedBook.currentPosition?.chapterIndex ?? 0;
 			syncReadingProgressDisplay(loadedBook.currentPosition?.percent ?? 0);
 			updateSessionReadingStartPercent(readingProgress);
-			showNextChapterAction = false;
+			showScrolledChapterNavActions = false;
 			bookmarkRevision = 0;
 			onTitleChange?.(loadedBook.metadata.title);
 			if (isActiveEpubReaderInstance()) {
@@ -2133,10 +2077,13 @@
 			loading = false;
 			void finalizeBookLoad(loadToken, loadedBook, targetFilePath, reusableBook);
 		} catch (error) {
-			if (isStaleBookLoad(loadToken)) {
+			if (isStaleBookLoad(loadToken) || error instanceof BookLoadCancelledError) {
 				return;
 			}
-			logger.error('[EpubReaderApp] Failed to load EPUB:', error);
+			logger.error(
+				`[EpubReaderApp] Failed to load ${getBookFormatDisplayLabel(targetFilePath)}:`,
+				error
+			);
 			setError(`${error instanceof Error ? error.message : t('epub.reader.unknownError')}`);
 		} finally {
 			if (!isStaleBookLoad(loadToken)) {
@@ -2235,49 +2182,6 @@
 			logger.error('[EpubReaderApp] Failed to delete bookmark:', error);
 			new Notice(t('epub.reader.bookmarkDeleteFailed'));
 			return false;
-		}
-	}
-
-	async function saveLastOpenBookmark() {
-		if (!book) {
-			new Notice(t('epub.reader.bookNotLoaded'));
-			return;
-		}
-
-		try {
-			const currentPosition = readerService.getCurrentPosition();
-			let currentCfi = EpubLinkService.normalizeCfi(
-				currentPosition.cfi || readerService.getCurrentCFI() || book.currentPosition?.cfi || ''
-			);
-			if (!currentCfi) {
-				new Notice(t('epub.reader.readingPositionUnavailable'));
-				return;
-			}
-
-			if (typeof readerService.canonicalizeLocation === 'function') {
-				const canonicalCfi = await readerService.canonicalizeLocation(currentCfi);
-				if (canonicalCfi) {
-					currentCfi = canonicalCfi;
-				}
-			}
-
-			const chapterTitle = readerService.getCurrentChapterTitle()
-				|| getReadingPositionLabel(currentPosition.percent);
-			const bookmark: EpubLastOpenBookmark = {
-				chapterIndex: currentPosition.chapterIndex,
-				cfi: currentCfi,
-				percent: currentPosition.percent,
-				title: chapterTitle,
-				preview: chapterTitle,
-				savedAt: Date.now(),
-			};
-
-			await storageService.saveLastOpenBookmark(book.id, bookmark);
-			showTransientStatus(t('epub.reader.lastReadingPointSavedStatus', { title: chapterTitle }), 2600);
-			new Notice(t('epub.reader.lastReadingPointSaved'));
-		} catch (error) {
-			logger.error('[EpubReaderApp] Failed to save last open bookmark:', error);
-			new Notice(t('epub.reader.lastReadingPointSaveFailed'));
 		}
 	}
 
@@ -2515,6 +2419,20 @@
 		}
 	}
 
+	function resolveExcerptChapterTitle(): string {
+		const format = excerptSettings.chapterLocationFormat ?? 'leaf';
+		if (typeof readerService.getChapterLocationLabel === 'function') {
+			return readerService.getChapterLocationLabel(format);
+		}
+		return readerService.getCurrentChapterTitle();
+	}
+
+	function resolveExcerptChapterLabelMaxLength(): number {
+		return excerptSettings.chapterLocationFormat === 'full'
+			? EpubLinkService.MAX_FULL_CHAPTER_LABEL_LENGTH
+			: EpubLinkService.MAX_CHAPTER_LABEL_LENGTH;
+	}
+
 	function handleGlobalExcerptSettingsChanged(event: Event) {
 		const detail = event instanceof CustomEvent ? event.detail : null;
 		const nextExcerptSettings = detail?.settings;
@@ -2649,64 +2567,12 @@
 		return detail || undefined;
 	}
 
-	function formatRemainingReadingStickerValue(ms: number): string {
-		const totalMinutes = Math.max(1, Math.ceil(ms / 60000));
-		if (totalMinutes < 60) {
-			return t('epub.reader.minutesOnly', { count: totalMinutes });
-		}
-		const hours = Math.floor(totalMinutes / 60);
-		const minutes = totalMinutes % 60;
-		return minutes > 0
-			? t('epub.reader.hoursMinutes', { hours, minutes })
-			: t('epub.reader.hoursOnly', { hours });
-	}
-
-	function getRemainingReadingStickerProps(): { valueText: string; labelText: string; titleText: string } | null {
-		const chapterMs = remainingReadingTime.chapterMs;
-		const bookMs = remainingReadingTime.bookMs;
-		const targetMs = typeof chapterMs === 'number' && chapterMs > 0
-			? chapterMs
-			: typeof bookMs === 'number' && bookMs > 0
-				? bookMs
-				: undefined;
-		if (!targetMs) {
-			return null;
-		}
-		const labelText = typeof chapterMs === 'number' && chapterMs > 0
-			? t('epub.reader.remainingChapter')
-			: t('epub.reader.remainingBook');
-		return {
-			valueText: formatRemainingReadingStickerValue(targetMs),
-			labelText,
-			titleText: t('epub.reader.remainingTimeTitle', {
-				label: labelText,
-				value: formatRemainingReadingStickerValue(targetMs),
-			}),
-		};
-	}
-
 	function getReadingReferenceDeltaText(): string {
 		if (sessionReadingStartPercent === null) {
 			return '0%';
 		}
 		const delta = Math.round(readingProgress - sessionReadingStartPercent);
 		return delta > 0 ? `+${delta}%` : `${delta}%`;
-	}
-
-	function getReadingReferenceDeltaPercent(): number {
-		if (sessionReadingStartPercent === null) {
-			return 0;
-		}
-		return readingProgress - sessionReadingStartPercent;
-	}
-
-	function getReadingReferenceStartText(): string {
-		if (!readingReferencePoint) {
-			return '';
-		}
-		return t('epub.reader.resumePointLabel', {
-			percent: Math.max(0, Math.round(readingReferencePoint.percent)),
-		});
 	}
 
 	function getReadingReferenceTitleText(): string {
@@ -2821,12 +2687,33 @@
 		await readerService.goToPage(pageNumber);
 	}
 
+	function hasPrevChapter(): boolean {
+		return Boolean(book && currentChapterIndex > 0);
+	}
+
 	function hasNextChapter(): boolean {
 		return Boolean(book && currentChapterIndex >= 0 && currentChapterIndex < book.metadata.chapterCount - 1);
 	}
 
-	function syncNextChapterActionVisibility() {
-		showNextChapterAction = Boolean(hasNextChapter() && readerService.isAtCurrentChapterEnd?.());
+	function syncScrolledChapterNavVisibility() {
+		const atChapterEnd = Boolean(readerService.isAtCurrentChapterEnd?.());
+		showScrolledChapterNavActions = Boolean(
+			atChapterEnd && (hasPrevChapter() || hasNextChapter())
+		);
+	}
+
+	async function handlePrevChapter() {
+		if (!hasPrevChapter()) {
+			return;
+		}
+
+		const moved = await readerService.prevChapter?.();
+		if (!moved) {
+			new Notice(t('epub.reader.prevChapterExists'));
+			return;
+		}
+
+		showScrolledChapterNavActions = false;
 	}
 
 	async function handleNextChapter() {
@@ -2840,19 +2727,26 @@
 			return;
 		}
 
-		showNextChapterAction = false;
+		showScrolledChapterNavActions = false;
+	}
+
+	function resolveExcerptLinkSourcePath(forEditorInsert: boolean): string | undefined {
+		if (!forEditorInsert) {
+			return undefined;
+		}
+		return (getLastActiveMarkdownLeaf?.()?.view as MarkdownView | undefined)?.file?.path;
 	}
 
 	function buildNoteContent(
 		text: string,
 		cfiRange: string,
 		color?: string,
-		style?: EpubHighlightStyle
+		style?: EpubHighlightStyle,
+		forEditorInsert = false
 	): string {
 		const chapterIndex = readerService.getCurrentChapterIndex();
-		const chapterTitle = readerService.getCurrentChapterTitle();
+		const chapterTitle = resolveExcerptChapterTitle();
 		const timestamp = excerptSettings.addCreationTime ? formatTimestamp(new Date()) : undefined;
-		const targetNotePath = (getLastActiveMarkdownLeaf?.()?.view as MarkdownView | undefined)?.file?.path;
 		return linkService.buildQuoteBlock(
 			filePath,
 			cfiRange,
@@ -2861,16 +2755,17 @@
 			color,
 			chapterTitle,
 			timestamp,
-			targetNotePath,
+			resolveExcerptLinkSourcePath(forEditorInsert),
 			book?.sourceId,
 			undefined,
-			style
+			style,
+			resolveExcerptChapterLabelMaxLength()
 		);
 	}
 
 	function buildReadingPointSourceLink(text: string, cfiRange: string): string {
 		const chapterIndex = readerService.getCurrentChapterIndex();
-		const chapterTitle = readerService.getCurrentChapterTitle();
+		const chapterTitle = resolveExcerptChapterTitle();
 		return linkService.buildEpubLink(
 			filePath,
 			cfiRange,
@@ -2958,11 +2853,33 @@
 			return;
 		}
 
-		const content = buildNoteContent(text, cfiRange, color, style);
+		const content = buildNoteContent(text, cfiRange, color, style, autoInsert);
 		if (autoInsert) {
 			insertToEditorAndTrack(content);
 		} else {
 			copyTextToClipboard(content);
+		}
+	}
+
+	async function handleCopySelectionLink(
+		action: 'protocolMarkdown' | 'vaultWikilink' | 'obsidianUri' | 'plainText',
+		text: string,
+		cfiRange: string
+	) {
+		if (!hasExcerptNotesCapability()) {
+			if (isPremiumFeaturePreviewEnabled()) {
+				openPremiumFeaturePreview(PREMIUM_FEATURES.EPUB_EXCERPT_NOTES);
+			}
+			return;
+		}
+		const content = linkService.buildSelectionCopyLink(action, filePath, cfiRange, text, {
+			chapterIndex: readerService.getCurrentChapterIndex(),
+			chapterTitle: resolveExcerptChapterTitle(),
+			sourceId: book?.sourceId,
+			chapterLabelMaxLength: resolveExcerptChapterLabelMaxLength(),
+		});
+		if (content) {
+			await copyTextToClipboard(content);
 		}
 	}
 
@@ -2990,7 +2907,7 @@
 			return;
 		}
 		const chapterIndex = readerService.getCurrentChapterIndex();
-		const chapterTitle = readerService.getCurrentChapterTitle();
+		const chapterTitle = resolveExcerptChapterTitle();
 
 		const timestamp = excerptSettings.addCreationTime ? formatTimestamp(new Date()) : undefined;
 		const node = await canvasService.addExcerptNode(
@@ -3002,7 +2919,8 @@
 			color,
 			timestamp,
 			book?.sourceId,
-			style
+			style,
+			resolveExcerptChapterLabelMaxLength()
 		);
 		if (node) {
 			rememberHighlightSourcePath(canvasService.getCanvasPath());
@@ -3282,20 +3200,130 @@
 			| 'bookNotesExportIncludeUnderline'
 			| 'bookNotesExportIncludeStrikethrough'
 			| 'bookNotesExportIncludeWavy'
+			| 'bookNotesExportTemplatePath'
+			| 'bookNotesExportTargetMode'
+			| 'bookNotesExportAppendPath'
 		>>
 	) {
 		await applyAndPersistExcerptSettings(patch);
 	}
 
-	async function updateBookNotesExportTemplate(
-		template: EpubExcerptSettings['bookNotesExportTemplate']
+	function canSubmitBookNotesExport(): boolean {
+		if (!ensureBookNotesExportSelection()) {
+			return false;
+		}
+		if (!String(excerptSettings.bookNotesExportTemplatePath || '').trim()) {
+			return false;
+		}
+		if (
+			excerptSettings.bookNotesExportTargetMode === 'append' &&
+			!String(excerptSettings.bookNotesExportAppendPath || '').trim()
+		) {
+			return false;
+		}
+		return true;
+	}
+
+	function buildBookNotesExportLabels() {
+		return buildBookNotesExportLabelsFromTranslator(t);
+	}
+
+	async function resolveHighlightPageNumber(highlight: ReaderHighlight): Promise<number | undefined> {
+		if (!highlight.cfiRange) {
+			return undefined;
+		}
+		try {
+			const pageNumber = await readerService.getPageNumberFromCfi(highlight.cfiRange);
+			return typeof pageNumber === 'number' && Number.isFinite(pageNumber) && pageNumber > 0
+				? pageNumber
+				: undefined;
+		} catch {
+			return undefined;
+		}
+	}
+
+	async function renderBookNotesExportMarkdown(highlights: ReaderHighlight[]): Promise<string> {
+		if (!book) {
+			throw new Error('Book not ready');
+		}
+		return await renderBookNotesMarkdown({
+			app,
+			book,
+			filePath,
+			highlights,
+			templatePath: excerptSettings.bookNotesExportTemplatePath,
+			templateFolder: excerptSettings.bookNotesExportTemplateFolder,
+			legacyTemplate: excerptSettings.bookNotesExportLegacyTemplate,
+			trimBlocks: excerptSettings.bookNotesExportTrimBlocks,
+			labels: buildBookNotesExportLabels(),
+			formatTimestamp,
+			resolvePageNumber: resolveHighlightPageNumber,
+		});
+	}
+
+	async function exportRenderedBookNotes(
+		markdown: string,
+		options: {
+			bookTitle?: string;
+			targetMode?: EpubExcerptSettings['bookNotesExportTargetMode'];
+			appendTargetPath?: string | null;
+			rememberAppendTarget?: boolean;
+		} = {}
 	): Promise<void> {
-		if (excerptSettings.bookNotesExportTemplate === template) {
+		const plugin = getMarkdownExportHost();
+		if (!plugin?.exportEpubBookNotesToMarkdown) {
+			new Notice(t('epub.reader.exportMarkdownUnavailable'));
 			return;
 		}
-		await applyAndPersistExcerptSettings({
-			bookNotesExportTemplate: template,
+		if (!book) {
+			new Notice(t('epub.reader.bookNotReady'));
+			return;
+		}
+
+		const targetMode = options.targetMode ?? excerptSettings.bookNotesExportTargetMode;
+		const appendTargetPath =
+			options.appendTargetPath ?? excerptSettings.bookNotesExportAppendPath;
+
+		await plugin.exportEpubBookNotesToMarkdown({
+			filePath,
+			markdown,
+			bookTitle: options.bookTitle || book.metadata.title,
+			targetMode,
+			appendTargetPath,
 		});
+
+		if (options.rememberAppendTarget !== false && targetMode === 'append' && appendTargetPath) {
+			await storageService.saveBookNotesExportAppendPath(filePath, appendTargetPath);
+			await updateBookNotesExportSetting({
+				bookNotesExportAppendPath: appendTargetPath,
+			});
+		}
+	}
+
+	async function prepareExportNotesPopoverState(): Promise<void> {
+		const templateFolder = resolveBookNotesExportTemplateFolder(excerptSettings);
+		const templateResult = await ensureDefaultBookNotesExportTemplates(app, templateFolder);
+		const perBookAppendPath = await storageService.loadBookNotesExportAppendPath(filePath);
+		const patch: Partial<EpubExcerptSettings> = {};
+
+		if (!String(excerptSettings.bookNotesExportTemplatePath || '').trim()) {
+			patch.bookNotesExportTemplatePath = templateResult.digestBTemplatePath;
+		}
+		if (perBookAppendPath && !String(excerptSettings.bookNotesExportAppendPath || '').trim()) {
+			patch.bookNotesExportAppendPath = perBookAppendPath;
+		}
+		if (Object.keys(patch).length > 0) {
+			await applyAndPersistExcerptSettings(patch);
+		}
+	}
+
+	async function updateBookNotesExportTargetMode(
+		targetMode: EpubExcerptSettings['bookNotesExportTargetMode']
+	): Promise<void> {
+		if (excerptSettings.bookNotesExportTargetMode === targetMode) {
+			return;
+		}
+		await updateBookNotesExportSetting({ bookNotesExportTargetMode: targetMode });
 	}
 
 	function closeExportNotesPopover() {
@@ -3308,7 +3336,9 @@
 		exportNotesSubmitting = false;
 		// Defer until Obsidian pane menu has dismissed so outside-clicks do not hit both layers.
 		window.setTimeout(() => {
-			exportNotesPopoverOpen = true;
+			void prepareExportNotesPopoverState().finally(() => {
+				exportNotesPopoverOpen = true;
+			});
 		}, 0);
 	}
 
@@ -3323,143 +3353,16 @@
 		if (exportNotesPopoverEl.contains(target)) {
 			return;
 		}
-		if (target instanceof Element && target.closest('.menu')) {
+		if (target instanceof Element && target.closest('.menu, .suggestion-container, select')) {
 			return;
 		}
 		closeExportNotesPopover();
-	}
-
-	function renderHighlightQuote(text: string): string {
-		const normalized = String(text || '')
-			.replace(/\r\n?/g, '\n')
-			.trim();
-		if (!normalized) {
-			return `> ${t('epub.reader.emptyExcerpt')}`;
-		}
-		return normalized
-			.split('\n')
-			.map((line) => `> ${line}`)
-			.join('\n');
 	}
 
 	function getHighlightChapterIndex(highlight: ReaderHighlight): number | undefined {
 		return typeof highlight.chapterIndex === 'number' && Number.isFinite(highlight.chapterIndex)
 			? highlight.chapterIndex
 			: undefined;
-	}
-
-	function getHighlightTextForExport(highlight: ReaderHighlight): string {
-		const normalizedText = String(highlight.text || '').trim();
-		return normalizedText || t('epub.reader.emptyExcerpt');
-	}
-
-	function buildBookHighlightsMarkdownTemplate1(highlights: ReaderHighlight[]): string {
-		const sortedHighlights = [...highlights].sort((left, right) => {
-			const chapterDiff = (left.chapterIndex || 0) - (right.chapterIndex || 0);
-			if (chapterDiff !== 0) {
-				return chapterDiff;
-			}
-			return (left.createdTime || 0) - (right.createdTime || 0);
-		});
-
-		const sections: string[] = [t('epub.reader.notesTitle'), ''];
-		let currentChapterLabel = '';
-		let chapterExcerptIndex = 0;
-
-		for (const highlight of sortedHighlights) {
-			const highlightChapterIndex = getHighlightChapterIndex(highlight);
-			const highlightText = getHighlightTextForExport(highlight);
-			const chapterNumber = typeof highlightChapterIndex === 'number' ? highlightChapterIndex + 1 : 0;
-			const chapterLabel = chapterNumber > 0
-				? t('epub.reader.chapterLabel', { number: chapterNumber })
-				: t('epub.reader.unlocatedChapter');
-			if (chapterLabel !== currentChapterLabel) {
-				currentChapterLabel = chapterLabel;
-				chapterExcerptIndex = 0;
-				sections.push(`## ${chapterLabel}`, '');
-			}
-
-			chapterExcerptIndex += 1;
-			const sourceLink = linkService.buildEpubLink(
-				filePath,
-				highlight.cfiRange,
-				highlightText,
-				highlightChapterIndex,
-				undefined,
-				undefined,
-				book?.sourceId
-			);
-			const metaLines = [
-				highlight.color ? t('epub.reader.exportMeta.color', { value: highlight.color }) : '',
-				getHighlightStyleLabel(highlight) ? t('epub.reader.exportMeta.style', { value: getHighlightStyleLabel(highlight) || '' }) : '',
-				typeof highlight.createdTime === 'number' && highlight.createdTime > 0
-					? t('epub.reader.exportMeta.time', { value: formatTimestamp(new Date(highlight.createdTime)) })
-					: '',
-				sourceLink ? t('epub.reader.exportMeta.source', { value: sourceLink }) : '',
-			].filter(Boolean);
-
-			sections.push(t('epub.reader.excerptHeading', { number: chapterExcerptIndex }), '');
-			sections.push(renderHighlightQuote(highlightText), '');
-			if (metaLines.length > 0) {
-				sections.push(...metaLines, '');
-			}
-		}
-
-		return sections.join('\n').replace(/\n{3,}/g, '\n\n').trim();
-	}
-
-	function buildBookHighlightsMarkdownTemplate2(highlights: ReaderHighlight[]): string {
-		const sortedHighlights = [...highlights].sort((left, right) => {
-			const chapterDiff = (left.chapterIndex || 0) - (right.chapterIndex || 0);
-			if (chapterDiff !== 0) {
-				return chapterDiff;
-			}
-			return (left.createdTime || 0) - (right.createdTime || 0);
-		});
-
-		const sections: string[] = [t('epub.reader.notesTitle'), ''];
-		let currentChapterLabel = '';
-
-		for (const highlight of sortedHighlights) {
-			const highlightChapterIndex = getHighlightChapterIndex(highlight);
-			const highlightText = getHighlightTextForExport(highlight);
-			const chapterNumber = typeof highlightChapterIndex === 'number' ? highlightChapterIndex + 1 : 0;
-			const chapterLabel = chapterNumber > 0
-				? t('epub.reader.chapterLabel', { number: chapterNumber })
-				: t('epub.reader.unlocatedChapter');
-			if (chapterLabel !== currentChapterLabel) {
-				currentChapterLabel = chapterLabel;
-				sections.push(`## ${chapterLabel}`, '');
-			}
-
-			const styleLabel = getHighlightStyleLabel(highlight) || t('epub.reader.highlight');
-			const sourceLink = linkService.buildQuoteBlock(
-				filePath,
-				highlight.cfiRange,
-				highlightText,
-				highlightChapterIndex,
-				highlight.color,
-				highlight.chapterTitle,
-				typeof highlight.createdTime === 'number' && highlight.createdTime > 0
-					? formatTimestamp(new Date(highlight.createdTime))
-					: undefined,
-				undefined,
-				book?.sourceId,
-				highlight.excerptId,
-				highlight.style,
-			);
-
-			sections.push(`### ${styleLabel}`, '');
-			sections.push(sourceLink.trim(), '');
-		}
-
-		return sections.join('\n').replace(/\n{3,}/g, '\n\n').trim();
-	}
-
-	function buildBookHighlightsMarkdown(highlights: ReaderHighlight[]): string {
-		return excerptSettings.bookNotesExportTemplate === 'template2'
-			? buildBookHighlightsMarkdownTemplate2(highlights)
-			: buildBookHighlightsMarkdownTemplate1(highlights);
 	}
 
 	function buildReaderHighlightSelectionKey(highlight: ReaderHighlight): string {
@@ -3519,10 +3422,10 @@
 				return;
 			}
 
-			await plugin.exportEpubBookNotesToMarkdown({
-				filePath,
-				markdown: buildBookHighlightsMarkdown(highlights),
-				bookTitle: book.metadata.title,
+			const markdown = await renderBookNotesExportMarkdown(highlights);
+			await exportRenderedBookNotes(markdown, {
+				targetMode: 'new',
+				rememberAppendTarget: false,
 			});
 		} catch (error) {
 			logger.error('[EpubReaderApp] Failed to export selected highlights to markdown:', error);
@@ -3532,11 +3435,6 @@
 
 	async function exportCurrentChapterHighlightsToMarkdown() {
 		try {
-			const plugin = getMarkdownExportHost();
-			if (!plugin?.exportEpubBookNotesToMarkdown) {
-				new Notice(t('epub.reader.exportMarkdownUnavailable'));
-				return;
-			}
 			if (!book) {
 				new Notice(t('epub.reader.bookNotReady'));
 				return;
@@ -3556,10 +3454,11 @@
 				return;
 			}
 
-			await plugin.exportEpubBookNotesToMarkdown({
-				filePath,
-				markdown: buildBookHighlightsMarkdown(highlights),
+			const markdown = await renderBookNotesExportMarkdown(highlights);
+			await exportRenderedBookNotes(markdown, {
 				bookTitle: `${book.metadata.title} - ${chapterTitle}`,
+				targetMode: 'new',
+				rememberAppendTarget: false,
 			});
 		} catch (error) {
 			logger.error('[EpubReaderApp] Failed to export current chapter highlights to markdown:', error);
@@ -3569,12 +3468,6 @@
 
 	async function exportBookHighlightsToMarkdown(event?: MouseEvent) {
 		try {
-			const plugin = getMarkdownExportHost();
-			if (!plugin?.exportEpubBookNotesToMarkdown) {
-				new Notice(t('epub.reader.exportMarkdownUnavailable'));
-				return;
-			}
-
 			if (!book) {
 				new Notice(t('epub.reader.bookNotReady'));
 				return;
@@ -3585,8 +3478,14 @@
 				return;
 			}
 
-			if (!ensureBookNotesExportSelection()) {
-				new Notice(t('epub.reader.selectAtLeastOneExportType'));
+			if (!canSubmitBookNotesExport()) {
+				if (!ensureBookNotesExportSelection()) {
+					new Notice(t('epub.reader.selectAtLeastOneExportType'));
+				} else if (!String(excerptSettings.bookNotesExportTemplatePath || '').trim()) {
+					new Notice(t('epub.reader.exportNotesPopover.templateRequired'));
+				} else {
+					new Notice(t('epub.reader.exportNotesPopover.appendTargetRequired'));
+				}
 				return;
 			}
 
@@ -3597,11 +3496,8 @@
 				return;
 			}
 
-			await plugin.exportEpubBookNotesToMarkdown({
-				filePath,
-				markdown: buildBookHighlightsMarkdown(highlights),
-				bookTitle: book.metadata.title,
-			});
+			const markdown = await renderBookNotesExportMarkdown(highlights);
+			await exportRenderedBookNotes(markdown);
 			closeExportNotesPopover();
 		} catch (error) {
 			logger.error('[EpubReaderApp] Failed to export book highlights to markdown:', error);
@@ -3618,7 +3514,13 @@
 			return;
 		}
 		exportNotesSubmitting = true;
-		await exportBookHighlightsToMarkdown();
+		try {
+			await exportBookHighlightsToMarkdown();
+		} finally {
+			if (exportNotesPopoverOpen) {
+				exportNotesSubmitting = false;
+			}
+		}
 	}
 
 	async function handleHighlightExtractToCard(info: HighlightClickInfo) {
@@ -3712,7 +3614,7 @@
 	async function handleScreenshotCapture(blob: Blob, rect: ScreenshotRect) {
 		const currentCfi = readerService.getCurrentCFI();
 		const chapterIndex = readerService.getCurrentChapterIndex();
-		const chapterTitle = readerService.getCurrentChapterTitle();
+		const chapterTitle = resolveExcerptChapterTitle();
 		const targetNotePath = (getLastActiveMarkdownLeaf?.()?.view as MarkdownView | undefined)?.file?.path;
 
 		let canvasContent: string | null = null;
@@ -3792,59 +3694,6 @@
 		});
 	}
 
-	async function markIRResumePoint(event?: MouseEvent) {
-		try {
-			const currentCfi = readerService.getCurrentCFI();
-			if (!currentCfi) {
-				new Notice(t('epub.reader.noAvailableReadingPosition'));
-				return;
-			}
-
-			const chapterHref = readerService.getCurrentChapterHref?.() || '';
-			const chapterTitle = readerService.getCurrentChapterTitle() || undefined;
-			const plugin = getIncrementalReadingHost();
-			if (!plugin?.markEpubResumePointFromReader) {
-				new Notice(t('epub.reader.irUnavailable'));
-				return;
-			}
-
-			const topicProvider = plugin.getAvailableEpubIncrementalReadingTopics;
-			if (event instanceof MouseEvent && typeof topicProvider === 'function') {
-				const topics = (await topicProvider())
-					.filter((topic) => String(topic.id || '').trim() && String(topic.name || '').trim());
-				if (topics.length > 0) {
-					const menu = new Menu();
-					for (const topic of topics) {
-						menu.addItem((menuItem) => {
-							menuItem.setTitle(topic.name);
-							menuItem.onClick(() => {
-								void plugin.markEpubResumePointFromReader?.({
-									filePath,
-									cfi: currentCfi,
-									chapterHref,
-									chapterTitle,
-									deckId: topic.id,
-								});
-							});
-						});
-					}
-					menu.showAtMouseEvent(event);
-					return;
-				}
-			}
-
-			await plugin.markEpubResumePointFromReader({
-				filePath,
-				cfi: currentCfi,
-				chapterHref,
-				chapterTitle,
-			});
-		} catch (e) {
-			logger.error('[EpubReaderApp] markIRResumePoint failed:', e);
-			new Notice(t('epub.reader.irResumeSaveFailed'));
-		}
-	}
-
 	function handleEpubNavigateEvent(e: Event) {
 		const detail = (e as CustomEvent).detail;
 		if (!detail || detail.filePath !== filePath) return;
@@ -3871,6 +3720,17 @@
 			referencePopoverStats = null;
 			closeCommentEditor();
 			highlightToolbarInfo = info;
+		});
+	}
+
+	function setupScrolledChapterEndHandler() {
+		scrolledChapterEndCleanup?.();
+		scrolledChapterEndCleanup = null;
+		if (typeof readerService.onScrolledChapterEndChange !== 'function') {
+			return;
+		}
+		scrolledChapterEndCleanup = readerService.onScrolledChapterEndChange(() => {
+			syncScrolledChapterNavVisibility();
 		});
 	}
 
@@ -4946,7 +4806,6 @@
 					|| normalizedSettings.layoutMode !== savedReaderSettings.layoutMode
 					|| normalizedSettings.flowMode !== savedReaderSettings.flowMode
 					|| normalizedSettings.footnoteClickAction !== savedReaderSettings.footnoteClickAction
-					|| normalizedSettings.showTopSticker !== savedReaderSettings.showTopSticker
 					|| normalizedSettings.paragraphModeEnabled !== savedReaderSettings.paragraphModeEnabled
 				) {
 					await storageService.saveReaderSettings(normalizedSettings);
@@ -4994,6 +4853,7 @@
 		setupReferenceBadgeClickHandler();
 		setupFootnotePreviewHandler();
 		trackHighlightSourceChanges();
+		setupScrolledChapterEndHandler();
 		readerService.setBookEndAdvanceHandler?.(handleBookEndAdvanceAttempt);
 		const activeLeafChangeRef = app.workspace.on(
 			'active-leaf-change',
@@ -5036,7 +4896,6 @@
 			showPremiumFeaturePreview: openPremiumFeaturePreview,
 			saveReadingReferencePoint: hasReadingReferenceCapability() ? saveReadingReferencePoint : undefined,
 			openReadingPositionMenu: openReadingReferencePointMenu,
-			saveLastOpenBookmark,
 			getReadingPositionAutoSaveEnabled: hasReadingProgressCapability()
 				? () => getContinuousReadingPositionAutoSaveConfig().enabled
 				: undefined,
@@ -5046,8 +4905,6 @@
 			bindCanvasPath: (canvasPath: string) => { bindCanvas(canvasPath); },
 			unbindCanvas: () => { unbindCanvas(); },
 			getCanvasService: () => canvasService,
-			canMarkIRResumePoint: () => hasMarkIRResumePointCapability(),
-			markIRResumePoint,
 			exportCurrentChapterToMarkdown: hasChapterExportCapability() ? exportCurrentChapterToMarkdown : undefined,
 			exportCurrentChapterHighlightsToMarkdown: hasExcerptNotesCapability()
 				? exportCurrentChapterHighlightsToMarkdown
@@ -5094,7 +4951,6 @@
 				clearTimeout(deferredHighlightReloadTimer);
 				deferredHighlightReloadTimer = null;
 			}
-			clearRemainingReadingTimeDebounceTimer();
 			flushReaderStoreSync();
 			if (rootEl) {
 				rootEl.removeEventListener('pointerdown', syncAsActiveEpubDocument);
@@ -5112,6 +4968,8 @@
 				window.removeEventListener(LEGACY_EPUB_NAVIGATE_EVENT, handleEpubNavigateEvent);
 			}
 			sourceLocateOverlay.clear();
+			scrolledChapterEndCleanup?.();
+			scrolledChapterEndCleanup = null;
 			readerService.setBookEndAdvanceHandler?.(null);
 			void persistCurrentReadingProgress(book);
 			readerService.destroy();
@@ -5138,18 +4996,12 @@
 		const _widthMode = settings.widthMode;
 		const _layoutMode = settings.layoutMode;
 		const _viewport = viewportEl;
-		const _topStickerRail = topStickerRailEl;
-		const _showTopSticker = settings.showTopSticker;
-		const _topStickerLayout = settings.topStickerLayout;
 		const _readingReferencePoint = readingReferencePoint?.cfi;
 		void _flowMode;
 		void _showScrolledSideNav;
 		void _widthMode;
 		void _layoutMode;
 		void _viewport;
-		void _topStickerRail;
-		void _showTopSticker;
-		void _topStickerLayout;
 		void _readingReferencePoint;
 		untrack(() => {
 			setupScrolledNavMetricsObserver();
@@ -5200,14 +5052,30 @@
 	data-layout={settings.layoutMode}
 	data-width={settings.widthMode}
 	data-paragraph-mode={settings.paragraphModeEnabled ? 'active' : 'inactive'}
-	data-top-sticker-layout={getTopStickerLayoutState()}
 	data-scrolled-side-nav={isDesktopScrolledSideNavVisible() ? 'visible' : 'hidden'}
 	style={getReaderRootStyle()}
 	bind:this={rootEl}
 >
 	{#if loading}
 		<div class="epub-loading">
-			<EpubLoadingState message={t('epub.reader.loading')} />
+			<div class="epub-loading__panel">
+				<EpubLoadingState
+					message={bookLoadSlowWarning
+						? buildBookLoadSlowWarningMessage(filePath)
+						: t('epub.reader.loading')}
+				/>
+				{#if bookLoadSlowWarning}
+					<button
+						type="button"
+						class="epub-loading__cancel-btn"
+						onclick={() => {
+							void cancelSlowBookLoad();
+						}}
+					>
+						{t('epub.reader.cancelLoading')}
+					</button>
+				{/if}
+			</div>
 		</div>
 	{:else if errorMsg}
 		<div class="epub-error">
@@ -5271,9 +5139,10 @@
 							progress: hasReadingProgressCapability() ? readingProgress : 0,
 							chapterTitle: readerService.getCurrentChapterTitle(),
 							chapterHref: readerService.getCurrentChapterHref?.() || '',
+							paginationInfo,
 						});
+						syncScrolledChapterNavVisibility();
 						scheduleScrolledNavLayoutSync();
-						scheduleRemainingReadingTimeEstimateRefresh();
 					}}
 					onPaginationChange={(info) => {
 						paginationInfo = info;
@@ -5283,7 +5152,7 @@
 							chapterTitle: readerService.getCurrentChapterTitle(),
 							chapterHref: readerService.getCurrentChapterHref?.() || '',
 						});
-						syncNextChapterActionVisibility();
+						syncScrolledChapterNavVisibility();
 						scheduleScrolledNavLayoutSync();
 					}}
 					onChapterChange={(title) => {
@@ -5294,7 +5163,7 @@
 								chapterHref: readerService.getCurrentChapterHref?.() || '',
 							});
 						}
-						syncNextChapterActionVisibility();
+						syncScrolledChapterNavVisibility();
 						onChapterTitleChange?.(String(title || '').trim());
 					}}
 					onReaderReady={() => {
@@ -5311,9 +5180,8 @@
 						}
 						epubNavigation.flushPendingBookLocate();
 						void migrateLegacyStoredLocations();
-						syncNextChapterActionVisibility();
+						syncScrolledChapterNavVisibility();
 						scheduleScrolledNavLayoutSync();
-						void refreshRemainingReadingTimeEstimate();
 					}}
 					onRenderError={(message) => {
 						logger.error('[EpubReaderApp] Reader view render error:', message);
@@ -5332,44 +5200,39 @@
 					vertical={true}
 					statusText={getBottomNavStatusText()}
 					statusDetail={getBottomNavStatusDetail()}
-					stickerWiggleEnabled={settings.topStickerWiggleEnabled}
 				/>
 			{/if}
 
-			{#if !settings.paragraphModeEnabled && useVerticalNav() && showNextChapterAction}
+			{#if !settings.paragraphModeEnabled && useVerticalNav() && showScrolledChapterNavActions}
 				<div class="epub-scrolled-chapter-action-slot">
-					<button
-						type="button"
-						class="epub-scrolled-chapter-action"
-						onclick={() => void handleNextChapter()}
-					>
-						{t('epub.reader.nextChapter')}
-					</button>
-				</div>
-			{/if}
-
-			{#if !settings.paragraphModeEnabled && shouldRenderTopStickerRail()}
-				<div class="epub-top-sticker-rail" data-layout={getEffectiveTopStickerLayout()} bind:this={topStickerRailEl}>
-					{#if getRemainingReadingStickerProps()}
-						<EpubRemainingReadingSticker
-							valueText={getRemainingReadingStickerProps()?.valueText || ''}
-							labelText={getRemainingReadingStickerProps()?.labelText || ''}
-							titleText={getRemainingReadingStickerProps()?.titleText || ''}
-							wiggleEnabled={settings.topStickerWiggleEnabled}
-						/>
-					{/if}
-
-					{#if hasReadingReferenceCapability() && readingReferencePoint}
-						<EpubReadingReferenceSticker
-							referencePoint={readingReferencePoint}
-							deltaPercent={getReadingReferenceDeltaPercent()}
-							deltaText={getReadingReferenceDeltaText()}
-							startText={getReadingReferenceStartText()}
-							titleText={getReadingReferenceTitleText()}
-							wiggleEnabled={settings.topStickerWiggleEnabled}
-							onOpenMenu={openReadingReferencePointMenu}
-						/>
-					{/if}
+					<div class="epub-scrolled-chapter-action-start">
+						{#if hasPrevChapter()}
+							<button
+								type="button"
+								class="clickable-icon epub-nav-btn"
+								title={t('epub.reader.prevChapter')}
+								aria-label={t('epub.reader.prevChapter')}
+								onclick={() => void handlePrevChapter()}
+							>
+								<span class="epub-nav-btn-icon" use:icon={'arrow-left'}></span>
+								<span class="epub-nav-btn-label">{t('epub.reader.prevChapter')}</span>
+							</button>
+						{/if}
+					</div>
+					<div class="epub-scrolled-chapter-action-end">
+						{#if hasNextChapter()}
+							<button
+								type="button"
+								class="clickable-icon epub-nav-btn"
+								title={t('epub.reader.nextChapter')}
+								aria-label={t('epub.reader.nextChapter')}
+								onclick={() => void handleNextChapter()}
+							>
+								<span class="epub-nav-btn-icon" use:icon={'arrow-right'}></span>
+								<span class="epub-nav-btn-label">{t('epub.reader.nextChapter')}</span>
+							</button>
+						{/if}
+					</div>
 				</div>
 			{/if}
 
@@ -5465,6 +5328,11 @@
 				showPremiumFeaturePreviewEnabled={isPremiumFeaturePreviewEnabled()}
 				onRequestPremiumFeaturePreview={openPremiumFeaturePreview}
 				onInsertToNote={hasExcerptNotesCapability() ? handleInsertToNote : undefined}
+				onCopySelectionLink={
+					hasExcerptNotesCapability() || isPremiumFeaturePreviewEnabled()
+						? handleCopySelectionLink
+						: undefined
+				}
 				onExtractToCard={handleExtractToCard}
 				onCreateReadingPoint={hasCreateReadingPointCapability() ? handleCreateReadingPoint : undefined}
 				onAutoInsert={hasExcerptNotesCapability() ? handleAutoInsertSelection : undefined}
@@ -5613,92 +5481,20 @@
 				</div>
 			{/if}
 
-			{#if exportNotesPopoverOpen}
-				<div
-					class="epub-settings-float epub-export-notes-popover epub-glass-panel"
-					bind:this={exportNotesPopoverEl}
-				>
-					<div class="epub-export-notes-popover__header">
-						<div class="epub-export-notes-popover__title">{t('epub.reader.exportNotesPopover.title')}</div>
-					</div>
-					<div class="epub-export-notes-popover__section">
-						<div class="epub-export-notes-popover__label">{t('epub.reader.exportNotesPopover.templateLabel')}</div>
-						<div class="epub-export-notes-popover__template-group">
-							<button
-								type="button"
-								class:active={excerptSettings.bookNotesExportTemplate !== 'template2'}
-								onclick={() => void updateBookNotesExportTemplate('template1')}
-							>{t('epub.reader.exportNotesPopover.template1')}</button>
-							<button
-								type="button"
-								class:active={excerptSettings.bookNotesExportTemplate === 'template2'}
-								onclick={() => void updateBookNotesExportTemplate('template2')}
-							>{t('epub.reader.exportNotesPopover.template2')}</button>
-						</div>
-					</div>
-					<div class="epub-export-notes-popover__section">
-						<div class="epub-export-notes-popover__label">{t('epub.reader.exportNotesPopover.typeLabel')}</div>
-						<div class="epub-export-notes-popover__toggle-list">
-							<label class="epub-export-notes-popover__toggle-row">
-								<span>{t('epub.reader.highlight')}</span>
-								<span class="epub-export-notes-popover__toggle-switch">
-									<input
-										type="checkbox"
-										checked={excerptSettings.bookNotesExportIncludeHighlight}
-										onchange={(event) => void updateBookNotesExportSetting({
-											bookNotesExportIncludeHighlight: (event.currentTarget as HTMLInputElement).checked,
-										})}
-									/>
-									<span class="epub-export-notes-popover__toggle-slider"></span>
-								</span>
-							</label>
-							<label class="epub-export-notes-popover__toggle-row">
-								<span>{t('epub.reader.underline')}</span>
-								<span class="epub-export-notes-popover__toggle-switch">
-									<input
-										type="checkbox"
-										checked={excerptSettings.bookNotesExportIncludeUnderline}
-										onchange={(event) => void updateBookNotesExportSetting({
-											bookNotesExportIncludeUnderline: (event.currentTarget as HTMLInputElement).checked,
-										})}
-									/>
-									<span class="epub-export-notes-popover__toggle-slider"></span>
-								</span>
-							</label>
-							<label class="epub-export-notes-popover__toggle-row">
-								<span>{t('epub.reader.strikethrough')}</span>
-								<span class="epub-export-notes-popover__toggle-switch">
-									<input
-										type="checkbox"
-										checked={excerptSettings.bookNotesExportIncludeStrikethrough}
-										onchange={(event) => void updateBookNotesExportSetting({
-											bookNotesExportIncludeStrikethrough: (event.currentTarget as HTMLInputElement).checked,
-										})}
-									/>
-									<span class="epub-export-notes-popover__toggle-slider"></span>
-								</span>
-							</label>
-							<label class="epub-export-notes-popover__toggle-row">
-								<span>{t('epub.reader.wavy')}</span>
-								<span class="epub-export-notes-popover__toggle-switch">
-									<input
-										type="checkbox"
-										checked={excerptSettings.bookNotesExportIncludeWavy}
-										onchange={(event) => void updateBookNotesExportSetting({
-											bookNotesExportIncludeWavy: (event.currentTarget as HTMLInputElement).checked,
-										})}
-									/>
-									<span class="epub-export-notes-popover__toggle-slider"></span>
-								</span>
-							</label>
-						</div>
-					</div>
-					<div class="epub-export-notes-popover__actions">
-						<button type="button" class="epub-export-notes-popover__action" onclick={closeExportNotesPopover}>{t('epub.reader.exportNotesPopover.cancel')}</button>
-						<button type="button" class="epub-export-notes-popover__action epub-export-notes-popover__action--primary" disabled={exportNotesSubmitting} onclick={submitBookNotesExport}>{t('epub.reader.exportNotesPopover.export')}</button>
-					</div>
-				</div>
-			{/if}
+			<BookNotesExportPopover
+				{app}
+				open={exportNotesPopoverOpen}
+				bind:exportNotesPopoverEl
+				{excerptSettings}
+				exportNotesSubmitting={exportNotesSubmitting}
+				canSubmit={canSubmitBookNotesExport()}
+				{t}
+				{isMarkdownVaultFile}
+				onUpdateSetting={updateBookNotesExportSetting}
+				onUpdateTargetMode={updateBookNotesExportTargetMode}
+				onClose={closeExportNotesPopover}
+				onSubmit={submitBookNotesExport}
+			/>
 
 		</div>
 
@@ -5713,7 +5509,6 @@
 					vertical={false}
 					statusText={getBottomNavStatusText()}
 					statusDetail={getBottomNavStatusDetail()}
-					stickerWiggleEnabled={settings.topStickerWiggleEnabled}
 				/>
 			</div>
 		{/if}

@@ -42,7 +42,9 @@ vi.mock('../epub-premium', () => ({
 	ensureBookSourceLocationAccess: ensureBookSourceLocationAccessMock,
 }));
 
+import { TFile } from 'obsidian';
 import { EpubLinkService } from '../EpubLinkService';
+import { EPUB_RUNTIME } from '../epub-runtime';
 import { PREMIUM_FEATURES } from '../../premium/PremiumFeatureGuard';
 
 const encodeCompactField = (value: string): string => Buffer.from(value, 'utf8').toString('base64url');
@@ -166,6 +168,113 @@ describe('EpubLinkService legacy link compatibility', () => {
 		});
 	});
 
+	it('builds vault-internal locator hrefs for post-processor navigation', () => {
+		expect(
+			EpubLinkService.buildEpubLocatorHref(
+				'Books/demo.epub',
+				'epubcfi(/6/2)',
+				'Hello',
+				3,
+				'epubsrc-demo',
+				'excerpt-fixed'
+			)
+		).toBe('Books/demo.epub#weave-cfi=epubcfi(/6/2)&sid=epubsrc-demo&eid=excerpt-fixed');
+		expect(
+			EpubLinkService.buildEpubLocatorHref(
+				'Books/demo.epub',
+				'epubcfi(/6/2)',
+				'Hello',
+				3,
+				'epubsrc-demo',
+				undefined,
+				{ includeChapter: true }
+			)
+		).toBe('Books/demo.epub#weave-cfi=epubcfi(/6/2)&chapter=3&sid=epubsrc-demo');
+	});
+
+	it('builds canonical obsidian protocol links without vault restrictions', () => {
+		const service = new EpubLinkService({} as any);
+		const href = service.buildObsidianProtocolHref('附件/百年孤独.epub', 'epubcfi(/6/18!/4/2)', {
+			chapter: 8,
+			sourceId: 'epubsrc-b37d62ebb025f244ebc01ee6',
+		});
+
+		expect(href.startsWith(`obsidian://${EPUB_RUNTIME.protocol.primaryName}?`)).toBe(true);
+		expect(href).not.toMatch(/vault=/i);
+		expect(href).toContain('file=');
+		expect(href).toContain('cfi=');
+		expect(href).toContain('chapter=8');
+		expect(href).toContain('sid=epubsrc-b37d62ebb025f244ebc01ee6');
+
+		const markdown = service.buildProtocolMarkdownLink(
+			'附件/百年孤独.epub',
+			'epubcfi(/6/18!/4/2)',
+			'Hello',
+			8,
+			'part0007',
+			'epubsrc-b37d62ebb025f244ebc01ee6'
+		);
+		expect(markdown).toMatch(
+			new RegExp(`^\\[[^\\]]+part0007[^\\]]*\\]\\(obsidian://${EPUB_RUNTIME.protocol.primaryName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\?`)
+		);
+		expect(EpubLinkService.parseLinkMarkup(markdown)).toEqual({
+			filePath: '附件/百年孤独.epub',
+			cfi: 'epubcfi(/6/18!/4/2)',
+			text: '',
+			chapter: 8,
+			sourceId: 'epubsrc-b37d62ebb025f244ebc01ee6',
+		});
+	});
+
+	it('treats only vault-bound protocol links as legacy', () => {
+		const legacy =
+			'[EPUB来源](obsidian://weave-epub?vault=Vault&file=Books%2Fdemo.epub&cfi=epubcfi(/6/2)&text=Hello)';
+		const canonical = `[百年孤独](obsidian://${EPUB_RUNTIME.protocol.primaryName}?file=Books%2Fdemo.epub&cfi=epubcfi(/6/2)&chapter=8&sid=epubsrc-demo)`;
+
+		expect(EpubLinkService.isLegacyProtocolHref(legacy)).toBe(true);
+		expect(EpubLinkService.isLegacyEpubLinkMarkup(legacy)).toBe(true);
+		expect(EpubLinkService.isLegacyProtocolHref(canonical)).toBe(false);
+		expect(EpubLinkService.isLegacyEpubLinkMarkup(canonical)).toBe(false);
+	});
+
+	it('does not migrate canonical protocol links to wikilinks', () => {
+		const service = new EpubLinkService({} as any);
+		const canonical = `[百年孤独](obsidian://${EPUB_RUNTIME.protocol.primaryName}?file=Books%2Fdemo.epub&cfi=epubcfi(/6/2)&chapter=8&sid=epubsrc-demo)`;
+		const migrated = service.migrateLegacyEpubLinksInContent(`前文 ${canonical} 后文`);
+
+		expect(migrated.changed).toBe(false);
+		expect(migrated.content).toBe(`前文 ${canonical} 后文`);
+	});
+
+	it('uses canonical vault paths for portable links and relative paths only when a source note is provided', () => {
+		const bookFile = new TFile();
+		const app = {
+			vault: {
+				getAbstractFileByPath: (path: string) => (path === 'Books/demo.epub' ? bookFile : null),
+			},
+			fileManager: {
+				generateMarkdownLink: vi.fn(() => '[[../Books/demo.epub]]'),
+			},
+		};
+		const service = new EpubLinkService(app as any);
+
+		expect(service.buildEpubLink('Books/demo.epub', 'readium:abc', 'Hello')).toMatch(
+			/^\[\[Books\/demo\.epub#weave-cfi=/
+		);
+		expect(app.fileManager.generateMarkdownLink).not.toHaveBeenCalled();
+
+		const relative = service.buildEpubLink(
+			'Books/demo.epub',
+			'readium:abc',
+			'Hello',
+			undefined,
+			undefined,
+			'Notes/deep/note.md'
+		);
+		expect(relative).toMatch(/^\[\[\.\.\/Books\/demo\.epub#weave-cfi=/);
+		expect(app.fileManager.generateMarkdownLink).toHaveBeenCalled();
+	});
+
 	it('builds compact cfi-only wikilinks for new excerpts', () => {
 		const service = new EpubLinkService({} as any);
 
@@ -178,11 +287,12 @@ describe('EpubLinkService legacy link compatibility', () => {
 		);
 
 		expect(built).toMatch(/^\[\[Books\/demo\.epub#weave-cfi=/);
+		expect(built).not.toContain('&text=');
 		expect(EpubLinkService.parseLinkMarkup(built)).toEqual({
 			filePath: 'Books/demo.epub',
 			cfi: 'readium:abc',
-			text: 'Hello world',
-			chapter: 3,
+			text: '',
+			chapter: undefined,
 			sourceId: undefined,
 			excerptId: undefined,
 		});
@@ -201,10 +311,11 @@ describe('EpubLinkService legacy link compatibility', () => {
 		);
 
 		expect(built).toMatch(/^\[\[Books\/demo\.epub#weave-cfi=.*&sid=epubsrc-fixed\|demo\]\]$/);
+		expect(built).not.toContain('&text=');
 		expect(EpubLinkService.parseLinkMarkup(built)).toEqual({
 			filePath: 'Books/demo.epub',
 			cfi: 'epubcfi(/6/2)',
-			text: 'Hello',
+			text: '',
 			chapter: undefined,
 			sourceId: 'epubsrc-fixed',
 		});
@@ -224,10 +335,11 @@ describe('EpubLinkService legacy link compatibility', () => {
 		);
 
 		expect(built).toMatch(/&sid=epubsrc-fixed&eid=excerpt-fixed\|demo\]\]$/);
+		expect(built).not.toContain('&text=');
 		expect(EpubLinkService.parseLinkMarkup(built)).toEqual({
 			filePath: 'Books/demo.epub',
 			cfi: 'epubcfi(/6/4)',
-			text: 'Hello excerpt',
+			text: '',
 			chapter: undefined,
 			sourceId: 'epubsrc-fixed',
 			excerptId: 'excerpt-fixed',
@@ -264,10 +376,25 @@ describe('EpubLinkService legacy link compatibility', () => {
 			14,
 			'red',
 			'根据意图评判我们的行动',
-			'2026-03-26 19:08'
+			'2026-03-26 19:08',
+			undefined,
+			'epubsrc-demo',
+			'excerpt-fixed'
 		)).toMatch(
-			/^> \[!EPUB\|red\] \[\[Books\/demo\.epub#weave-cfi=readium:abc(?:&[^|]+)*\|demo\]\] \[根据意图评判我们的行动\] 2026-03-26 19:08\n> Hello world\n$/
+			/^> \[!EPUB\|red\] \[\[Books\/demo\.epub#weave-cfi=readium:abc(?:&[^|]+)*&eid=excerpt-fixed\|demo\]\] \[根据意图评判我们的行动\] 2026-03-26 19:08\n> Hello world\n$/
 		);
+		expect(service.buildQuoteBlock(
+			'Books/demo.epub',
+			'readium:abc',
+			'Hello world',
+			14,
+			'red',
+			'根据意图评判我们的行动',
+			'2026-03-26 19:08',
+			undefined,
+			'epubsrc-demo',
+			'excerpt-fixed'
+		)).not.toContain('&text=');
 	});
 
 	it('builds and parses combined highlight color and style metadata', () => {
@@ -345,20 +472,22 @@ describe('EpubLinkService legacy link compatibility', () => {
 		expect(migrated.updatedLinks).toBe(2);
 		const lines = migrated.content.split('\n');
 		expect(lines[0]).toMatch(/^前文 \[\[Books\/demo\.epub#weave-cfi=readium:abc(?:&[^|]+)*\|demo\]\]$/);
+		expect(lines[0]).not.toContain('&text=');
 		expect(lines[1]).toMatch(/^\[\[Books\/demo\.epub#weave-cfi=epubcfi\(\/6\/2\)(?:&[^|]+)*\|demo\]\]$/);
+		expect(lines[1]).not.toContain('&text=');
 		expect(lines[2]).toBe('后文 [[Books/demo.epub#weave-cfi=readium:xyz|demo]]');
 		expect(EpubLinkService.parseLinkMarkup(lines[0].replace(/^前文 /, ''))).toEqual({
 			filePath: 'Books/demo.epub',
 			cfi: 'readium:abc',
-			text: 'Hello world',
-			chapter: 3,
+			text: '',
+			chapter: undefined,
 			sourceId: undefined,
 			excerptId: undefined,
 		});
 		expect(EpubLinkService.parseLinkMarkup(lines[1])).toEqual({
 			filePath: 'Books/demo.epub',
 			cfi: 'epubcfi(/6/2)',
-			text: 'Hello',
+			text: '',
 			chapter: undefined,
 			sourceId: undefined,
 			excerptId: undefined,
@@ -392,5 +521,78 @@ describe('EpubLinkService legacy link compatibility', () => {
 		expect(result.content).toMatch(
 			/^\[\[Books\/demo\.epub#weave-cfi=epubcfi\(\/6\/2\)(?:&[^|]+)*&sid=epubsrc-[^|]+\|demo\]\]$/
 		);
+		expect(result.content).not.toContain('&text=');
+	});
+
+	it('compresses long epubcfi locators with weave-loc payloads', () => {
+		const service = new EpubLinkService({} as any);
+		const longCfi =
+			'epubcfi(/6/22!/4[8IL20-1efb9360294f40a08e8dc1dedc51b416]/8,/1:0,/1:20)';
+
+		const built = service.buildEpubLink(
+			'Books/demo.epub',
+			longCfi,
+			'伊壁鸠鲁不要智者去预料和操心未来。',
+			10,
+			undefined,
+			undefined,
+			'epubsrc-demo',
+			'we-abc123',
+			{ preferCompactLocator: true }
+		);
+
+		expect(built).toContain('#weave-loc=');
+		expect(built).not.toContain('&text=');
+		expect(built).toContain('&eid=we-abc123');
+		expect(EpubLinkService.parseLinkMarkup(built)).toEqual({
+			filePath: 'Books/demo.epub',
+			cfi: longCfi,
+			text: '',
+			chapter: undefined,
+			sourceId: 'epubsrc-demo',
+			excerptId: 'we-abc123',
+		});
+	});
+
+	it('keeps callout source links short even when quote body contains nested epub links', () => {
+		const service = new EpubLinkService({} as any);
+		const nestedBody =
+			'伊壁鸠鲁不要智者去预料和操心未来。\n[!EPUB|green] [[10-项目/Tuanki开发/随桥鸟飞行  复杂系统的奇境 (乔治•帕里西) (Z-Library).epub#weave-cfi=epubcfi(/6/54!/4/4,/1:0,/1:40)&sid=epubsrc-mowyj7am112pwe|随桥鸟飞行]]';
+
+		const quoteBlock = service.buildQuoteBlock(
+			'附件/蒙田随笔全集.epub',
+			'epubcfi(/6/22!/4[8IL20-1efb9360294f40a08e8dc1dedc51b416]/8,/1:0,/1:20)',
+			nestedBody,
+			10,
+			'green',
+			'part0011 split 0000',
+			'2026-05-10 09:17',
+			'Notes/demo.md',
+			'epubsrc-montaigne',
+			'we-montaigne'
+		);
+
+		const headerLine = quoteBlock.split('\n')[0] || '';
+		expect(headerLine.length).toBeLessThan(320);
+		expect(headerLine).not.toContain('&text=');
+		expect(headerLine).toContain('&eid=we-montaigne');
+		expect(quoteBlock).toContain(nestedBody.split('\n')[0]);
+		expect(quoteBlock).not.toMatch(/\^we-montaigne/);
+	});
+
+	it('builds selection toolbar copy links without duplicating quote text in vault wikilinks', () => {
+		const service = new EpubLinkService({} as any);
+		const vaultLink = service.buildSelectionCopyLink(
+			'vaultWikilink',
+			'Books/demo.epub',
+			'epubcfi(/6/22!/4/8,/1:0,/1:20)',
+			'Hello world',
+			{ chapterIndex: 3, sourceId: 'epubsrc-demo' }
+		);
+
+		expect(vaultLink).toMatch(/^\[\[Books\/demo\.epub#/);
+		expect(vaultLink).not.toContain('&text=');
+		expect(vaultLink).toContain('&chapter=3');
+		expect(vaultLink).toContain('&sid=epubsrc-demo');
 	});
 });

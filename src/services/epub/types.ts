@@ -159,7 +159,6 @@ export interface EpubReaderSettings {
 	footnoteClickAction: EpubFootnoteClickAction;
 	showTopSticker: boolean;
 	topStickerLayout: EpubTopStickerLayout;
-	topStickerWiggleEnabled: boolean;
 	paragraphModeEnabled: boolean;
 	paragraphModeFontSize: EpubParagraphModeFontSize;
 	paragraphModeFontScale: number;

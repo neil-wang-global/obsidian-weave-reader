@@ -142,6 +142,37 @@ describe('EpubLinkPostProcessor', () => {
 		);
 	});
 
+	it('rewrites protocol markdown links to internal locator hrefs before navigation', async () => {
+		const navigateSpy = vi
+			.spyOn(EpubLinkService.prototype, 'navigateToEpubLocation')
+			.mockResolvedValue(undefined);
+
+		const container = document.createElement('div');
+		container.innerHTML =
+			'<a class="external-link" href="obsidian://weave-epub?file=Books%2Fdemo.epub&cfi=epubcfi(/6/2)&chapter=3&sid=epubsrc-demo">Demo</a>';
+
+		const processor = createEpubLinkPostProcessor({} as any);
+		processor(container, {} as any);
+
+		const link = container.querySelector('a');
+		expect(link).not.toBeNull();
+		expect(link!.getAttribute('href')).toBe(
+			'Books/demo.epub#weave-cfi=epubcfi(/6/2)&chapter=3&sid=epubsrc-demo'
+		);
+		expect(link!.classList.contains('internal-link')).toBe(true);
+
+		link!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+		expect(navigateSpy).toHaveBeenCalledTimes(1);
+		expect(navigateSpy).toHaveBeenCalledWith(
+			'Books/demo.epub',
+			'epubcfi(/6/2)',
+			'',
+			'epubsrc-demo',
+			undefined
+		);
+	});
+
 	it('supports legacy tuanki-cfi equals links even when the anchor is not marked as an internal link', async () => {
 		const navigateSpy = vi
 			.spyOn(EpubLinkService.prototype, 'navigateToEpubLocation')

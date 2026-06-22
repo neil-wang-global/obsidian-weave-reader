@@ -61,6 +61,8 @@ export interface EpubHostExportBookNotesInput {
 	markdown: string;
 	bookTitle?: string;
 	sourceLink?: string;
+	targetMode?: "new" | "append";
+	appendTargetPath?: string | null;
 }
 
 export interface EpubHostSelectedTextAISplitMenuOptions {
@@ -92,6 +94,21 @@ export interface EpubHostAISplitConfigModalInput {
 
 export interface EpubHostCapabilities {
 	getEpubStorageService?: () => import("./EpubStorageService").EpubStorageService;
+	loadPublicationTocItems?: (
+		filePath: string
+	) => Promise<import("./types").TocItem[]>;
+	navigateToPublicationChapter?: (
+		filePath: string,
+		tocHref: string,
+		options?: { sourceId?: string; sourceMarkdownPath?: string }
+	) => Promise<void>;
+	buildPublicationChapterMarkdownLink?: (
+		filePath: string,
+		tocHref: string,
+		chapterTitle?: string,
+		sourceId?: string,
+		chapterIndex?: number
+	) => string;
 	openEpubReader?: (filePath: string) => Promise<void>;
 	hasEpubPremiumAccess?: () => boolean;
 	openEpubPremiumSettings?: () => void;

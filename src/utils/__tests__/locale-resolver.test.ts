@@ -9,7 +9,8 @@ describe("locale-resolver", () => {
 	it("maps Obsidian locale tags to plugin languages", () => {
 		expect(mapObsidianLocaleToPluginLanguage("zh")).toBe("zh-CN");
 		expect(mapObsidianLocaleToPluginLanguage("zh-cn")).toBe("zh-CN");
-		expect(mapObsidianLocaleToPluginLanguage("zh_TW")).toBe("zh-CN");
+		expect(mapObsidianLocaleToPluginLanguage("zh_TW")).toBe("zh-TW");
+		expect(mapObsidianLocaleToPluginLanguage("zh-hk")).toBe("zh-TW");
 		expect(mapObsidianLocaleToPluginLanguage("ja")).toBe("ja-JP");
 		expect(mapObsidianLocaleToPluginLanguage("ja-JP")).toBe("ja-JP");
 		expect(mapObsidianLocaleToPluginLanguage("ko")).toBe("ko-KR");
@@ -71,6 +72,7 @@ describe("locale-resolver", () => {
 	});
 
 	it("normalizes stored interface language preference", () => {
+		expect(normalizeInterfaceLanguagePreference("zh-TW")).toBe("zh-TW");
 		expect(normalizeInterfaceLanguagePreference("ja-JP")).toBe("ja-JP");
 		expect(normalizeInterfaceLanguagePreference("auto")).toBe("auto");
 		expect(normalizeInterfaceLanguagePreference("ru-RU")).toBe("ru-RU");

@@ -24,6 +24,7 @@ describe("navigation-intent locate helpers", () => {
 			href: undefined,
 			text: "Hello",
 			flashStyle: undefined,
+			flashColor: undefined,
 			showLocateOverlay: undefined,
 		});
 	});

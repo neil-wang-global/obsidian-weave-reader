@@ -1,13 +1,20 @@
 import {
 	isBlobResourceUrl,
+	prefetchBlobUrlsFromText,
 	readBlobUrlAsArrayBuffer,
 	readBlobUrlAsText,
 	shouldPreferFetchForResourceUrl,
 } from "../blob-url-text";
+import {
+	readRegisteredBlobAsText,
+	registerBlobUrl,
+	resetBlobUrlRegistryForTests,
+} from "../blob-url-registry";
 
 describe("blob-url-text", () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();
+		resetBlobUrlRegistryForTests();
 	});
 
 	it("detects blob resource URLs", () => {
@@ -48,15 +55,35 @@ describe("blob-url-text", () => {
 
 		vi.stubGlobal("XMLHttpRequest", MockXMLHttpRequest);
 
-		const promise = readBlobUrlAsText("blob:chapter.css");
+		const promise = readBlobUrlAsText("blob:weave-test-chapter.css");
+		await Promise.resolve();
 		const xhr = xhrInstances[0];
+		expect(xhr).toBeTruthy();
 		xhr.status = 0;
 		xhr.responseText = "body { color: red; }";
 		xhr.onload?.();
 
 		await expect(promise).resolves.toBe("body { color: red; }");
-		expect(xhr.open).toHaveBeenCalledWith("GET", "blob:chapter.css");
+		expect(xhr.open).toHaveBeenCalledWith("GET", "blob:weave-test-chapter.css");
 		expect(xhr.responseType).toBe("text");
+	});
+
+	it("reads registered blob text without xhr after revoke", async () => {
+		const blob = new Blob(["body { color: red; }"], { type: "text/css" });
+		const url = "blob:app://obsidian.md/weave-revoked-text";
+		registerBlobUrl(url, blob);
+
+		await expect(readBlobUrlAsText(url)).resolves.toBe("body { color: red; }");
+	});
+
+	it("prefetches blob URLs referenced in markup", async () => {
+		const blob = new Blob(["blockquote { margin: 0; }"], { type: "text/css" });
+		const url = "blob:app://obsidian.md/weave-prefetch-text";
+		registerBlobUrl(url, blob);
+		const markup = `<html><head><link rel="stylesheet" href="${url}"/></head></html>`;
+
+		await prefetchBlobUrlsFromText(markup);
+		await expect(readRegisteredBlobAsText(url)).resolves.toBe("blockquote { margin: 0; }");
 	});
 
 	it("reads blob binary via xhr", async () => {
@@ -87,8 +114,10 @@ describe("blob-url-text", () => {
 		vi.stubGlobal("XMLHttpRequest", MockXMLHttpRequest);
 
 		const bytes = new Uint8Array([137, 80, 78, 71]);
-		const promise = readBlobUrlAsArrayBuffer("blob:image.png");
+		const promise = readBlobUrlAsArrayBuffer("blob:weave-test-image.png");
+		await Promise.resolve();
 		const xhr = xhrInstances[0];
+		expect(xhr).toBeTruthy();
 		xhr.status = 200;
 		xhr.response = bytes.buffer;
 		xhr.onload?.();
@@ -97,7 +126,7 @@ describe("blob-url-text", () => {
 			bytes,
 			mimeType: "image/png",
 		});
-		expect(xhr.open).toHaveBeenCalledWith("GET", "blob:image.png");
+		expect(xhr.open).toHaveBeenCalledWith("GET", "blob:weave-test-image.png");
 		expect(xhr.responseType).toBe("arraybuffer");
 	});
 });

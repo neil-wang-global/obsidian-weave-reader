@@ -2,6 +2,13 @@ import JSZip from "jszip";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Platform, TFile } from "obsidian";
 import { getReaderHighlightIdentityKey } from "../highlight/highlight-identity";
+import {
+	buildAnnotationRenderSignature,
+	createReaderFoliateAnnotation,
+	createRenderedFoliateAnnotation,
+	isSameFoliateAnnotation,
+	shouldRenderAnnotationAsConceal,
+} from "../reader-annotation-model";
 import { FoliateReaderService } from "../FoliateReaderService";
 import {
 	normalizeDesktopFoliateSandboxValue,
@@ -482,6 +489,10 @@ describe("FoliateReaderService", () => {
 			expect(["Chapter 1", "Section 1"]).toContain(results[0]?.chapterTitle);
 			expect(results[0]?.excerpt).toContain("Selection text for testing");
 			expect(results[0]?.cfi.startsWith("epubcfi(")).toBe(true);
+
+			expect(service.getChapterLocationLabel("root")).toBe("Chapter 1");
+			expect(service.getChapterLocationLabel("leaf")).toBe("Section 1");
+			expect(service.getChapterLocationLabel("full")).toBe("Chapter 1/Section 1");
 		} finally {
 			service.destroy();
 		}
@@ -778,25 +789,40 @@ describe("FoliateReaderService", () => {
 	it("switches strikethrough excerpt rendering between concealment and visible strike mode", async () => {
 		const service = new FoliateReaderService(createMockApp(await createSampleEpubBuffer()) as any) as any;
 		try {
-			expect(service.shouldRenderAnnotationAsConceal({
-				cfiRange: 'readium:hidden',
-				presentation: 'highlight',
-				style: 'strikethrough',
-			})).toBe(true);
+			expect(
+				shouldRenderAnnotationAsConceal(
+					{
+						cfiRange: "readium:hidden",
+						presentation: "highlight",
+						style: "strikethrough",
+					},
+					service.currentStrikethroughPresentation
+				)
+			).toBe(true);
 
-			await service.applyReaderAppearance({ strikethroughPresentation: 'strikethrough' });
+			await service.applyReaderAppearance({ strikethroughPresentation: "strikethrough" });
 
-			expect(service.shouldRenderAnnotationAsConceal({
-				cfiRange: 'readium:hidden',
-				presentation: 'highlight',
-				style: 'strikethrough',
-			})).toBe(false);
+			expect(
+				shouldRenderAnnotationAsConceal(
+					{
+						cfiRange: "readium:hidden",
+						presentation: "highlight",
+						style: "strikethrough",
+					},
+					service.currentStrikethroughPresentation
+				)
+			).toBe(false);
 
-			expect(service.shouldRenderAnnotationAsConceal({
-				cfiRange: 'readium:legacy-conceal',
-				presentation: 'conceal',
-				style: undefined,
-			})).toBe(true);
+			expect(
+				shouldRenderAnnotationAsConceal(
+					{
+						cfiRange: "readium:legacy-conceal",
+						presentation: "conceal",
+						style: undefined,
+					},
+					service.currentStrikethroughPresentation
+				)
+			).toBe(true);
 		} finally {
 			service.destroy();
 		}
@@ -1464,7 +1490,12 @@ describe("FoliateReaderService", () => {
 				{ index: 0 },
 			]);
 
-			const concealedRendered = (service as any).createRenderedAnnotation(highlight);
+			const concealedRendered = createRenderedFoliateAnnotation({
+				persistentHighlight: highlight,
+				currentStrikethroughPresentation: service.currentStrikethroughPresentation,
+				colorScheme: service.getCurrentColorScheme(),
+				temporarilyRevealedConcealmentKeys: (service as any).temporarilyRevealedConcealmentTimers,
+			});
 			(service as any).renderedAnnotations.set(key, concealedRendered);
 			(service as any).temporarilyRevealedConcealmentTimers.set(key, setTimeout(() => undefined, 1000));
 
@@ -1505,7 +1536,12 @@ describe("FoliateReaderService", () => {
 				{ index: 0 },
 			]);
 
-			const initialRendered = (service as any).createRenderedAnnotation(initialHighlight);
+			const initialRendered = createRenderedFoliateAnnotation({
+				persistentHighlight: initialHighlight,
+				currentStrikethroughPresentation: service.currentStrikethroughPresentation,
+				colorScheme: service.getCurrentColorScheme(),
+				temporarilyRevealedConcealmentKeys: (service as any).temporarilyRevealedConcealmentTimers,
+			});
 			(service as any).renderedAnnotations.set(key, initialRendered);
 			(service as any).highlightDataMap.set(key, {
 				...initialHighlight,
@@ -3169,6 +3205,52 @@ describe("FoliateReaderService", () => {
 				});
 				expect(nativeSetterCalls).toBe(0);
 				expect(readBlobSpy).toHaveBeenCalledWith("blob:weave-mobile-srcdoc-only");
+			});
+		} finally {
+			service.destroy();
+			if (originalIframeSrcDescriptor) {
+				Object.defineProperty(HTMLIFrameElement.prototype, "src", originalIframeSrcDescriptor);
+			}
+			resetMobileBlobIframePatchStateForTests();
+		}
+	});
+
+	it("inlines blob stylesheets into srcdoc chapter markup to avoid CSP blocks", async () => {
+		const originalIframeSrcDescriptor = Object.getOwnPropertyDescriptor(
+			HTMLIFrameElement.prototype,
+			"src"
+		);
+		const service = new FoliateReaderService(createMockApp(await createSampleEpubBuffer()) as any);
+		try {
+			await withPlatformIsMobile(true, async () => {
+				vi.spyOn(blobUrlText, "readBlobUrlAsText").mockImplementation(async (href: string) => {
+					if (href === "blob:weave-chapter-html") {
+						return `<html><head>
+							<meta http-equiv="Content-Security-Policy" content="style-src 'unsafe-inline' 'self' https://fonts.googleapis.com">
+							<link rel="stylesheet" href="blob:weave-chapter-css"/>
+						</head><body><p>chapter</p></body></html>`;
+					}
+					if (href === "blob:weave-chapter-css") {
+						return "p { margin: 2em; }";
+					}
+					throw new Error(`Unexpected blob read for ${href}`);
+				});
+
+				await service.loadEpub("Books/foliate-sample.epub", "foliate-book");
+				const container = document.createElement("div");
+				document.body.appendChild(container);
+				await service.renderTo(container);
+
+				const iframe = document.createElement("iframe");
+				document.body.appendChild(iframe);
+				iframe.src = "blob:weave-chapter-html";
+
+				await vi.waitFor(() => {
+					expect(iframe.srcdoc).toContain('data-weave-inline-stylesheet="true"');
+				});
+				expect(iframe.srcdoc).toContain("margin: 2em");
+				expect(iframe.srcdoc).not.toContain("blob:weave-chapter-css");
+				expect(iframe.srcdoc).not.toContain("Content-Security-Policy");
 			});
 		} finally {
 			service.destroy();

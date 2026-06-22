@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Vault } from "obsidian";
 import { getReaderHighlightIdentityKey } from "../highlight/highlight-identity";
+import {
+	buildAnnotationRenderSignature,
+	createReaderFoliateAnnotation,
+	createRenderedFoliateAnnotation,
+	isSameFoliateAnnotation,
+} from "../reader-annotation-model";
 import { FoliateReaderService } from "../FoliateReaderService";
 
 vi.mock("obsidian", async () => {
@@ -70,7 +76,12 @@ describe("FoliateReaderService comment marker layering", () => {
 				presentation: "highlight" as const,
 			};
 
-			const rendered = (service as any).createRenderedAnnotation(highlight);
+			const rendered = createRenderedFoliateAnnotation({
+				persistentHighlight: highlight,
+				currentStrikethroughPresentation: service.currentStrikethroughPresentation,
+				colorScheme: service.getCurrentColorScheme(),
+				temporarilyRevealedConcealmentKeys: (service as any).temporarilyRevealedConcealmentTimers,
+			});
 
 			expect(rendered.annotation).toMatchObject({
 				style: "underline",
@@ -183,14 +194,14 @@ describe("FoliateReaderService comment marker layering", () => {
 				}) as any
 			);
 
-			const annotation = (service as any).createAnnotation({
+			const annotation = createReaderFoliateAnnotation({
 				cfiRange: "epubcfi(/6/26!/4/2/4,/17:15,/17:22)",
 				color: "green",
 				text: "不能要太高悬赏",
 				chapterIndex: 12,
 				presentation: "highlight",
 			});
-			vi.spyOn(service as any, "extractRangeClientRects").mockReturnValue([
+			vi.spyOn(service as any, "resolveHighlightOverlayRects").mockReturnValue([
 				{ left: 10, top: 20, width: 120, height: 18 },
 			]);
 			const compositeSpy = vi.spyOn(service as any, "createCompositeAnnotationOverlay");
@@ -214,7 +225,7 @@ describe("FoliateReaderService comment marker layering", () => {
 	it("draws the base style and comment marker together inside one composite overlay", async () => {
 		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
 		try {
-			const annotation = (service as any).createAnnotation(
+			const annotation = createReaderFoliateAnnotation(
 				{
 					cfiRange: "epubcfi(/6/2!/4/2,/1:0,/1:9)",
 					color: "purple",
@@ -227,9 +238,10 @@ describe("FoliateReaderService comment marker layering", () => {
 					focusColor: "blue",
 				}
 			);
-			const markerSpy = vi.spyOn(service as any, "createCommentMarkerOverlay");
-			const styleSpy = vi.spyOn(service as any, "createStyledAnnotationOverlay");
-			const focusSpy = vi.spyOn(service as any, "createTemporaryFocusOverlay");
+			const renderer = (service as any).annotationOverlayRenderer;
+			const markerSpy = vi.spyOn(renderer, "createCommentMarkerOverlay");
+			const styleSpy = vi.spyOn(renderer, "createStyledAnnotationOverlay");
+			const focusSpy = vi.spyOn(renderer, "createTemporaryFocusOverlay");
 			const compositeSpy = vi.spyOn(service as any, "createCompositeAnnotationOverlay");
 			const draw = vi.fn((factory: (rects: unknown[], options?: unknown) => SVGElement) => {
 				factory([
@@ -257,7 +269,7 @@ describe("FoliateReaderService comment marker layering", () => {
 	it("draws a reference badge inside the composite overlay when a styled highlight has multiple references", async () => {
 		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
 		try {
-			const annotation = (service as any).createAnnotation({
+			const annotation = createReaderFoliateAnnotation({
 				cfiRange: "epubcfi(/6/2!/4/2,/1:0,/1:9)",
 				color: "yellow",
 				style: "underline",
@@ -266,8 +278,9 @@ describe("FoliateReaderService comment marker layering", () => {
 				referenceHeat: 60,
 				presentation: "highlight",
 			});
-			const badgeSpy = vi.spyOn(service as any, "createReferenceBadgeOverlay");
-			const styleSpy = vi.spyOn(service as any, "createStyledAnnotationOverlay");
+			const renderer = (service as any).annotationOverlayRenderer;
+			const badgeSpy = vi.spyOn(renderer, "createReferenceBadgeOverlay");
+			const styleSpy = vi.spyOn(renderer, "createStyledAnnotationOverlay");
 			const compositeSpy = vi.spyOn(service as any, "createCompositeAnnotationOverlay");
 			const draw = vi.fn((factory: (rects: unknown[], options?: unknown) => SVGElement) => {
 				factory([
@@ -294,7 +307,7 @@ describe("FoliateReaderService comment marker layering", () => {
 	it("keeps the reference badge geometry inside the highlight bounds so it is not clipped", () => {
 		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
 		try {
-			const annotation = (service as any).createAnnotation({
+			const annotation = createReaderFoliateAnnotation({
 				cfiRange: "epubcfi(/6/2!/4/2,/1:0,/1:9)",
 				color: "yellow",
 				text: "Selection text for testing",
@@ -334,14 +347,14 @@ describe("FoliateReaderService comment marker layering", () => {
 	it("treats reference count changes as an annotation render change", () => {
 		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
 		try {
-			const base = (service as any).createAnnotation({
+			const base = createReaderFoliateAnnotation({
 				cfiRange: "epubcfi(/6/2!/4/2,/1:0,/1:9)",
 				color: "yellow",
 				text: "Selection text for testing",
 				referenceCount: 1,
 				presentation: "highlight",
 			});
-			const updated = (service as any).createAnnotation({
+			const updated = createReaderFoliateAnnotation({
 				cfiRange: "epubcfi(/6/2!/4/2,/1:0,/1:9)",
 				color: "yellow",
 				text: "Selection text for testing",
@@ -349,9 +362,21 @@ describe("FoliateReaderService comment marker layering", () => {
 				presentation: "highlight",
 			});
 
-			expect((service as any).isSameAnnotation(base, updated)).toBe(false);
-			expect((service as any).getAnnotationRenderSignature(base)).not.toBe(
-				(service as any).getAnnotationRenderSignature(updated)
+			expect(isSameFoliateAnnotation(base, updated)).toBe(false);
+			expect(
+				buildAnnotationRenderSignature({
+					annotation: base,
+					currentStrikethroughPresentation: service.currentStrikethroughPresentation,
+					colorScheme: service.getCurrentColorScheme(),
+					temporarilyRevealedConcealmentKeys: (service as any).temporarilyRevealedConcealmentTimers,
+				})
+			).not.toBe(
+				buildAnnotationRenderSignature({
+					annotation: updated,
+					currentStrikethroughPresentation: service.currentStrikethroughPresentation,
+					colorScheme: service.getCurrentColorScheme(),
+					temporarilyRevealedConcealmentKeys: (service as any).temporarilyRevealedConcealmentTimers,
+				})
 			);
 		} finally {
 			service.destroy();

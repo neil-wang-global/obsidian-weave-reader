@@ -1,5 +1,5 @@
 import { Platform, TFile } from 'obsidian';
-import { EpubStorageService } from '../EpubStorageService';
+import { EpubStorageService, flushEpubStoragePendingProgress } from '../EpubStorageService';
 import type { EpubBook } from '../types';
 
 const SYNC_EPUB_ROOT = 'weave/incremental-reading/epub-reading';
@@ -289,7 +289,6 @@ describe('EpubStorageService', () => {
         footnoteClickAction: 'navigate',
 		showTopSticker: true,
         topStickerLayout: 'auto',
-        topStickerWiggleEnabled: true,
         paragraphModeEnabled: false,
         paragraphModeFontSize: 'medium',
         paragraphModeFontScale: 100,
@@ -317,7 +316,6 @@ describe('EpubStorageService', () => {
         footnoteClickAction: 'preview',
         showTopSticker: true,
         topStickerLayout: 'auto',
-        topStickerWiggleEnabled: true,
       }),
     });
 
@@ -341,7 +339,6 @@ describe('EpubStorageService', () => {
         footnoteClickAction: 'navigate',
 		showTopSticker: false,
         topStickerLayout: 'sidebar',
-        topStickerWiggleEnabled: true,
       }),
     });
 
@@ -368,7 +365,6 @@ describe('EpubStorageService', () => {
         footnoteClickAction: 'preview',
 		showTopSticker: true,
         topStickerLayout: 'auto',
-        topStickerWiggleEnabled: true,
       }),
     });
 
@@ -395,7 +391,6 @@ describe('EpubStorageService', () => {
         footnoteClickAction: 'preview',
 		showTopSticker: true,
         topStickerLayout: 'inline',
-        topStickerWiggleEnabled: true,
       }),
     });
 
@@ -469,6 +464,41 @@ describe('EpubStorageService', () => {
     expect(bookmarkFile).toBeTruthy();
     expect(files.get(bookmarkFile || '') || '').toContain('readingState:');
     expect(files.get(bookmarkFile || '') || '').toContain('percent: 66');
+  });
+
+  it('flushes debounced progress when flushPendingProgress is missing on a legacy instance', async () => {
+    const { app, files } = createMemoryApp(
+      {
+        [`${SYNC_EPUB_ROOT}/books.json`]: JSON.stringify({
+          'book-1': createBook(),
+        }),
+      },
+      ['Books/demo.epub']
+    );
+
+    const service = new EpubStorageService(app);
+    await service.saveProgress('book-1', {
+      chapterIndex: 1,
+      cfi: '/6/4',
+      percent: 33,
+    });
+
+    const legacyService = service as EpubStorageService & {
+      flushPendingProgress?: EpubStorageService['flushPendingProgress'];
+    };
+    delete legacyService.flushPendingProgress;
+
+    await flushEpubStoragePendingProgress(service);
+
+    const progress = await service.loadProgress('book-1');
+    expect(progress?.percent).toBe(33);
+    expect(Array.from(files.keys()).some((path) => path.includes('weave/epub-bookmarks/'))).toBe(true);
+  });
+
+  it('ignores flush when the storage service reference is missing', async () => {
+    await expect(
+      flushEpubStoragePendingProgress(undefined as unknown as EpubStorageService)
+    ).resolves.toBeUndefined();
   });
 
   it('marks and clears book completion without rewriting locator percent', async () => {
@@ -1771,7 +1801,7 @@ describe('EpubStorageService', () => {
     ]);
   });
 
-  it('findBookByFilePath avoids eager catalog hydration', async () => {
+  it('findBookByFilePath avoids eager batch catalog hydration', async () => {
     const { app, files } = createMemoryApp(
       {
         'Books/demo.epub': 'demo-epub-binary',
@@ -1782,8 +1812,9 @@ describe('EpubStorageService', () => {
     await service.addBooksToBookshelf(['Books/demo.epub']);
     const hydrateSpy = vi.spyOn(service as any, 'hydrateBookStates');
 
-    await service.findBookByFilePath('Books/demo.epub');
+    const book = await service.findBookByFilePath('Books/demo.epub');
 
+    expect(book?.filePath).toBe('Books/demo.epub');
     expect(hydrateSpy).not.toHaveBeenCalled();
     hydrateSpy.mockRestore();
     const membership =
@@ -1823,5 +1854,168 @@ describe('EpubStorageService', () => {
     await reloaded.saveBookshelfSearchQuery('   ');
     expect(readLocalEpubData(files).uiMemory?.bookshelfSearchQuery).toBe('');
     await expect(reloaded.loadBookshelfSearchQuery()).resolves.toBe('');
+  });
+
+  it('waits for in-flight automatic migrations before concurrent loadBooks calls proceed', async () => {
+    const { app } = createMemoryApp(
+      {
+        [LOCAL_EPUB_DATA_PATH]: JSON.stringify({
+          version: 1,
+          updatedAt: 1,
+          bookCatalogStoredLocally: true,
+          bookshelfMembership: [{ path: 'Books/demo.epub', addedAt: 1 }],
+          books: {},
+        }),
+      },
+      ['Books/demo.epub'],
+      { 'Books/demo.epub': 'demo-epub-binary' }
+    );
+    const service = new EpubStorageService(app);
+    let releaseMigration!: () => void;
+    const migrationGate = new Promise<void>((resolve) => {
+      releaseMigration = resolve;
+    });
+    const reconcileSpy = vi
+      .spyOn(service as unknown as { reconcileMissingBookshelfDescriptors: () => Promise<void> }, 'reconcileMissingBookshelfDescriptors')
+      .mockImplementationOnce(async () => {
+        await migrationGate;
+      });
+
+    const firstLoad = service.loadBooks({ hydrateStates: false });
+    await Promise.resolve();
+    const secondLoad = service.loadBooks({ hydrateStates: false });
+
+    expect((service as unknown as { automaticMigrationCompleted: boolean }).automaticMigrationCompleted).toBe(
+      false
+    );
+
+    releaseMigration();
+    await Promise.all([firstLoad, secondLoad]);
+
+    expect(reconcileSpy).toHaveBeenCalledTimes(1);
+    expect((service as unknown as { automaticMigrationCompleted: boolean }).automaticMigrationCompleted).toBe(
+      true
+    );
+    reconcileSpy.mockRestore();
+  });
+
+  it('reconciles missing bookshelf descriptors from bookmark files without mass writeBookState', async () => {
+    const bookPath = 'Books/shelf-only.epub';
+    const orphanId = 'epub-abc123';
+    const { app, files } = createMemoryApp(
+      {
+        [LOCAL_EPUB_DATA_PATH]: JSON.stringify({
+          version: 1,
+          updatedAt: 1,
+          bookCatalogStoredLocally: true,
+          bookshelfMembership: [{ path: bookPath, addedAt: 1 }],
+          books: {
+            [orphanId]: {
+              readingReferencePoint: {
+                chapterIndex: 2,
+                cfi: '/6/4',
+                percent: 33,
+                title: 'Ch2',
+                savedAt: 1000,
+              },
+            },
+          },
+        }),
+      },
+      [bookPath],
+      { [bookPath]: 'epub-binary-content' }
+    );
+    const service = new EpubStorageService(app);
+    const bookmarkService = (service as unknown as { getBookmarkService: () => unknown }).getBookmarkService() as {
+      findBookmarkSnapshotByBookPath: (path: string) => Promise<Record<string, unknown> | null>;
+      readBookmarkSnapshotForBook: () => Promise<null>;
+    };
+    vi.spyOn(bookmarkService, 'readBookmarkSnapshotForBook').mockResolvedValue(null);
+    vi.spyOn(bookmarkService, 'findBookmarkSnapshotByBookPath').mockImplementation(async (path) => {
+      if (path !== bookPath) {
+        return null;
+      }
+      return {
+        format: 'weave-epub-bookmarks/v2',
+        stableKey: 'epub-orphan01',
+        bookId: orphanId,
+        bookPath,
+        bookTitle: 'Shelf Book',
+        bookAuthor: 'Author',
+        readingState: {
+          currentPosition: {
+            chapterIndex: 2,
+            cfi: '/6/4',
+            percent: 33,
+          },
+          readingStats: {
+            totalReadTime: 0,
+            lastReadTime: 1000,
+            createdTime: 500,
+          },
+        },
+      };
+    });
+    const writeBookStateSpy = vi.spyOn(
+      service as unknown as { writeBookState: (...args: unknown[]) => Promise<void> },
+      'writeBookState'
+    );
+    const writeBooksWithLockSpy = vi.spyOn(
+      service as unknown as { writeBooksWithLock: (...args: unknown[]) => Promise<void> },
+      'writeBooksWithLock'
+    );
+
+    const books = await service.loadBooks({ hydrateStates: true });
+    const localData = readLocalEpubData(files);
+    const catalogIds = Object.keys(books);
+
+    expect(catalogIds).toHaveLength(1);
+    expect(localData.books?.[orphanId]).toBeUndefined();
+    expect(books[catalogIds[0]]?.filePath).toBe(bookPath);
+    expect(books[catalogIds[0]]?.currentPosition.percent).toBe(33);
+    expect(writeBooksWithLockSpy).not.toHaveBeenCalled();
+    expect(writeBookStateSpy).not.toHaveBeenCalled();
+
+    writeBookStateSpy.mockRestore();
+    writeBooksWithLockSpy.mockRestore();
+  });
+
+  it('loads reading progress from bookmark files via book hint before catalog materialization', async () => {
+    const bookPath = 'Books/demo.epub';
+    const { app } = createMemoryApp({}, [bookPath]);
+    const service = new EpubStorageService(app);
+    const bookmarkService = (service as unknown as { getBookmarkService: () => unknown }).getBookmarkService() as {
+      readReadingStateByBookPath: (path: string) => Promise<{
+        currentPosition: { chapterIndex: number; cfi: string; percent: number };
+        readingStats: { totalReadTime: number; lastReadTime: number; createdTime: number };
+      } | null>;
+    };
+    vi.spyOn(bookmarkService, 'readReadingStateByBookPath').mockImplementation(async (path) => {
+      if (path !== bookPath) {
+        return null;
+      }
+      return {
+        currentPosition: {
+          chapterIndex: 1,
+          cfi: '/6/6',
+          percent: 42,
+        },
+        readingStats: {
+          totalReadTime: 0,
+          lastReadTime: 100,
+          createdTime: 50,
+        },
+      };
+    });
+    const bookHint = createBook({
+      id: 'epub-temp01',
+      filePath: bookPath,
+      currentPosition: { chapterIndex: 0, cfi: '', percent: 0 },
+    });
+
+    const progress = await service.loadProgress('epub-temp01', bookHint);
+
+    expect(progress?.percent).toBe(42);
+    expect(progress?.cfi).toBe('/6/6');
   });
 });

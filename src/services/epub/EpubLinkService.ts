@@ -1,6 +1,7 @@
-import { App, TFile } from "obsidian";
+import { App, TFile, normalizePath } from "obsidian";
 import type { EpubHighlightStyle } from "./types";
-import { inflateRaw } from "pako";
+import { deflateRaw, inflateRaw } from "pako";
+import { generateBlockID } from "../identifier/WeaveIDGenerator";
 import { logger } from "../../utils/logger";
 import { EPUB_RUNTIME } from "./epub-runtime";
 import { i18n } from "../../utils/i18n";
@@ -20,6 +21,26 @@ export interface EpubLinkParams {
 	chapter?: number;
 	sourceId?: string;
 	excerptId?: string;
+	/** EPUB package 内章节 href；与 cfi 二选一或同时存在（cfi 优先）。 */
+	tocHref?: string;
+}
+
+/** Controls which locator fields are embedded in generated wikilink hashes. */
+export interface EpubLinkWriteOptions {
+	includeText?: boolean;
+	includeChapter?: boolean;
+	preferCompactLocator?: boolean;
+}
+
+interface EpubLocatorSubpathInput {
+	cfi: string;
+	text?: string;
+	chapterIndex?: number;
+	sourceId?: string;
+	excerptId?: string;
+	includeText?: boolean;
+	includeChapter?: boolean;
+	preferCompactLocator?: boolean;
 }
 
 interface EpubLinkMarkupRange {
@@ -28,10 +49,18 @@ interface EpubLinkMarkupRange {
 	markup: string;
 }
 
+export type EpubSelectionLinkCopyAction =
+	| "protocolMarkdown"
+	| "vaultWikilink"
+	| "obsidianUri"
+	| "plainText";
+
 export class EpubLinkService {
 	private static readonly COMPACT_READIUM_PREFIX = "readium:loc~";
 	private static readonly COMPACT_PAYLOAD_PREFIX = "weave-loc=";
-	private static readonly MAX_CHAPTER_LABEL_LENGTH = 24;
+	private static readonly COMPACT_EPUBCFI_THRESHOLD = 48;
+	static readonly MAX_CHAPTER_LABEL_LENGTH = 24;
+	static readonly MAX_FULL_CHAPTER_LABEL_LENGTH = 96;
 	private static readonly SUPPORTED_BOOK_WIKILINK_REGEX = createSupportedBookWikilinkRegex("gi");
 	private static readonly HIGHLIGHT_STYLE_TOKENS = new Set<EpubHighlightStyle>([
 		"underline",
@@ -221,6 +250,86 @@ export class EpubLinkService {
 		}
 	}
 
+	private static encodeBase64Url(bytes: Uint8Array): string {
+		let binary = "";
+		for (const byte of bytes) {
+			binary += String.fromCharCode(byte);
+		}
+		return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+	}
+
+	private static buildCompactLocatorSubpath(cfi: string, chapterIndex?: number): string {
+		const payload =
+			chapterIndex !== undefined && Number.isFinite(chapterIndex) ? [cfi, "", chapterIndex] : [cfi];
+		const json = JSON.stringify(payload);
+		const deflateRawFn = deflateRaw as (data: Uint8Array) => Uint8Array;
+		const compressed = deflateRawFn(new TextEncoder().encode(json));
+		return `${EpubLinkService.COMPACT_PAYLOAD_PREFIX}${EpubLinkService.encodeBase64Url(compressed)}`;
+	}
+
+	private static shouldUseCompactLocator(cfi: string, preferCompactLocator?: boolean): boolean {
+		if (preferCompactLocator === false) {
+			return false;
+		}
+		if (cfi.startsWith(EpubLinkService.COMPACT_READIUM_PREFIX)) {
+			return false;
+		}
+		return cfi.startsWith("epubcfi(") && cfi.length >= EpubLinkService.COMPACT_EPUBCFI_THRESHOLD;
+	}
+
+	private static parseHashMetadata(
+		hashContent: string
+	): Pick<EpubLinkParams, "sourceId" | "excerptId" | "chapter"> {
+		const chapterMatch = hashContent.match(/[&?]chapter=(\d+)/);
+		const sourceIdMatch = hashContent.match(/[&?]sid=([^&|\]]*)/);
+		const excerptIdMatch = hashContent.match(/[&?]eid=([^&|\]]*)/);
+		return {
+			chapter: chapterMatch ? parseInt(chapterMatch[1], 10) : undefined,
+			sourceId: sourceIdMatch?.[1] ? decodeURIComponent(sourceIdMatch[1]) : undefined,
+			excerptId: excerptIdMatch?.[1] ? decodeURIComponent(excerptIdMatch[1]) : undefined,
+		};
+	}
+
+	private static buildLocatorSubpath(input: EpubLocatorSubpathInput): string {
+		const includeText = input.includeText === true;
+		const includeChapter = input.includeChapter === true;
+		const normalizedText = includeText ? String(input.text || "").trim() : "";
+		const useCompact = EpubLinkService.shouldUseCompactLocator(
+			input.cfi,
+			input.preferCompactLocator
+		);
+
+		let subpath: string;
+		if (useCompact) {
+			subpath = EpubLinkService.buildCompactLocatorSubpath(
+				input.cfi,
+				includeChapter ? input.chapterIndex : undefined
+			);
+		} else {
+			const safeCfi = EpubLinkService.encodeCfiForWikilink(input.cfi);
+			subpath = `weave-cfi=${safeCfi}`;
+			if (
+				includeChapter &&
+				input.chapterIndex !== undefined &&
+				Number.isFinite(input.chapterIndex)
+			) {
+				subpath += `&chapter=${input.chapterIndex}`;
+			}
+		}
+
+		if (normalizedText) {
+			subpath += `&text=${EpubLinkService.encodeTextForWikilink(normalizedText)}`;
+		}
+		if (input.sourceId) {
+			subpath += `&sid=${encodeURIComponent(input.sourceId)}`;
+		}
+		if (input.excerptId) {
+			subpath += `&eid=${encodeURIComponent(input.excerptId)}`;
+		}
+		return subpath;
+	}
+
+	/** @deprecated Use buildLocatorSubpath via buildEpubLink/buildEpubLocatorHref. */
 	private static buildLegacySubpath(
 		cfi: string,
 		text: string,
@@ -228,26 +337,52 @@ export class EpubLinkService {
 		sourceId?: string,
 		excerptId?: string
 	): string {
-		const safeCfi = EpubLinkService.encodeCfiForWikilink(cfi);
-		let subpath = `weave-cfi=${safeCfi}`;
-		const normalizedText = String(text || "").trim();
-		if (normalizedText) {
-			subpath += `&text=${EpubLinkService.encodeTextForWikilink(normalizedText)}`;
-		}
-		if (chapterIndex !== undefined && Number.isFinite(chapterIndex)) {
-			subpath += `&chapter=${chapterIndex}`;
-		}
-		if (sourceId) {
-			subpath += `&sid=${encodeURIComponent(sourceId)}`;
-		}
-		if (excerptId) {
-			subpath += `&eid=${encodeURIComponent(excerptId)}`;
-		}
-		return subpath;
+		return EpubLinkService.buildLocatorSubpath({
+			cfi,
+			text,
+			chapterIndex,
+			sourceId,
+			excerptId,
+			includeText: Boolean(String(text || "").trim()),
+			includeChapter: chapterIndex !== undefined && Number.isFinite(chapterIndex),
+			preferCompactLocator: false,
+		});
+	}
+
+	static resolveExcerptBlockId(excerptId?: string): string {
+		const normalized = String(excerptId || "").trim();
+		return normalized || generateBlockID();
 	}
 
 	static hasSupportedEpubSubpath(subpath: string): boolean {
 		return hasSupportedBookLocatorSubpath(subpath);
+	}
+
+	/** Vault-internal href used by the markdown post-processor for in-app navigation. */
+	static buildEpubLocatorHref(
+		filePath: string,
+		cfi: string,
+		_text = "",
+		chapterIndex?: number,
+		sourceId?: string,
+		excerptId?: string,
+		writeOptions?: EpubLinkWriteOptions
+	): string {
+		const normalizedFilePath = normalizePath(String(filePath || "").trim());
+		if (!normalizedFilePath || !cfi) {
+			return "";
+		}
+		const subpath = EpubLinkService.buildLocatorSubpath({
+			cfi,
+			text: _text,
+			chapterIndex,
+			sourceId,
+			excerptId,
+			includeText: writeOptions?.includeText === true,
+			includeChapter: writeOptions?.includeChapter === true,
+			preferCompactLocator: writeOptions?.preferCompactLocator !== false,
+		});
+		return `${normalizedFilePath}#${subpath}`;
 	}
 
 	static extractFirstEpubLinkMarkup(content: string): string | undefined {
@@ -265,6 +400,20 @@ export class EpubLinkService {
 		return EpubLinkService.extractLegacyProtocolLinkMarkup(normalized);
 	}
 
+	static isLegacyProtocolHref(href: string): boolean {
+		const normalized = String(href || "").trim();
+		if (!normalized) {
+			return false;
+		}
+		const protocolHref = EpubLinkService.matchesSupportedProtocolHref(normalized)
+			? normalized
+			: EpubLinkService.extractProtocolHrefFromMarkdownLink(normalized) || "";
+		if (!protocolHref) {
+			return false;
+		}
+		return /[?&]vault=/i.test(protocolHref);
+	}
+
 	static isLegacyEpubLinkMarkup(markup: string): boolean {
 		if (!markup) return false;
 
@@ -272,7 +421,7 @@ export class EpubLinkService {
 			EpubLinkService.matchesSupportedProtocolHref(markup) ||
 			EpubLinkService.findSupportedProtocolHrefIndex(markup) >= 0
 		) {
-			return true;
+			return EpubLinkService.isLegacyProtocolHref(markup);
 		}
 
 		if (!(markup.startsWith("[[") && markup.endsWith("]]"))) {
@@ -291,10 +440,10 @@ export class EpubLinkService {
 			hashContent.includes("tuanki-cfi=") ||
 			hashContent.includes("tuanki-cfi-")
 		) {
-			return true;
+			return /(?:^|[&?])text=/.test(hashContent);
 		}
 
-		return hashContent.includes("weave-cfi=") && /(?:^|[&?])(text|chapter)=/.test(hashContent);
+		return hashContent.includes("weave-cfi=") && /(?:^|[&?])text=/.test(hashContent);
 	}
 
 	private static collectEpubLinkMarkupRanges(content: string): EpubLinkMarkupRange[] {
@@ -397,7 +546,14 @@ export class EpubLinkService {
 			parsed.text,
 			parsed.chapter,
 			undefined,
-			sourcePath
+			sourcePath,
+			parsed.sourceId,
+			parsed.excerptId,
+			{
+				includeText: false,
+				includeChapter: false,
+				preferCompactLocator: true,
+			}
 		);
 	}
 
@@ -627,34 +783,58 @@ export class EpubLinkService {
 		return `${text.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
 	}
 
-	private extractLinkPath(filePath: string, sourcePath?: string): string {
-		const abstractFile = this.app?.vault?.getAbstractFileByPath?.(filePath);
+	/**
+	 * Resolve the book path embedded in excerpt wikilinks.
+	 * Without `relativeToSourcePath`, always use the vault-root canonical path so links
+	 * stay valid when pasted into other notes or copied outside the source context.
+	 */
+	private resolveEpubLinkBookPath(filePath: string, relativeToSourcePath?: string): string {
+		const normalizedFilePath = normalizePath(String(filePath || "").trim());
+		if (!normalizedFilePath) {
+			return "";
+		}
+
+		const sourcePath = String(relativeToSourcePath || "").trim();
+		if (!sourcePath) {
+			return normalizedFilePath;
+		}
+
+		const abstractFile = this.app?.vault?.getAbstractFileByPath?.(normalizedFilePath);
 		if (
 			abstractFile instanceof TFile &&
 			typeof this.app?.fileManager?.generateMarkdownLink === "function"
 		) {
 			try {
-				const generated = this.app.fileManager.generateMarkdownLink(abstractFile, sourcePath || "");
+				const generated = this.app.fileManager.generateMarkdownLink(abstractFile, sourcePath);
 				if (generated.startsWith("[[") && generated.endsWith("]]")) {
 					const inner = generated.slice(2, -2).trim();
 					if (inner) {
-						return inner;
+						const hashIndex = inner.indexOf("#");
+						const pipeIndex = inner.indexOf("|");
+						const boundaryCandidates = [hashIndex, pipeIndex].filter((index) => index >= 0);
+						const boundaryIndex =
+							boundaryCandidates.length > 0 ? Math.min(...boundaryCandidates) : inner.length;
+						const pathPart = inner.slice(0, boundaryIndex).trim();
+						if (pathPart) {
+							return pathPart;
+						}
 					}
 				}
 			} catch (error) {
-				logger.debug("[EpubLinkService] Failed to generate shortest linkpath:", error);
+				logger.debug("[EpubLinkService] Failed to generate relative linkpath:", error);
 			}
 		}
-		return filePath;
+		return normalizedFilePath;
 	}
 
-	private static buildChapterLabel(chapterIndex?: number, chapterTitle?: string): string {
+	private static buildChapterLabel(
+		chapterIndex?: number,
+		chapterTitle?: string,
+		maxLength = EpubLinkService.MAX_CHAPTER_LABEL_LENGTH
+	): string {
 		const sanitizedChapterTitle = EpubLinkService.sanitizeWikilinkAlias(chapterTitle || "");
 		if (sanitizedChapterTitle) {
-			return EpubLinkService.truncateText(
-				sanitizedChapterTitle,
-				EpubLinkService.MAX_CHAPTER_LABEL_LENGTH
-			);
+			return EpubLinkService.truncateText(sanitizedChapterTitle, maxLength);
 		}
 		if (chapterIndex !== undefined) {
 			return `章节 ${chapterIndex}`;
@@ -665,10 +845,15 @@ export class EpubLinkService {
 	private static buildQuoteTitleSuffix(
 		chapterIndex?: number,
 		chapterTitle?: string,
-		timestamp?: string
+		timestamp?: string,
+		chapterLabelMaxLength = EpubLinkService.MAX_CHAPTER_LABEL_LENGTH
 	): string {
 		const parts: string[] = [];
-		const chapterLabel = EpubLinkService.buildChapterLabel(chapterIndex, chapterTitle);
+		const chapterLabel = EpubLinkService.buildChapterLabel(
+			chapterIndex,
+			chapterTitle,
+			chapterLabelMaxLength
+		);
 		if (chapterLabel) {
 			parts.push(`[${chapterLabel}]`);
 		}
@@ -684,6 +869,111 @@ export class EpubLinkService {
 			? getBookFormatDisplayLabel(filePath)
 			: "BOOK";
 		return EpubLinkService.sanitizeWikilinkAlias(bookName) || fallbackLabel;
+	}
+
+	private static buildProtocolLinkAlias(
+		filePath: string,
+		chapterTitle?: string,
+		chapterLabelMaxLength = EpubLinkService.MAX_CHAPTER_LABEL_LENGTH
+	): string {
+		const bookName = EpubLinkService.buildDisplayAlias(filePath);
+		const chapter = EpubLinkService.sanitizeWikilinkAlias(chapterTitle || "");
+		if (!chapter) {
+			return bookName;
+		}
+		return EpubLinkService.sanitizeWikilinkAlias(
+			`${bookName} · ${EpubLinkService.truncateText(chapter, chapterLabelMaxLength)}`
+		);
+	}
+
+	buildObsidianProtocolHref(
+		filePath: string,
+		cfi: string,
+		options?: {
+			chapter?: number;
+			sourceId?: string;
+			text?: string;
+		}
+	): string {
+		const normalizedFile = normalizePath(String(filePath || "").trim());
+		const params = new URLSearchParams();
+		if (normalizedFile) {
+			params.set("file", normalizedFile);
+		}
+		params.set("cfi", cfi);
+		if (options?.chapter !== undefined && Number.isFinite(options.chapter)) {
+			params.set("chapter", String(options.chapter));
+		}
+		if (options?.sourceId) {
+			params.set("sid", options.sourceId);
+		}
+		const normalizedText = String(options?.text || "").trim();
+		if (normalizedText) {
+			params.set("text", normalizedText);
+		}
+		return `obsidian://${EPUB_RUNTIME.protocol.primaryName}?${params.toString()}`;
+	}
+
+	buildObsidianProtocolHrefForChapter(
+		filePath: string,
+		tocHref: string,
+		options?: {
+			chapter?: number;
+			sourceId?: string;
+		}
+	): string {
+		const normalizedFile = normalizePath(String(filePath || "").trim());
+		const normalizedHref = String(tocHref || "").trim();
+		const params = new URLSearchParams();
+		if (normalizedFile) {
+			params.set("file", normalizedFile);
+		}
+		if (normalizedHref) {
+			params.set("href", normalizedHref);
+		}
+		if (options?.chapter !== undefined && Number.isFinite(options.chapter)) {
+			params.set("chapter", String(options.chapter));
+		}
+		if (options?.sourceId) {
+			params.set("sid", options.sourceId);
+		}
+		return `obsidian://${EPUB_RUNTIME.protocol.primaryName}?${params.toString()}`;
+	}
+
+	buildProtocolMarkdownLink(
+		filePath: string,
+		cfi: string,
+		_text: string,
+		chapterIndex?: number,
+		chapterTitle?: string,
+		sourceId?: string,
+		chapterLabelMaxLength = EpubLinkService.MAX_CHAPTER_LABEL_LENGTH
+	): string {
+		const href = this.buildObsidianProtocolHref(filePath, cfi, {
+			chapter: chapterIndex,
+			sourceId,
+		});
+		const alias = EpubLinkService.buildProtocolLinkAlias(
+			filePath,
+			chapterTitle,
+			chapterLabelMaxLength
+		);
+		return `[${alias}](${href})`;
+	}
+
+	buildProtocolMarkdownLinkForChapter(
+		filePath: string,
+		tocHref: string,
+		chapterTitle?: string,
+		sourceId?: string,
+		chapterIndex?: number
+	): string {
+		const href = this.buildObsidianProtocolHrefForChapter(filePath, tocHref, {
+			chapter: chapterIndex,
+			sourceId,
+		});
+		const alias = EpubLinkService.buildProtocolLinkAlias(filePath, chapterTitle);
+		return `[${alias}](${href})`;
 	}
 
 	static formatQuotedExcerptText(text: string, style?: EpubHighlightStyle): string {
@@ -713,17 +1003,21 @@ export class EpubLinkService {
 		_chapterTitle?: string,
 		sourcePath?: string,
 		sourceId?: string,
-		excerptId?: string
+		excerptId?: string,
+		writeOptions?: EpubLinkWriteOptions
 	): string {
 		const displayText = EpubLinkService.buildDisplayAlias(filePath);
-		const linkPath = this.extractLinkPath(filePath, sourcePath);
-		const subpath = EpubLinkService.buildLegacySubpath(
+		const linkPath = this.resolveEpubLinkBookPath(filePath, sourcePath);
+		const subpath = EpubLinkService.buildLocatorSubpath({
 			cfi,
 			text,
 			chapterIndex,
 			sourceId,
-			excerptId
-		);
+			excerptId,
+			includeText: writeOptions?.includeText === true,
+			includeChapter: writeOptions?.includeChapter === true,
+			preferCompactLocator: writeOptions?.preferCompactLocator !== false,
+		});
 		return `[[${linkPath}#${subpath}|${displayText}]]`;
 	}
 
@@ -738,8 +1032,10 @@ export class EpubLinkService {
 		sourcePath?: string,
 		sourceId?: string,
 		excerptId?: string,
-		style?: EpubHighlightStyle
+		style?: EpubHighlightStyle,
+		chapterLabelMaxLength = EpubLinkService.MAX_CHAPTER_LABEL_LENGTH
 	): string {
+		const resolvedExcerptId = EpubLinkService.resolveExcerptBlockId(excerptId);
 		const link = this.buildEpubLink(
 			filePath,
 			cfi,
@@ -748,20 +1044,90 @@ export class EpubLinkService {
 			chapterTitle,
 			sourcePath,
 			sourceId,
-			excerptId
+			resolvedExcerptId,
+			{
+				includeText: false,
+				includeChapter: false,
+				preferCompactLocator: true,
+			}
 		);
 		const calloutMetaValue = EpubLinkService.buildHighlightCalloutMeta(color, style);
 		const calloutMeta = calloutMetaValue ? `|${calloutMetaValue}` : "";
 		const titleSuffix = EpubLinkService.buildQuoteTitleSuffix(
 			chapterIndex,
 			chapterTitle,
-			timestamp
+			timestamp,
+			chapterLabelMaxLength
 		);
 		const quotedLines = EpubLinkService.formatQuotedExcerptText(text, style)
 			.split("\n")
 			.map((_line) => `> ${_line}`)
 			.join("\n");
 		return `> [!EPUB${calloutMeta}] ${link}${titleSuffix}\n${quotedLines}\n`;
+	}
+
+	buildSelectionCopyLink(
+		action: EpubSelectionLinkCopyAction,
+		filePath: string,
+		cfi: string,
+		text: string,
+		options?: {
+			chapterIndex?: number;
+			chapterTitle?: string;
+			sourceId?: string;
+			sourcePath?: string;
+			chapterLabelMaxLength?: number;
+		}
+	): string {
+		const chapterIndex = options?.chapterIndex;
+		const chapterTitle = options?.chapterTitle;
+		const sourceId = options?.sourceId;
+		const chapterLabelMaxLength =
+			options?.chapterLabelMaxLength ?? EpubLinkService.MAX_CHAPTER_LABEL_LENGTH;
+		switch (action) {
+			case "protocolMarkdown":
+				return this.buildProtocolMarkdownLink(
+					filePath,
+					cfi,
+					text,
+					chapterIndex,
+					chapterTitle,
+					sourceId,
+					chapterLabelMaxLength
+				);
+			case "vaultWikilink":
+				return this.buildEpubLink(
+					filePath,
+					cfi,
+					text,
+					chapterIndex,
+					chapterTitle,
+					options?.sourcePath,
+					sourceId,
+					undefined,
+					{
+						includeText: false,
+						includeChapter: chapterIndex !== undefined,
+						preferCompactLocator: true,
+					}
+				);
+			case "obsidianUri":
+				return this.buildObsidianProtocolHref(filePath, cfi, {
+					chapter: chapterIndex,
+					sourceId,
+				});
+			case "plainText":
+				return String(text || "").trim();
+		}
+	}
+
+	static countLegacyEpubLinkMarkups(content: string): number {
+		if (!content) {
+			return 0;
+		}
+		return EpubLinkService.collectEpubLinkMarkupRanges(content).filter(({ markup }) =>
+			EpubLinkService.isLegacyEpubLinkMarkup(markup)
+		).length;
 	}
 
 	static parseLinkMarkup(markup: string): EpubLinkParams | null {
@@ -798,6 +1164,7 @@ export class EpubLinkService {
 
 		try {
 			const hashContent = subpath.startsWith("#") ? subpath.slice(1) : subpath;
+			const hashMetadata = EpubLinkService.parseHashMetadata(hashContent);
 			const compactPayloadMatch = hashContent.match(/weave-loc=([^&|\]]*)/);
 			if (compactPayloadMatch?.[1]) {
 				const compactParsed = EpubLinkService.parseCompactPayloadSubpath(compactPayloadMatch[1]);
@@ -806,7 +1173,9 @@ export class EpubLinkService {
 						filePath: "",
 						cfi: compactParsed.cfi,
 						text: compactParsed.text,
-						chapter: compactParsed.chapter,
+						chapter: compactParsed.chapter ?? hashMetadata.chapter,
+						sourceId: hashMetadata.sourceId,
+						excerptId: hashMetadata.excerptId,
 					};
 				}
 			}
@@ -819,10 +1188,7 @@ export class EpubLinkService {
 				hashContent.match(/tuanki-cfi=([^&|\]]*)/) ||
 				hashContent.match(/tuanki-cfi-(epubcfi\([^)]*\))/) ||
 				hashContent.match(/tuanki-cfi-([^&|\]]*)/);
-			const chapterMatch = hashContent.match(/[&?]chapter=(\d+)/);
 			const textMatch = hashContent.match(/[&?]text=([^&|\]]*)/);
-			const sourceIdMatch = hashContent.match(/[&?]sid=([^&|\]]*)/);
-			const excerptIdMatch = hashContent.match(/[&?]eid=([^&|\]]*)/);
 
 			if (!cfiMatch) {
 				return null;
@@ -844,9 +1210,9 @@ export class EpubLinkService {
 				text: textMatch?.[1]
 					? decodeURIComponent(textMatch[1])
 					: EpubLinkService.extractEmbeddedTextFromReadiumLocator(cfi) || "",
-				chapter: chapterMatch ? parseInt(chapterMatch[1], 10) : undefined,
-				sourceId: sourceIdMatch?.[1] ? decodeURIComponent(sourceIdMatch[1]) : undefined,
-				excerptId: excerptIdMatch?.[1] ? decodeURIComponent(excerptIdMatch[1]) : undefined,
+				chapter: hashMetadata.chapter,
+				sourceId: hashMetadata.sourceId,
+				excerptId: hashMetadata.excerptId,
 			};
 		} catch (e) {
 			logger.warn("[EpubLinkService] Failed to parse epub link:", subpath, e);
@@ -856,12 +1222,18 @@ export class EpubLinkService {
 
 	static parseProtocolParams(params: Record<string, string>): EpubLinkParams | null {
 		const file = params.file;
-		const cfi = params.cfi;
+		const cfi = String(params.cfi || "").trim();
+		const href = String(params.href || params.tocHref || "").trim();
 		const text = params.text || "";
 		const chapter = params.chapter;
 		const sourceId = params.sid;
 
-		if ((!file && !sourceId) || !cfi) return null;
+		if (!file && !sourceId) {
+			return null;
+		}
+		if (!cfi && !href) {
+			return null;
+		}
 
 		return {
 			filePath: file || "",
@@ -869,7 +1241,48 @@ export class EpubLinkService {
 			text,
 			chapter: chapter ? parseInt(chapter, 10) : undefined,
 			sourceId: sourceId || undefined,
+			tocHref: href || undefined,
 		};
+	}
+
+	async navigateToEpubChapter(
+		filePath: string,
+		tocHref: string,
+		options?: {
+			sourceId?: string;
+			sourceMarkdownPath?: string;
+		}
+	): Promise<void> {
+		const normalizedHref = String(tocHref || "").trim();
+		if (!normalizedHref) {
+			return;
+		}
+		if (
+			!ensureBookSourceLocationAccess(
+				this.app,
+				i18n.t("epub.reader.sourceLocationFeatureNotice")
+			)
+		) {
+			return;
+		}
+		try {
+			const { getNavigationHub } = await import("../navigation/navigation-hub-access");
+			const result = await getNavigationHub(this.app).navigate({
+				kind: "book",
+				resourcePath: filePath,
+				locate: { href: normalizedHref },
+				context: {
+					sourceId: options?.sourceId,
+					sourceMarkdownPath: options?.sourceMarkdownPath,
+				},
+				policy: { reuseLeaf: true, preferredLeaf: true, focus: true },
+			});
+			if (result.success) {
+				logger.debug("[EpubLinkService] Navigated to chapter:", filePath, normalizedHref);
+			}
+		} catch (error) {
+			logger.error("[EpubLinkService] Chapter navigation failed:", error);
+		}
 	}
 
 	async navigateToEpubLocation(
@@ -894,7 +1307,7 @@ export class EpubLinkService {
 				resourcePath: filePath,
 				locate: { cfi, text },
 				context: { sourceId, sourceMarkdownPath },
-				policy: { reuseLeaf: true, focus: true },
+				policy: { reuseLeaf: true, preferredLeaf: true, focus: true },
 			});
 			if (result.success) {
 				logger.debug("[EpubLinkService] Navigated to:", filePath, cfi, sourceId);

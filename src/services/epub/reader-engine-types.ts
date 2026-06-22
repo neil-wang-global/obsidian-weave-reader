@@ -11,6 +11,7 @@ import type {
 	ReadingStats,
 	TocItem,
 } from "./types";
+import type { EpubChapterLocationFormat } from "./epub-excerpt-settings";
 
 export type EpubReaderEngineType = "foliate";
 
@@ -100,6 +101,8 @@ export interface ReaderHighlightInput {
 	sourceLocators?: HighlightSourceLocator[];
 	createdTime?: number;
 	presentation?: ReaderHighlightPresentation;
+	pageLabel?: string;
+	pageNumber?: number;
 	// 引用统计
 	referenceCount?: number;
 	referenceHeat?: number;
@@ -134,6 +137,7 @@ export interface ReaderAppearanceOptions {
 export interface ReaderRemainingTimeEstimate {
 	bookMs?: number;
 	chapterMs?: number;
+	chapterProgressPercent?: number;
 	wordsPerMinute?: number;
 }
 
@@ -248,6 +252,7 @@ export interface EpubReaderEngine {
 	getNavigationTargetRect(options: ReaderNavigationRectOptions): DOMRect | null;
 	getCurrentPosition(): ReadingPosition;
 	getCurrentChapterTitle(): string;
+	getChapterLocationLabel?(format?: EpubChapterLocationFormat): string;
 	getCurrentChapterIndex(): number;
 	getCurrentChapterHref?(): string;
 	getParagraphsForChapter?(
@@ -288,8 +293,10 @@ export interface EpubReaderEngine {
 	prevPage(): Promise<void>;
 	nextPage(): Promise<void>;
 	nextChapter?(): Promise<boolean>;
+	prevChapter?(): Promise<boolean>;
 	isAtCurrentChapterEnd?(): boolean;
 	isAtBookEnd?(): boolean;
+	onScrolledChapterEndChange?(callback: (atEnd: boolean) => void): () => void;
 	setBookEndAdvanceHandler?(
 		handler: (() => boolean | Promise<boolean>) | null
 	): void;

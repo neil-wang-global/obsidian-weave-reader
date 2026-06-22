@@ -17,7 +17,7 @@ function sectionCount(lang: (typeof LOCALIZED_LANGS)[number] | "en-US"): number 
 
 describe("EPUB tutorial locales", () => {
 	it("keeps the same tab structure across languages", () => {
-		for (const lang of ["zh-CN", "en-US", "ja-JP", "ko-KR", "ru-RU"] as const) {
+		for (const lang of ["zh-CN", "zh-TW", "en-US", "ja-JP", "ko-KR", "ru-RU"] as const) {
 			expect(Object.keys(EPUB_TUTORIAL_CONTENT_BY_LANG[lang]).sort()).toEqual([...TAB_IDS].sort());
 			expect(EPUB_TUTORIAL_TABS_BY_LANG[lang]).toHaveLength(TAB_IDS.length);
 		}
@@ -51,6 +51,13 @@ describe("EPUB tutorial locales", () => {
 		);
 		expect(EPUB_TUTORIAL_TABS_BY_LANG["ko-KR"][0]?.label).toMatch(/[\uac00-\ud7af]/);
 		expect(EPUB_TUTORIAL_TABS_BY_LANG["ru-RU"][0]?.label).toMatch(/[\u0400-\u04FF]/);
+	});
+
+	it("ships dedicated Traditional Chinese tutorial body", () => {
+		expect(EPUB_TUTORIAL_CONTENT_BY_LANG["zh-TW"]).not.toBe(
+			EPUB_TUTORIAL_CONTENT_BY_LANG["zh-CN"]
+		);
+		expect(EPUB_TUTORIAL_TABS_BY_LANG["zh-TW"][0]?.label).toBe("基礎閱讀");
 	});
 
 	it("preserves technical tutorial fields across localized bodies", () => {

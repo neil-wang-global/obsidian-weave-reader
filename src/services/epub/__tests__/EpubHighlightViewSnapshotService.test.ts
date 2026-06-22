@@ -11,7 +11,7 @@ describe("EpubHighlightViewSnapshotService", () => {
 					cfiRange: "epubcfi(/6/2)",
 					color: "green",
 					text: "第一条摘录 #tag",
-					commentText: "批注正文",
+					commentText: "想法正文",
 					hasCommentDivider: true,
 					sourceFile: "Notes/demo.md",
 					sourceRef: "block-1",
@@ -44,7 +44,7 @@ describe("EpubHighlightViewSnapshotService", () => {
 		expect(fastSnapshot.highlights).toHaveLength(1);
 		expect(fastSnapshot.highlights[0]).toMatchObject({
 			text: "第一条摘录 #tag",
-			commentText: "批注正文",
+			commentText: "想法正文",
 			color: "green",
 			colorLabel: "绿色",
 			noteType: "下划线",

@@ -1,8 +1,9 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { Menu, setIcon } from 'obsidian';
 	import { tr } from '../../utils/i18n';
 	import type { TocItem } from '../../services/epub';
-	import { flattenTocItems } from '../../utils/epub-toc-reading-position';
+	import { flattenTocItems, isTocHrefActive } from '../../utils/epub-toc-reading-position';
 	import EpubLoadingState from './EpubLoadingState.svelte';
 
 	interface Props {
@@ -11,6 +12,7 @@
 		loadFailed?: boolean;
 		activeHref?: string | null;
 		lastReadHref?: string | null;
+		autoScrollToActive?: boolean;
 		onNavigate: (href: string) => void;
 		onAddToIncrementalReading?: (item: TocItem, event?: MouseEvent) => void | Promise<void>;
 	}
@@ -21,12 +23,16 @@
 		loadFailed = false,
 		activeHref = null,
 		lastReadHref = null,
+		autoScrollToActive = true,
 		onNavigate,
 		onAddToIncrementalReading,
 	}: Props = $props();
 	let t = $derived($tr);
 
 	type FlatTocItem = TocItem & { depth: number };
+
+	let tocListEl: HTMLDivElement | undefined = $state(undefined);
+	let lastAutoScrolledActiveHref = '';
 
 	function handleClick(item: TocItem) {
 		onNavigate(item.href);
@@ -57,7 +63,11 @@
 	}
 
 	function isLastReadItem(item: FlatTocItem): boolean {
-		return Boolean(lastReadHref && item.href === lastReadHref);
+		return isTocHrefActive(item.href, lastReadHref);
+	}
+
+	function isActiveItem(item: FlatTocItem): boolean {
+		return isTocHrefActive(item.href, activeHref);
 	}
 
 	function lastReadIcon(node: HTMLElement) {
@@ -69,7 +79,50 @@
 		};
 	}
 
+	function currentLocationIcon(node: HTMLElement) {
+		setIcon(node, 'locate-fixed');
+		return {
+			destroy() {
+				node.replaceChildren();
+			}
+		};
+	}
+
+	function resolveItemAriaLabel(item: FlatTocItem, isActive: boolean, isLastRead: boolean): string | undefined {
+		if (isActive) {
+			return t('epub.toc.currentLocationItemAria', { title: item.label });
+		}
+		if (isLastRead) {
+			return t('epub.toc.lastReadItemAria', { title: item.label });
+		}
+		return undefined;
+	}
+
 	let flatItems = $derived(flattenTocItems(items));
+
+	$effect(() => {
+		void items;
+		lastAutoScrolledActiveHref = '';
+	});
+
+	$effect(() => {
+		const href = String(activeHref || '').trim();
+		const itemCount = flatItems.length;
+		if (!autoScrollToActive || !href || !tocListEl || itemCount === 0) {
+			return;
+		}
+		if (href === lastAutoScrolledActiveHref) {
+			return;
+		}
+		void tick().then(() => {
+			const activeEl = tocListEl?.querySelector('.epub-toc-item.active');
+			const found = activeEl instanceof HTMLElement;
+			if (found) {
+				activeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+				lastAutoScrolledActiveHref = href;
+			}
+		});
+	});
 </script>
 
 <div class="epub-toc-panel">
@@ -80,9 +133,13 @@
 	{:else if flatItems.length === 0}
 		<div class="epub-placeholder">{t('epub.toc.empty')}</div>
 	{:else}
-		<div class="epub-toc-list" aria-label={t('epub.toc.ariaLabel')}>
+		<div
+			class="epub-toc-list"
+			bind:this={tocListEl}
+			aria-label={t('epub.toc.ariaLabel')}
+		>
 			{#each flatItems as item (item.id)}
-				{@const isActive = activeHref === item.href}
+				{@const isActive = isActiveItem(item)}
 				{@const isLastRead = isLastReadItem(item)}
 				<div
 					class="epub-toc-item"
@@ -95,13 +152,22 @@
 					role="button"
 					tabindex="0"
 					aria-current={isActive ? 'location' : undefined}
-					aria-label={isLastRead ? t('epub.toc.lastReadItemAria', { title: item.label }) : undefined}
+					aria-label={resolveItemAriaLabel(item, isActive, isLastRead)}
 					data-last-read={isLastRead ? 'true' : undefined}
 					data-item-id={item.id}
 				>
 					<span class="toc-bullet" aria-hidden="true"></span>
 					<span class="toc-title">{item.label}</span>
 					<span class="toc-trailing">
+						{#if isActive}
+							<span
+								class="toc-current-location-marker"
+								title={t('epub.toc.currentLocationTitle')}
+								aria-label={t('epub.toc.currentLocationTitle')}
+							>
+								<span class="toc-current-location-icon" aria-hidden="true" use:currentLocationIcon></span>
+							</span>
+						{/if}
 						{#if isLastRead}
 							<span
 								class="toc-last-read-marker"
@@ -255,5 +321,28 @@
 		line-height: 1;
 		letter-spacing: 0.02em;
 		white-space: nowrap;
+	}
+
+	.toc-current-location-marker {
+		flex: 0 0 auto;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--interactive-accent);
+	}
+
+	.toc-current-location-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex: 0 0 auto;
+		width: 14px;
+		height: 14px;
+		color: inherit;
+	}
+
+	.toc-current-location-icon :global(svg) {
+		width: 13px;
+		height: 13px;
 	}
 </style>

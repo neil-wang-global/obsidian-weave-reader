@@ -24,8 +24,10 @@
     upsertPluginLocalLicense
   } from '../../../utils/plugin-license';
   import { emitWeaveLicenseChanged } from '../../../utils/license-sync-bridge';
+  import { copyTextToClipboard, focusElementById } from '../../../utils/clipboard-copy';
 
   import type { EffectiveLicenseState } from '../../../types/license';
+  import type StandaloneEpubPlugin from '../../../main';
   import { createSafeNotice } from '../../../utils/obsidian-api-safe';
   import Icon from '../../ui/Icon.svelte';
   import { showNotification } from '../../../utils/notifications';
@@ -39,7 +41,7 @@
   // ==================== Props ====================
   
   interface Props {
-    plugin: any; // PluginExtended type
+    plugin: StandaloneEpubPlugin;
     onSave: () => Promise<void>;
     onActivationSuccess?: (licenseInfo: any) => void;
     onActivationError?: (error: any) => void;
@@ -141,7 +143,7 @@
 
   function handlePaste(event: ClipboardEvent) {
     // 允许粘贴，然后清理格式
-    setTimeout(() => {
+    window.setTimeout(() => {
       activationCode = cleanActivationCodeInput(activationCode);
       validateInput();
     }, 0);
@@ -156,7 +158,7 @@
     validationState = 'validating';
     
     // 模拟验证延迟
-    setTimeout(() => {
+    window.setTimeout(() => {
       if (isValidLength && isValidFormat) {
         validationState = 'valid';
       } else {
@@ -198,16 +200,7 @@
           product: getPluginLicensedProduct(plugin),
           localLicenses: getPluginEffectiveLicenseState(plugin).localLicenses,
         });
-        let callbackAlreadyUsedForSave = false;
-        if (typeof plugin?.saveSettings === 'function') {
-          await plugin.saveSettings();
-        } else {
-          await onSave();
-          callbackAlreadyUsedForSave = true;
-        }
-        if (!callbackAlreadyUsedForSave) {
-          await onSave();
-        }
+        await onSave();
         emitWeaveLicenseChanged(plugin.app);
         
         // 显示成功状态
@@ -300,24 +293,11 @@
   async function handleCopyActivationCode() {
     if (!currentLicenseInfo?.activationCode) return;
     
-    try {
-      await navigator.clipboard.writeText(currentLicenseInfo.activationCode);
+    const copied = await copyTextToClipboard(currentLicenseInfo.activationCode);
+    if (copied) {
       createSafeNotice(t('epub.settings.license.activation.codeCopied'), 2600);
-    } catch (error) {
-      logger.error('Failed to copy activation code:', error);
-      // 回退到创建临时输入框的方式
-      try {
-        const textArea = document.createElement('textarea');
-        textArea.value = currentLicenseInfo.activationCode;
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textArea);
-        createSafeNotice(t('epub.settings.license.activation.codeCopied'), 2600);
-      } catch (fallbackError) {
-        logger.error('Failed to copy activation code with fallback:', fallbackError);
-        createSafeNotice(t('epub.settings.license.activation.codeCopyFailed'), 3000);
-      }
+    } else {
+      createSafeNotice(t('epub.settings.license.activation.codeCopyFailed'), 3000);
     }
   }
 
@@ -355,15 +335,10 @@
         // 显示成功消息
         showNotification(t('epub.settings.license.activation.removed'), 'success');
         
-        // 修复失焦问题：延迟恢复焦点到激活码输入框
-        setTimeout(() => {
-          const activationCodeInput = document.getElementById('activation-code');
-          if (activationCodeInput) {
-            activationCodeInput.focus();
-          } else {
-            // 如果找不到输入框，尝试恢复到当前活动元素
-            document.body.focus();
-            document.body.blur();
+        window.setTimeout(() => {
+          if (!focusElementById('activation-code')) {
+            activeDocument.body.focus();
+            activeDocument.body.blur();
           }
         }, 100);
       } else {

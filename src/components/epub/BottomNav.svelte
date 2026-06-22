@@ -13,10 +13,6 @@
 		vertical?: boolean;
 		statusText?: string;
 		statusDetail?: string;
-		statusStickerValue?: string;
-		statusStickerLabel?: string;
-		statusStickerTitle?: string;
-		stickerWiggleEnabled?: boolean;
 		busy?: boolean;
 	}
 
@@ -29,10 +25,6 @@
 		vertical = false,
 		statusText = '',
 		statusDetail = '',
-		statusStickerValue = '',
-		statusStickerLabel = '',
-		statusStickerTitle = '',
-		stickerWiggleEnabled = true,
 		busy = false,
 	}: Props = $props();
 
@@ -65,10 +57,6 @@
 
 	function hasStatusDetail() {
 		return statusDetail.trim().length > 0;
-	}
-
-	function hasStatusSticker() {
-		return statusStickerValue.trim().length > 0 && statusStickerLabel.trim().length > 0;
 	}
 
 	function getPrevLabel() {
@@ -257,20 +245,6 @@
 			</div>
 		{/if}
 	</div>
-
-	{#if hasStatusSticker()}
-		<div
-			class="epub-nav-status-sticker priority-sticky-note"
-			data-wiggle-enabled={stickerWiggleEnabled ? 'true' : 'false'}
-			class:vertical
-			role="img"
-			aria-label={statusStickerTitle || `${statusStickerLabel} ${statusStickerValue}`}
-			title={statusStickerTitle || `${statusStickerLabel} ${statusStickerValue}`}
-		>
-			<span class="sticky-number">{statusStickerValue}</span>
-			<span class="sticky-label">{statusStickerLabel}</span>
-		</div>
-	{/if}
 
 	<button
 		class="clickable-icon epub-nav-btn"
@@ -565,92 +539,6 @@
 	.epub-nav-jump-btn:disabled {
 		opacity: 0.65;
 		cursor: default;
-	}
-
-	.epub-nav-status-sticker.priority-sticky-note {
-		--weave-sticky-paper: var(--epub-sticker-paper);
-		--weave-sticky-surface: var(--epub-sticker-surface);
-		position: relative;
-		flex: 0 0 auto;
-		width: 64px;
-		min-width: 64px;
-		height: 64px;
-		display: inline-flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		gap: 0.22rem;
-		padding: 0;
-		border-radius: 4px;
-		background: linear-gradient(
-			135deg,
-			color-mix(in srgb, var(--color-blue, #3b82f6) 16%, var(--weave-sticky-paper)) 0%,
-			color-mix(in srgb, var(--color-blue, #3b82f6) 28%, var(--weave-sticky-surface)) 100%
-		);
-		border: 1px solid var(--epub-sticker-border);
-		box-shadow: var(--epub-sticker-shadow);
-		color: var(--epub-sticker-text-neutral);
-		transform: rotate(var(--epub-sticker-rotate-base));
-		animation: var(--epub-sticker-animation, none);
-		transition: all 0.3s cubic-bezier(0, 0, 0.2, 1);
-		overflow: hidden;
-	}
-
-	.epub-nav-status-sticker.priority-sticky-note[data-wiggle-enabled='true'] {
-		--epub-sticker-animation: epub-sticker-wiggle 0.8s ease-in-out 0.3s infinite;
-	}
-
-	.epub-nav-status-sticker.priority-sticky-note::before {
-		content: '';
-		position: absolute;
-		top: -6px;
-		left: 50%;
-		transform: translateX(-50%);
-		width: 44px;
-		height: 15px;
-		background: var(--epub-sticker-tape);
-		border: 1px solid var(--epub-sticker-tape-border);
-		border-radius: 2px;
-		backdrop-filter: blur(4px);
-		box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
-	}
-
-	.epub-nav-status-sticker .sticky-number {
-		margin-bottom: 0.18rem;
-		font-size: 1rem;
-		font-weight: 900;
-		line-height: 1;
-		letter-spacing: -0.03em;
-		font-variant-numeric: tabular-nums;
-	}
-
-	.epub-nav-status-sticker .sticky-label {
-		font-size: 0.56rem;
-		font-weight: 700;
-		line-height: 1.1;
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-		opacity: 0.9;
-	}
-
-	.epub-nav-status-sticker.vertical {
-		width: 54px;
-		min-width: 54px;
-		height: 54px;
-	}
-
-	.epub-nav-status-sticker.vertical::before {
-		width: 38px;
-		height: 12px;
-		top: -5px;
-	}
-
-	.epub-nav-status-sticker.vertical .sticky-number {
-		font-size: 0.88rem;
-	}
-
-	.epub-nav-status-sticker.vertical .sticky-label {
-		font-size: 0.5rem;
 	}
 
 	.epub-nav-status-divider {

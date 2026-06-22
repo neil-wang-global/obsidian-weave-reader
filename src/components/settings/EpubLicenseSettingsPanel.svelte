@@ -10,11 +10,13 @@
   import { createSafeNotice } from "../../utils/obsidian-api-safe";
   import { showObsidianConfirm } from "../../utils/obsidian-confirm";
   import { showNotification } from "../../utils/notifications";
+  import { copyTextToClipboard } from "../../utils/clipboard-copy";
   import { tr } from "../../utils/i18n";
   import { LIFETIME_LICENSE_PURCHASE_URL } from "../../config/plugin-runtime";
+  import type StandaloneEpubPlugin from "../../main";
 
   interface Props {
-    plugin: any;
+    plugin: StandaloneEpubPlugin;
   }
 
   let { plugin }: Props = $props();
@@ -58,18 +60,10 @@
     isSavingCode = true;
 
     try {
-      await navigator.clipboard.writeText(activationCode);
-      createSafeNotice(t("epub.settings.license.codeCopied"), 2600);
-    } catch {
-      try {
-        const textArea = document.createElement("textarea");
-        textArea.value = activationCode;
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand("copy");
-        document.body.removeChild(textArea);
+      const copied = await copyTextToClipboard(activationCode);
+      if (copied) {
         createSafeNotice(t("epub.settings.license.codeCopied"), 2600);
-      } catch {
+      } else {
         createSafeNotice(t("epub.settings.license.codeCopyFailed"), 3000);
       }
     } finally {
@@ -262,7 +256,11 @@
   }
 
   .section-title.accent-purple::before {
-    background: linear-gradient(135deg, rgba(168, 85, 247, 0.8), rgba(147, 51, 234, 0.6));
+    background: linear-gradient(
+      135deg,
+      color-mix(in oklab, var(--color-purple), transparent 20%),
+      color-mix(in oklab, var(--color-purple), transparent 40%)
+    );
   }
 
   .section-description {

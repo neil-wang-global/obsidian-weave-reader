@@ -33,4 +33,14 @@ describe("epub-error classification", () => {
 		expect(classified.code).toBe("invalid_archive");
 		expect(classified.userMessage).toContain("压缩包已损坏");
 	});
+
+	it("uses the book format label for load timeout messages", () => {
+		const classified = classifyEpubError(new Error("CBZ loading timeout"), "open", {
+			filePath: "Books/comic.cbz",
+		});
+
+		expect(classified.code).toBe("load_timeout");
+		expect(classified.userMessage).toContain("CBZ");
+		expect(classified.logMessage).toContain("[CBZ:open:load_timeout]");
+	});
 });

@@ -1,10 +1,12 @@
-import { PluginSettingTab } from "obsidian";
+import { App, PluginSettingTab } from "obsidian";
+import { mount, unmount, type Component as SvelteComponent } from "svelte";
 import type StandaloneEpubPlugin from "../../main";
 
 export class EpubSettingsTab extends PluginSettingTab {
 	plugin: StandaloneEpubPlugin;
+	private svelteRoot: ReturnType<typeof mount> | null = null;
 
-	constructor(app: unknown, plugin: StandaloneEpubPlugin) {
+	constructor(app: App, plugin: StandaloneEpubPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
@@ -13,13 +15,27 @@ export class EpubSettingsTab extends PluginSettingTab {
 		void this.renderPanel();
 	}
 
+	hide(): void {
+		this.unmountPanel();
+		this.containerEl.empty();
+	}
+
+	private unmountPanel(): void {
+		if (!this.svelteRoot) {
+			return;
+		}
+		void unmount(this.svelteRoot);
+		this.svelteRoot = null;
+	}
+
 	private async renderPanel(): Promise<void> {
+		this.unmountPanel();
+
 		const { containerEl } = this;
 		containerEl.empty();
 
-		const { mount } = await import("svelte");
 		const { default: Component } = await import("./EpubSettingsPanel.svelte");
-		mount(Component, {
+		this.svelteRoot = mount(Component as SvelteComponent, {
 			target: containerEl,
 			props: {
 				plugin: this.plugin,

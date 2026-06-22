@@ -211,6 +211,6 @@ describe('EpubCanvasService', () => {
 		expect(saved.nodes[0]?.text).toContain(
 			'[[Books/demo.epub#weave-cfi=readium:styled'
 		);
-		expect(saved.nodes[0]?.text).toContain('&sid=epubsrc-demo|demo]]');
+		expect(saved.nodes[0]?.text).toContain('&sid=epubsrc-demo&eid=');
 	});
 });

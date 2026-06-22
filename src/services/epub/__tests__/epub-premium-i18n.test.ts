@@ -14,7 +14,7 @@ describe("getEpubPremiumFeaturePreviewContent i18n", () => {
 		const preview = getEpubPremiumFeaturePreviewContent(
 			PREMIUM_FEATURES.EPUB_READING_REFERENCE
 		);
-		expect(preview.title).toBe("Reading reference point and top sticker");
+		expect(preview.title).toBe("Reading reference point");
 		expect(preview.description).toContain("Manually record a reference reading position");
 		expect(preview.title).not.toMatch(/[\u4e00-\u9fff]/);
 	});
@@ -24,7 +24,7 @@ describe("getEpubPremiumFeaturePreviewContent i18n", () => {
 		const preview = getEpubPremiumFeaturePreviewContent(
 			PREMIUM_FEATURES.EPUB_READING_REFERENCE
 		);
-		expect(preview.title).toBe("参考阅读点与顶部贴纸");
+		expect(preview.title).toBe("参考阅读点");
 		expect(get(currentLanguage)).toBe("zh-CN");
 	});
 });

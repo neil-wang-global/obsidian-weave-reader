@@ -139,22 +139,6 @@ describe('EpubView', () => {
 		unmountSpy.mockClear();
 	});
 
-	it('uses explicit incremental reading capability instead of the wrapped resume callback presence', () => {
-		const view = new EpubView({} as any, { app: {} } as any);
-
-		(view as any).actionHandlers = {
-			markIRResumePoint: vi.fn(),
-			canMarkIRResumePoint: () => false,
-		};
-		expect((view as any).hasWeaveIncrementalReadingHost()).toBe(false);
-
-		(view as any).actionHandlers = {
-			markIRResumePoint: vi.fn(),
-			canMarkIRResumePoint: () => true,
-		};
-		expect((view as any).hasWeaveIncrementalReadingHost()).toBe(true);
-	});
-
 	it('passes initial pending CFI to EpubReaderApp props without replaying navigateToCfi in onActionsReady', () => {
 		const view = new EpubView({} as any, { app: {} } as any);
 		(view as any).isOpen = true;

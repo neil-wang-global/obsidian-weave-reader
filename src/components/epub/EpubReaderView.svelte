@@ -15,6 +15,7 @@
 	import { choosePreferredRestorePosition } from '../../services/epub/restore-position';
 	import { reportEpubError } from '../../services/epub/epub-error';
 	import type { EpubBook, EpubExcerptSettings, EpubFlowMode, EpubLayoutMode, EpubReaderEngine, EpubReaderSettings, EpubStorageService, PaginationInfo, ReaderHighlight, ReadingPosition } from '../../services/epub';
+	import { flushEpubPendingProgress } from '../../services/epub';
 	import type { EpubAnnotationService } from '../../services/epub';
 	import type { EpubBacklinkHighlightService } from '../../services/epub/EpubBacklinkHighlightService';
 	import { logger } from '../../utils/logger';
@@ -198,47 +199,56 @@
 		resetReadingPositionAutoSaveTracking(info.currentPage);
 	}
 
-	async function persistLatestReadingProgressOnTeardown(): Promise<void> {
-		if (!canUseReadingProgress) {
-			await storageService.flushPendingProgress();
+	async function persistLatestReadingProgressOnTeardown(
+		targetStorageService: EpubStorageService = storageService
+	): Promise<void> {
+		if (!targetStorageService || typeof targetStorageService !== "object") {
 			return;
 		}
-		if (!book?.id) {
-			await storageService.flushPendingProgress();
-			return;
-		}
-		if (isParagraphModeProgressDetached?.()) {
-			await storageService.flushPendingProgress();
-			return;
-		}
+		try {
+			if (!canUseReadingProgress) {
+				await flushEpubPendingProgress(targetStorageService);
+				return;
+			}
+			if (!book?.id) {
+				await flushEpubPendingProgress(targetStorageService);
+				return;
+			}
+			if (isParagraphModeProgressDetached?.()) {
+				await flushEpubPendingProgress(targetStorageService);
+				return;
+			}
 
-		readerService.flushReadingPace?.();
-		const readingStats = readerService.getReadingStats?.() ?? book.readingStats;
+			readerService.flushReadingPace?.();
+			const readingStats = readerService.getReadingStats?.() ?? book.readingStats;
 
-		const livePosition = readerService.getCurrentPosition();
-		const currentCfi = String(livePosition?.cfi || readerService.getCurrentCFI() || book.currentPosition?.cfi || '').trim();
-		if (!currentCfi) {
-			await storageService.flushPendingProgress();
-			return;
+			const livePosition = readerService.getCurrentPosition();
+			const currentCfi = String(livePosition?.cfi || readerService.getCurrentCFI() || book.currentPosition?.cfi || '').trim();
+			if (!currentCfi) {
+				await flushEpubPendingProgress(targetStorageService);
+				return;
+			}
+
+			const latestPosition = {
+				chapterIndex:
+					typeof livePosition?.chapterIndex === 'number'
+						? livePosition.chapterIndex
+						: book.currentPosition?.chapterIndex || 0,
+				cfi: currentCfi,
+				percent:
+					typeof livePosition?.percent === 'number' && Number.isFinite(livePosition.percent)
+						? livePosition.percent
+						: book.currentPosition?.percent || 0,
+			};
+
+			if (readingStats) {
+				book.readingStats = readingStats;
+			}
+			await persistReadingProgress(latestPosition);
+			await flushEpubPendingProgress(targetStorageService);
+		} catch (error) {
+			logger.warn('[EpubReaderView] Failed to persist reading progress on teardown:', error);
 		}
-
-		const latestPosition = {
-			chapterIndex:
-				typeof livePosition?.chapterIndex === 'number'
-					? livePosition.chapterIndex
-					: book.currentPosition?.chapterIndex || 0,
-			cfi: currentCfi,
-			percent:
-				typeof livePosition?.percent === 'number' && Number.isFinite(livePosition.percent)
-					? livePosition.percent
-					: book.currentPosition?.percent || 0,
-		};
-
-		if (readingStats) {
-			book.readingStats = readingStats;
-		}
-		await persistReadingProgress(latestPosition);
-		await storageService.flushPendingProgress();
 	}
 
 	function isStaleRender(renderToken: number): boolean {
@@ -254,7 +264,7 @@
 			return null;
 		}
 
-		const savedProgress = await storageService.loadProgress(currentBook.id);
+		const savedProgress = await storageService.loadProgress(currentBook.id, currentBook);
 		if (!savedProgress?.cfi) {
 			return savedProgress;
 		}
@@ -812,11 +822,12 @@
 	});
 
 	onMount(() => {
+		const capturedStorageService = storageService;
 		return () => {
 			viewDisposed = true;
 			renderSessionToken += 1;
 			mobileStabilizationToken += 1;
-			void persistLatestReadingProgressOnTeardown();
+			void persistLatestReadingProgressOnTeardown(capturedStorageService);
 			if (detachRelocatedHandler) {
 				detachRelocatedHandler();
 				detachRelocatedHandler = null;

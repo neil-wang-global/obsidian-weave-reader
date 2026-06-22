@@ -25,8 +25,8 @@ export type {
 	ReaderSelectionChange,
 	ReaderViewportGeometry,
 } from "./reader-engine-types";
-export { EpubStorageService } from "./EpubStorageService";
-export { getEpubStorageService } from "./epub-storage-access";
+export { EpubStorageService, flushEpubStoragePendingProgress } from "./EpubStorageService";
+export { flushEpubPendingProgress, getEpubStorageService, resetEpubStorageServiceCache } from "./epub-storage-access";
 export {
 	BOOKSHELF_GRID_PAINT_OPTIMIZATION_THRESHOLD,
 	BOOKSHELF_LIST_VIRTUAL_SCROLL_THRESHOLD,
@@ -135,6 +135,11 @@ export {
 	exportBookNotesToMarkdown,
 	exportBookSectionToMarkdown,
 } from "./book-markdown-export";
+export {
+	loadPublicationTocItems,
+	navigateToPublicationChapter,
+	buildPublicationChapterMarkdownLink,
+} from "./epub-ir-interop";
 export type {
 	BookMarkdownExportAsset,
 	ExportBookNotesToMarkdownInput,

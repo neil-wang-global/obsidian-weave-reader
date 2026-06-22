@@ -60,7 +60,7 @@ describe("NavigationHub", () => {
 		resolveSourceFilePathMock.mockResolvedValue("Books/demo.epub");
 	});
 
-	it("opens books for source navigation with pendingLocate in view state", async () => {
+	it("reuses preferred reader leaves when reuseLeaf policy is set", async () => {
 		const hub = new NavigationHub(app);
 		const result = await hub.navigate({
 			kind: "book",
@@ -70,7 +70,7 @@ describe("NavigationHub", () => {
 		});
 
 		expect(result.success).toBe(true);
-		expect(openBookForSourceNavigationMock).toHaveBeenCalledWith(
+		expect(openEpubInPreferredLeafMock).toHaveBeenCalledWith(
 			app,
 			"Books/demo.epub",
 			expect.objectContaining({
@@ -78,9 +78,9 @@ describe("NavigationHub", () => {
 				pendingLocate: { cfi: "epubcfi(/6/2)", text: "Hello" },
 				pendingCfi: "epubcfi(/6/2)",
 				pendingText: "Hello",
-			}),
-			{ focus: true }
+			})
 		);
+		expect(openBookForSourceNavigationMock).not.toHaveBeenCalled();
 	});
 
 	it("uses preferred leaf policy for bookshelf-style opens", async () => {

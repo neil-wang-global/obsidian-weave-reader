@@ -43,7 +43,7 @@ body:
       label: 相关功能
       options:
         - label: 阅读 / 翻页 / 段落模式
-        - label: 高亮 / 批注 / 摘录笔记
+        - label: 高亮 / 想法 / 摘录笔记
         - label: 书架 / 导入书籍
         - label: 回链 / Canvas / Weave 制卡
         - label: 设置 / 主题 / 语言

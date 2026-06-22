@@ -3,16 +3,12 @@ import { unknownPlainText } from "../../utils/unknown-plain-text";
 import { type App, TFile } from "obsidian";
 import {
 	isBlobResourceUrl,
+	prefetchBlobUrlsFromText,
 	readBlobUrlAsArrayBuffer,
 	readBlobUrlAsText,
-	shouldPreferFetchForResourceUrl,
 } from "../../utils/blob-url-text";
+import "../../utils/blob-url-registry";
 import { domInstanceOf } from "../../utils/dom-instance-of";
-import {
-	sanitizeLegacyAuthorColorAttributes,
-	stripAuthorColorDeclarations,
-	stripInlineAuthorColorStyles,
-} from "../../utils/epub-author-color-sanitizer";
 import { logger } from "../../utils/logger";
 import { readVaultBinaryData } from "./EpubBinaryData";
 import {
@@ -23,8 +19,11 @@ import {
 } from "./book-format";
 import { EpubError } from "./epub-error";
 import { makePlainTextBook } from "./plain-text-book";
+import { inlineFoliateBlobMarkup, shouldRemoveHttpEquivMeta } from "./foliate-blob-markup-normalizer";
 import * as EpubCfi from "./epub-cfi";
 import type { TocItem } from "./types";
+import type { EpubChapterLocationFormat } from "./epub-excerpt-settings";
+import { resolveChapterLocationLabel } from "../../utils/epub-chapter-location-label";
 import type { EpubBookFootnoteEntry, EpubBookFootnotesDraft } from "./reader-engine-types";
 
 const EPUB_OPS_NAMESPACE = "http://www.idpf.org/2007/ops";
@@ -34,7 +33,6 @@ const TEXT_NODE_TAG_BLACKLIST = new Set(["SCRIPT", "STYLE", "NOSCRIPT"]);
 const COMPACT_READIUM_MARKER = "loc";
 const COMPACT_READIUM_SEPARATOR = "~";
 const REMOTE_RESOURCE_URL_PATTERN = /^(?:https?:)?\/\//i;
-const ACTIVE_CONTENT_SELECTOR = "script, iframe, object, embed";
 const SCRIPT_PROTOCOL_PATTERN = /^\s*(?:javascript|vbscript)\s*:/i;
 const DANGEROUS_URL_ATTRIBUTES = ["href", "src", "xlink:href", "formaction"];
 const MARKDOWN_SKIPPED_TAGS = new Set([
@@ -256,6 +254,11 @@ type MarkdownExportContext = {
 	assetBySource: Map<string, FoliateChapterExportAsset>;
 };
 
+export interface FoliatePublicationLoadOptions {
+	/** IR 导入等场景只需目录，跳过章节正文扫描与封面提取。 */
+	tocOnly?: boolean;
+}
+
 export class FoliateVaultPublicationParser {
 	private readonly app: App;
 	private archive: JSZip | null = null;
@@ -272,6 +275,8 @@ export class FoliateVaultPublicationParser {
 	private processedDocumentCache = new Map<string, Document>();
 	/** Reader-aligned generic section DOM (from `section.load`, not `createDocument`). */
 	private genericSectionDocumentCache = new Map<number, Document>();
+	/** Serialize foliate `section.load()` so blob resources are not revoked mid-read. */
+	private genericSectionLoadChain: Promise<void> = Promise.resolve();
 	private metadata: FoliateLoadedPublication["metadata"] = {
 		title: "",
 		author: "",
@@ -286,7 +291,10 @@ export class FoliateVaultPublicationParser {
 		this.app = app;
 	}
 
-	async load(filePath: string): Promise<FoliateLoadedPublication> {
+	async load(
+		filePath: string,
+		options?: FoliatePublicationLoadOptions
+	): Promise<FoliateLoadedPublication> {
 		this.dispose();
 		this.filePath = filePath;
 		this.fileName = filePath.split("/").pop() || "book";
@@ -364,7 +372,21 @@ export class FoliateVaultPublicationParser {
 		this.attachHtmlTransformPipeline(this.currentBook);
 		await this.buildMetadata();
 		this.buildTocItems();
+		if (options?.tocOnly) {
+			return {
+				filePath,
+				fileName: this.fileName,
+				book: this.currentBook,
+				tocItems: this.tocItems,
+				metadata: this.metadata,
+				totalPositions: 0,
+			};
+		}
 		await this.buildSectionDescriptors();
+		// Accurate word counts / page positions are non-critical for first paint.
+		void this.hydrateSectionDescriptorMetrics().catch((error) => {
+			logger.warn("[FoliateVaultPublicationParser] Failed to hydrate section metrics:", error);
+		});
 		// TOC page numbers are non-critical for first paint; hydrate in the background.
 		void this.hydrateTocPageNumbers().catch((error) => {
 			logger.warn("[FoliateVaultPublicationParser] Failed to hydrate TOC page numbers:", error);
@@ -440,6 +462,19 @@ export class FoliateVaultPublicationParser {
 
 	getSectionTitleByIndex(index: number): string {
 		return this.sectionDescriptors[index]?.title || "";
+	}
+
+	getSectionLocationLabelByIndex(
+		index: number,
+		format: EpubChapterLocationFormat = "leaf"
+	): string {
+		const href = this.getSectionHrefByIndex(index);
+		return resolveChapterLocationLabel(
+			this.tocItems,
+			href,
+			this.getSectionTitleByIndex(index),
+			format
+		);
 	}
 
 	getSectionHrefByIndex(index: number): string {
@@ -1172,13 +1207,8 @@ export class FoliateVaultPublicationParser {
 		let totalWordCount = 0;
 		for (const [index, section] of sections.entries()) {
 			const href = await this.resolveDescriptorHref(section, index);
-			const doc = await this.getRawDocumentByHref(href);
-			const textLength = this.extractReadableSectionText(
-				doc?.body || doc?.documentElement || null
-			).length;
-			const wordCount = this.estimateWordCount(
-				this.extractReadableSectionText(doc?.body || doc?.documentElement || null)
-			);
+			const textLength = this.estimateSectionTextLength(section, href);
+			const wordCount = this.estimateWordCountFromTextLength(textLength);
 			const title =
 				this.getSectionTitleByHref(href) || this.readableTitleFromHref(href) || `章节 ${index + 1}`;
 			this.sectionTitleByHref.set(href, title);
@@ -1201,6 +1231,79 @@ export class FoliateVaultPublicationParser {
 		this.totalPositions = positionStart;
 		this.metadata.wordCount = totalWordCount;
 		this.metadata.chapterCount = this.sectionDescriptors.length;
+	}
+
+	private estimateSectionTextLength(section: FoliateSection | undefined, href: string): number {
+		const byteSize = this.resolveSectionByteSize(section, href);
+		if (byteSize > 0) {
+			return this.estimateTextLengthFromByteSize(byteSize);
+		}
+		return 0;
+	}
+
+	private resolveSectionByteSize(section: FoliateSection | undefined, href: string): number {
+		const normalizedHref = this.normalizeSectionHref(href);
+		if (normalizedHref && this.archive) {
+			const entry = this.findArchiveEntry(normalizedHref);
+			const archiveSize = (entry as { _data?: { uncompressedSize?: number } } | null)?._data
+				?.uncompressedSize;
+			if (typeof archiveSize === "number" && archiveSize > 0) {
+				return archiveSize;
+			}
+		}
+
+		const sectionSize = section?.size;
+		return typeof sectionSize === "number" && sectionSize > 0 ? sectionSize : 0;
+	}
+
+	private estimateTextLengthFromByteSize(byteSize: number): number {
+		// HTML / XML markup inflates byte size; this is only for pagination estimates.
+		return Math.max(0, Math.round(byteSize * 0.45));
+	}
+
+	private estimateWordCountFromTextLength(textLength: number): number {
+		const normalizedLength = Math.max(0, Math.round(textLength));
+		if (normalizedLength <= 0) {
+			return 0;
+		}
+		return Math.max(1, Math.round(normalizedLength / 2.5));
+	}
+
+	private async hydrateSectionDescriptorMetrics(): Promise<void> {
+		if (!this.currentBook || this.sectionDescriptors.length === 0) {
+			return;
+		}
+
+		let totalWordCount = 0;
+		let positionStart = 0;
+		for (const descriptor of this.sectionDescriptors) {
+			if (!this.currentBook) {
+				return;
+			}
+
+			const doc = await this.getRawDocumentByHref(descriptor.href);
+			const textLength = this.extractReadableSectionText(
+				doc?.body || doc?.documentElement || null
+			).length;
+			const wordCount = this.estimateWordCount(
+				this.extractReadableSectionText(doc?.body || doc?.documentElement || null)
+			);
+			descriptor.textLength = textLength;
+			descriptor.wordCount = wordCount;
+			descriptor.positionCount = this.metadata.isFixedLayout
+				? 1
+				: Math.max(1, Math.ceil(Math.max(textLength, 1) / POSITION_CHAR_BUCKET));
+			descriptor.positionStart = positionStart;
+			positionStart += descriptor.positionCount;
+			totalWordCount += wordCount;
+		}
+
+		if (!this.currentBook) {
+			return;
+		}
+
+		this.totalPositions = positionStart;
+		this.metadata.wordCount = totalWordCount;
 	}
 
 	private estimateWordCount(text: string): number {
@@ -1583,11 +1686,12 @@ export class FoliateVaultPublicationParser {
 		let doc: Document | null = null;
 		if (typeof section.load === "function") {
 			try {
-				const loaded = await section.load();
+				const loaded = await this.withGenericSectionLoadLock(() => section.load!());
 				const url = String(loaded || "").trim();
 				if (url) {
 					const markup = await this.fetchMarkupFromSectionLoadUrl(url);
 					if (markup) {
+						await prefetchBlobUrlsFromText(markup);
 						let transformed = markup;
 						try {
 							transformed = await this.inlineFoliateBlobStylesheets(
@@ -1619,6 +1723,15 @@ export class FoliateVaultPublicationParser {
 			this.genericSectionDocumentCache.set(index, doc);
 		}
 		return doc;
+	}
+
+	private async withGenericSectionLoadLock<T>(task: () => Promise<T> | T): Promise<T> {
+		const run = this.genericSectionLoadChain.then(() => task());
+		this.genericSectionLoadChain = run.then(
+			() => undefined,
+			() => undefined
+		);
+		return run;
 	}
 
 	private async fetchMarkupFromSectionLoadUrl(url: string): Promise<string> {
@@ -1661,6 +1774,7 @@ export class FoliateVaultPublicationParser {
 					if (typeof rawMarkup !== "string") {
 						return rawMarkup;
 					}
+					await prefetchBlobUrlsFromText(rawMarkup);
 					return this.inlineFoliateBlobStylesheets(rawMarkup, mimeType);
 				})
 				.catch((error) => {
@@ -1676,246 +1790,11 @@ export class FoliateVaultPublicationParser {
 	}
 
 	private async inlineFoliateBlobStylesheets(markup: string, mediaType: string): Promise<string> {
-		const parserType = this.getMarkupParserType(mediaType);
-		let doc: Document;
-		try {
-			doc = this.parseMarkupDocument(markup, parserType, "foliate-transformed", true);
-		} catch {
-			return markup;
-		}
-
-		this.sanitizeFoliateDocument(doc);
-
-		for (const styleElement of Array.from(doc.querySelectorAll("style"))) {
-			if (styleElement.textContent) {
-				styleElement.textContent = await this.normalizeFoliateCssText(styleElement.textContent);
-			}
-		}
-
-		for (const linkElement of Array.from(doc.querySelectorAll('link[rel~="stylesheet"][href]'))) {
-			const href = linkElement.getAttribute("href") || "";
-			if (this.isRemoteResourceUrl(href)) {
-				linkElement.remove();
-				continue;
-			}
-			if (!href.startsWith("blob:")) {
-				continue;
-			}
-			const cssText = await this.readTextResource(href);
-			if (!cssText) {
-				continue;
-			}
-			const inlinedCss = await this.normalizeFoliateCssText(cssText);
-			linkElement.replaceWith(this.createInlineStylesheetElement(doc, inlinedCss, linkElement));
-		}
-
-		await this.inlineFoliateBlobImages(doc);
-		await this.inlineFoliateBlobInlineStyles(doc);
-
-		return parserType === "text/html"
-			? doc.documentElement.outerHTML
-			: new XMLSerializer().serializeToString(doc);
-	}
-
-	private sanitizeFoliateDocument(doc: Document): void {
-		for (const element of Array.from(doc.querySelectorAll(ACTIVE_CONTENT_SELECTOR))) {
-			element.remove();
-		}
-
-		for (const metaElement of Array.from(doc.querySelectorAll("meta[http-equiv]"))) {
-			const httpEquiv = metaElement.getAttribute("http-equiv") || "";
-			if (httpEquiv.trim().toLowerCase() === "refresh") {
-				metaElement.remove();
-			}
-		}
-
-		for (const element of Array.from(doc.querySelectorAll("*"))) {
-			for (const attribute of Array.from(element.attributes)) {
-				const attributeName = attribute.name;
-				const attributeValue = attribute.value || "";
-				if (/^on/i.test(attributeName)) {
-					element.removeAttribute(attributeName);
-					continue;
-				}
-				if (
-					DANGEROUS_URL_ATTRIBUTES.includes(attributeName.toLowerCase()) &&
-					SCRIPT_PROTOCOL_PATTERN.test(attributeValue)
-				) {
-					element.removeAttribute(attributeName);
-				}
-			}
-		}
-
-		this.sanitizeInlineColorStyles(doc);
-		sanitizeLegacyAuthorColorAttributes(doc);
-	}
-
-	private sanitizeInlineColorStyles(doc: Document): void {
-		for (const element of Array.from(doc.querySelectorAll("[style]"))) {
-			const style = element.getAttribute("style");
-			if (!style) {
-				continue;
-			}
-
-			const sanitized = stripInlineAuthorColorStyles(style);
-			if (sanitized) {
-				element.setAttribute("style", sanitized);
-			} else {
-				element.removeAttribute("style");
-			}
-		}
-	}
-
-	private async normalizeFoliateCssText(cssText: string): Promise<string> {
-		const importedCss = await this.inlineBlobCssImports(cssText);
-		const inlinedUrls = await this.inlineBlobCssUrls(importedCss);
-		const withoutRemoteResources = this.stripUnsupportedExternalCss(inlinedUrls);
-		return stripAuthorColorDeclarations(withoutRemoteResources);
-	}
-
-	private async inlineFoliateBlobImages(doc: Document): Promise<void> {
-		for (const imageElement of Array.from(doc.querySelectorAll("img[src]"))) {
-			const href = imageElement.getAttribute("src") || "";
-			if (!href.startsWith("blob:")) {
-				continue;
-			}
-			const dataUrl = await this.readBlobResourceAsDataUrl(href);
-			if (dataUrl) {
-				imageElement.setAttribute("src", dataUrl);
-			}
-		}
-	}
-
-	private async inlineFoliateBlobInlineStyles(doc: Document): Promise<void> {
-		for (const element of Array.from(doc.querySelectorAll("[style]"))) {
-			const styleValue = element.getAttribute("style");
-			if (!styleValue || !/blob:/i.test(styleValue)) {
-				continue;
-			}
-			const inlinedStyle = await this.inlineBlobCssUrls(styleValue);
-			if (inlinedStyle.trim()) {
-				element.setAttribute("style", inlinedStyle);
-			} else {
-				element.removeAttribute("style");
-			}
-		}
-	}
-
-	private async inlineBlobCssUrls(
-		cssText: string,
-		visited = new Set<string>()
-	): Promise<string> {
-		const urlPattern = /url\(\s*(['"]?)(blob:[^'")]+)\1\s*\)/gi;
-		let output = cssText;
-		for (const match of Array.from(cssText.matchAll(urlPattern))) {
-			const blobHref = (match[2] || "").trim();
-			if (!blobHref.startsWith("blob:") || visited.has(blobHref)) {
-				continue;
-			}
-			visited.add(blobHref);
-			const dataUrl = await this.readBlobResourceAsDataUrl(blobHref);
-			if (!dataUrl) {
-				continue;
-			}
-			output = output.replace(match[0], `url("${dataUrl}")`);
-		}
-		return output;
-	}
-
-	private async readBlobResourceAsDataUrl(href: string): Promise<string | null> {
-		const binary = await this.readBinaryResource(href);
-		if (!binary || binary.bytes.length === 0) {
-			return null;
-		}
-		return this.blobToDataUrl(
-			new Blob([binary.bytes], {
-				type: binary.mimeType || "application/octet-stream",
-			})
-		);
-	}
-
-	private async inlineBlobCssImports(
-		cssText: string,
-		visited = new Set<string>()
-	): Promise<string> {
-		const importPattern = /@import\s+(?:url\()?['"]?([^'")]+)['"]?\)?\s*;/gi;
-		let output = cssText;
-		for (const match of Array.from(cssText.matchAll(importPattern))) {
-			const importHref = (match[1] || "").trim();
-			if (!importHref.startsWith("blob:") || visited.has(importHref)) {
-				continue;
-			}
-			visited.add(importHref);
-			const importedCss = await this.readTextResource(importHref);
-			if (!importedCss) {
-				continue;
-			}
-			const expanded = await this.inlineBlobCssImports(importedCss, visited);
-			output = output.replace(match[0], expanded);
-		}
-		return output;
-	}
-
-	private stripUnsupportedExternalCss(cssText: string): string {
-		let output = cssText.replace(
-			/@import\s+(?:url\()?['"]?([^'")]+)['"]?\)?\s*;/gi,
-			(match, href: string) => (this.isRemoteResourceUrl(href) ? "" : match)
-		);
-
-		output = output.replace(/@font-face\s*{[\s\S]*?}/gi, (block) => {
-			const sanitizedBlock = block.replace(/src\s*:\s*([^;]+);/gi, (_match, sources: string) => {
-				const sanitizedSources = sources
-					.replace(
-						/\s*,?\s*url\((['"]?)(?:https?:)?\/\/[^)]+?\1\)(?:\s+format\((?:[^)]+)\))?\s*,?/gi,
-						", "
-					)
-					.replace(/\s*,\s*,+/g, ", ")
-					.replace(/^\s*,\s*|\s*,\s*$/g, "")
-					.trim();
-				return sanitizedSources ? `src: ${sanitizedSources};` : "";
-			});
-
-			return /src\s*:/.test(sanitizedBlock) ? sanitizedBlock : "";
-		});
-
-		return output;
-	}
-
-	private createInlineStylesheetElement(
-		doc: Document,
-		cssText: string,
-		linkElement?: Element | null
-	): HTMLStyleElement | Element {
-		const styleElement = doc.createElement("style");
-		styleElement.setAttribute("type", "text/css");
-		styleElement.setAttribute("data-weave-inline-stylesheet", "true");
-		const media = linkElement?.getAttribute("media");
-		if (media) {
-			styleElement.setAttribute("media", media);
-		}
-		styleElement.textContent = cssText;
-		return styleElement;
+		return inlineFoliateBlobMarkup(markup, mediaType);
 	}
 
 	private isRemoteResourceUrl(value: string): boolean {
 		return REMOTE_RESOURCE_URL_PATTERN.test(String(value || "").trim());
-	}
-
-	private async readTextResource(href: string): Promise<string> {
-		try {
-			if (isBlobResourceUrl(href)) {
-				return await readBlobUrlAsText(href);
-			}
-			return await readTextResourceViaXhr(href);
-		} catch (error) {
-			if (!isBlobResourceUrl(href)) {
-				logger.warn("[FoliateVaultPublicationParser] Failed to read transformed resource:", {
-					href,
-					error,
-				});
-			}
-			return "";
-		}
 	}
 
 	private async readBinaryResource(
@@ -3772,7 +3651,7 @@ export class FoliateVaultPublicationParser {
 		}
 		for (const metaElement of Array.from(doc.querySelectorAll("meta[http-equiv]"))) {
 			const httpEquiv = metaElement.getAttribute("http-equiv") || "";
-			if (httpEquiv.trim().toLowerCase() === "refresh") {
+			if (shouldRemoveHttpEquivMeta(httpEquiv)) {
 				metaElement.remove();
 			}
 		}
@@ -4499,56 +4378,6 @@ export class FoliateVaultPublicationParser {
 	private clamp(value: number, min: number, max: number): number {
 		return Math.min(Math.max(value, min), max);
 	}
-}
-
-function readTextResourceViaXhr(href: string): Promise<string> {
-	if (isBlobResourceUrl(href)) {
-		return readBlobUrlAsText(href);
-	}
-	if (shouldPreferFetchForResourceUrl(href) && typeof window.fetch === "function") {
-		return readTextResourceViaFetch(href);
-	}
-
-	return new Promise((resolve, reject) => {
-		const request = new XMLHttpRequest();
-		request.open("GET", href, true);
-		request.responseType = "text";
-		request.onload = () => {
-			if (request.status === 0 || (request.status >= 200 && request.status < 300)) {
-				resolve(request.responseText || "");
-				return;
-			}
-			reject(
-				new Error(
-					`Failed to load text resource: ${request.status} ${request.statusText || "Unknown error"}`
-				)
-			);
-		};
-		request.onerror = async () => {
-			if (isBlobResourceUrl(href)) {
-				reject(new Error("Failed to read blob URL"));
-				return;
-			}
-			try {
-				resolve(await readTextResourceViaFetch(href));
-			} catch (error) {
-				reject(error instanceof Error ? error : new Error(String(error)));
-			}
-		};
-		request.send();
-	});
-}
-
-async function readTextResourceViaFetch(href: string): Promise<string> {
-	if (typeof window.fetch !== "function") {
-		throw new Error("Failed to load text resource");
-	}
-
-	const response = await window.fetch(href);
-	if (!response.ok) {
-		throw new Error(`Failed to load text resource: ${response.status} ${response.statusText}`);
-	}
-	return response.text();
 }
 
 async function readBinaryResourceViaFetch(

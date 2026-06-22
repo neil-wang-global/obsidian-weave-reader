@@ -347,9 +347,9 @@ describe("EpubBookmarkService", () => {
 		expect(content).toContain("readingState:");
 		expect(content).toContain("totalReadTime: 120000");
 		expect(content).toContain(EPUB_BOOKMARK_AUTO_MAINTAINED_CALLOUT);
-		expect(content).toContain("> [!abstract]");
-		expect(content).toContain("weave-epub-bookmarks/v2");
-		expect(content).toContain("## 概览");
+		expect(content).toContain("> 📎");
+		expect(content).toContain("weave-epub-bookmarks/v3");
+		expect(content).toContain("## 📊 阅读进度");
 		expect(content).toContain("reading-progress: 12");
 	});
 

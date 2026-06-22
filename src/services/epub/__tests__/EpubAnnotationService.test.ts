@@ -155,7 +155,7 @@ describe('EpubAnnotationService', () => {
 					color: 'green',
 					style: 'wavy',
 					text: 'Shared highlight',
-					commentText: '批注正文',
+					commentText: '想法正文',
 					hasCommentDivider: true,
 					sourceFile: 'weave/memory/deck-files/demo_01.wdeck',
 					sourceRef: 'card:card-a',
@@ -172,7 +172,7 @@ describe('EpubAnnotationService', () => {
 				color: 'green',
 				style: 'wavy',
 				text: 'Shared highlight',
-				commentText: '批注正文',
+				commentText: '想法正文',
 				hasCommentDivider: true,
 				sourceFile: 'weave/memory/deck-files/demo_01.wdeck',
 				sourceRef: 'card:card-a',
@@ -320,6 +320,7 @@ describe('EpubAnnotationService', () => {
 		expect(markdown).toMatch(
 			/> \[!EPUB\|blue\] \[\[Books\/demo\.epub#weave-cfi=epubcfi\(\/6\/6\).*&sid=epubsrc-demo&eid=excerpt-b\|demo\]\] \[晨光\] 2026-04-28 09:15\n> 第二条高亮\n/
 		);
+		expect(markdown).not.toContain('&text=');
 		expect(markdown).toContain('> 第一条高亮');
 		expect(markdown).toContain('> 第二条高亮');
 	});

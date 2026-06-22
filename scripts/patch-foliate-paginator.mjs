@@ -8,6 +8,100 @@ const paginatorPath = path.join(foliateRoot, "paginator.js");
 const fixedLayoutPath = path.join(foliateRoot, "fixed-layout.js");
 const epubPath = path.join(foliateRoot, "epub.js");
 const GROUPBY_POLYFILL_MARKER = "weave-epub-reader Object.groupBy polyfill";
+const SCROLLED_RENDER_GUARD_MARKER = "weave-epub-reader scrolled render guards";
+
+const SCROLLED_RENDER_GUARD_PATCHES = [
+	{
+		oldText: `const setStylesImportant = (el, styles) => {
+    const { style } = el
+    for (const [k, v] of Object.entries(styles)) style.setProperty(k, v, 'important')
+}`,
+		newText: `// ${SCROLLED_RENDER_GUARD_MARKER}
+const setStylesImportant = (el, styles) => {
+    if (!el?.style) return
+    const { style } = el
+    for (const [k, v] of Object.entries(styles)) style.setProperty(k, v, 'important')
+}`,
+	},
+	{
+		oldText: `    render(layout) {
+        if (!layout || !this.document) return
+        this.#column = layout.flow !== 'scrolled'`,
+		newText: `    render(layout) {
+        const doc = this.document
+        if (!layout || !doc?.documentElement || !doc.body) return
+        this.#column = layout.flow !== 'scrolled'`,
+	},
+	{
+		oldText: `    scrolled({ margin, gap, columnWidth }) {
+        const vertical = this.#vertical
+        const doc = this.document
+        setStylesImportant(doc.documentElement, {`,
+		newText: `    scrolled({ margin, gap, columnWidth }) {
+        const vertical = this.#vertical
+        const doc = this.document
+        if (!doc?.documentElement || !doc.body) return
+        setStylesImportant(doc.documentElement, {`,
+	},
+	{
+		oldText: `    columnize({ width, height, margin, gap, columnWidth }) {
+        const vertical = this.#vertical
+        this.#size = vertical ? height : width
+
+        const doc = this.document
+        setStylesImportant(doc.documentElement, {`,
+		newText: `    columnize({ width, height, margin, gap, columnWidth }) {
+        const vertical = this.#vertical
+        this.#size = vertical ? height : width
+
+        const doc = this.document
+        if (!doc?.documentElement || !doc.body) return
+        setStylesImportant(doc.documentElement, {`,
+	},
+	{
+		oldText: `    setImageSize() {
+        const { width, height, margin } = this.#layout
+        const vertical = this.#vertical
+        const doc = this.document
+        for (const el of doc.body.querySelectorAll('img, svg, video')) {`,
+		newText: `    setImageSize() {
+        const { width, height, margin } = this.#layout
+        const vertical = this.#vertical
+        const doc = this.document
+        if (!doc?.body) return
+        for (const el of doc.body.querySelectorAll('img, svg, video')) {`,
+	},
+	{
+		oldText: `    expand() {
+        const { documentElement } = this.document
+        if (this.#column) {`,
+		newText: `    expand() {
+        const doc = this.document
+        if (!doc?.documentElement) return
+        const { documentElement } = doc
+        if (this.#column) {`,
+	},
+	{
+		oldText: `    render() {
+        if (!this.#view) return
+        this.#view.render(this.#beforeRender({
+            vertical: this.#vertical,
+            rtl: this.#rtl,
+        }))
+        this.#scrollToAnchor(this.#anchor)
+    }`,
+		newText: `    render() {
+        if (!this.#view) return
+        const { width, height } = this.#container.getBoundingClientRect()
+        if (width <= 0 || height <= 0) return
+        this.#view.render(this.#beforeRender({
+            vertical: this.#vertical,
+            rtl: this.#rtl,
+        }))
+        this.#scrollToAnchor(this.#anchor)
+    }`,
+	},
+];
 
 const OLD_SET_SELECTION = `const setSelectionTo = (target, collapse) => {
     let range
@@ -133,6 +227,39 @@ const OBJECT_GROUPBY_POLYFILL = `if (typeof Object.groupBy !== "function") {
 \t};
 }`;
 
+function patchScrolledRenderGuards() {
+	if (!fs.existsSync(paginatorPath)) {
+		return false;
+	}
+
+	let source = fs.readFileSync(paginatorPath, "utf8");
+	if (source.includes(SCROLLED_RENDER_GUARD_MARKER)) {
+		return false;
+	}
+
+	let changed = false;
+	for (const patch of SCROLLED_RENDER_GUARD_PATCHES) {
+		if (!source.includes(patch.oldText)) {
+			console.error(
+				"[patch-foliate-paginator] Unexpected foliate-js/paginator.js contents; scrolled render guard patch not applied"
+			);
+			process.exit(1);
+		}
+		source = source.replace(patch.oldText, patch.newText);
+		changed = true;
+	}
+
+	if (!changed) {
+		return false;
+	}
+
+	fs.writeFileSync(paginatorPath, source, "utf8");
+	console.log(
+		`[patch-foliate-paginator] Patched foliate-js/paginator.js ${SCROLLED_RENDER_GUARD_MARKER}`
+	);
+	return true;
+}
+
 function patchEpubGroupByPolyfill() {
 	if (!fs.existsSync(epubPath)) {
 		console.warn(`[patch-foliate-paginator] Skipped: ${epubPath} not found`);
@@ -175,6 +302,10 @@ if (!fs.existsSync(paginatorPath)) {
 let changed = false;
 
 if (patchEpubGroupByPolyfill()) {
+	changed = true;
+}
+
+if (patchScrolledRenderGuards()) {
 	changed = true;
 }
 

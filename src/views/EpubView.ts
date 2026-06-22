@@ -100,8 +100,6 @@ export class EpubView extends ItemView {
 	private readingReferenceBtn: HTMLElement | null = null;
 	private inlineReadingReferenceBtn: HTMLButtonElement | null = null;
 	private hasReadingReferencePoint = false;
-	private resumePointBtn: HTMLElement | null = null;
-	private inlineResumePointBtn: HTMLButtonElement | null = null;
 	private tutorialBtn: HTMLElement | null = null;
 	private inlineTutorialBtn: HTMLButtonElement | null = null;
 	private bookmarkBtn: HTMLElement | null = null;
@@ -132,14 +130,11 @@ export class EpubView extends ItemView {
 		showPremiumFeaturePreview?: (featureId: string) => void;
 		saveReadingReferencePoint?: () => Promise<void>;
 		openReadingPositionMenu?: (event: MouseEvent | KeyboardEvent) => void;
-		saveLastOpenBookmark?: () => Promise<void>;
 		getReadingPositionAutoSaveEnabled?: () => boolean;
 		setReadingPositionAutoSaveEnabled?: (enabled: boolean) => Promise<boolean>;
 		bindCanvasPath?: (canvasPath: string) => void;
 		unbindCanvas?: () => void;
 		getCanvasService?: () => EpubCanvasService;
-		canMarkIRResumePoint?: () => boolean;
-		markIRResumePoint?: (event?: MouseEvent) => Promise<void>;
 		exportCurrentChapterToMarkdown?: () => Promise<void>;
 		exportCurrentChapterHighlightsToMarkdown?: () => Promise<void>;
 		exportBookHighlightsToMarkdown?: (event?: MouseEvent) => Promise<void>;
@@ -160,10 +155,6 @@ export class EpubView extends ItemView {
 
 	private getCanvasDirectionLabel(direction: CanvasLayoutDirection): string {
 		return this.t(`views.epubView.direction.${direction}`);
-	}
-
-	private hasWeaveIncrementalReadingHost(): boolean {
-		return Boolean(this.actionHandlers.canMarkIRResumePoint?.());
 	}
 
 	private canUseReadingProgress(): boolean {
@@ -358,7 +349,6 @@ export class EpubView extends ItemView {
 		this.paragraphModeBtn = null;
 		this.canvasDirBtn = null;
 		this.canvasBtn = null;
-		this.resumePointBtn = null;
 		this.tutorialBtn = null;
 	}
 
@@ -464,13 +454,6 @@ export class EpubView extends ItemView {
 				this.t("views.epubView.label.canvasOff"),
 				(evt) => {
 					this.showCanvasMenu(evt);
-				}
-			);
-			this.resumePointBtn = this.addAction(
-				"bookmark-plus",
-				this.t("views.epubView.menu.markResumePoint"),
-				(evt) => {
-					void this.actionHandlers.markIRResumePoint?.(evt);
 				}
 			);
 			this.tutorialBtn = this.addAction(
@@ -743,82 +726,6 @@ export class EpubView extends ItemView {
 					}
 				});
 			}
-
-			subMenu.addItem((item) => {
-				item.setTitle(this.t("views.epubView.menu.topSticker"));
-				item.setIcon("bookmark");
-				const stickerMenu = this.resolveMenuSubmenu(item, subMenu);
-				const topStickerVisible = readerSettings.showTopSticker !== false;
-
-				stickerMenu.addItem((subItem) => {
-					subItem.setTitle(this.t("views.epubView.menu.hidden"));
-					subItem.setChecked(!topStickerVisible);
-					subItem.onClick(() => {
-						if (!topStickerVisible) {
-							return;
-						}
-						void this.actionHandlers.updateReaderSettings?.({
-							showTopSticker: false,
-						});
-					});
-				});
-
-				stickerMenu.addSeparator();
-
-				stickerMenu.addItem((subItem) => {
-					subItem.setTitle(this.t("views.epubView.menu.auto"));
-					subItem.setChecked(topStickerVisible && readerSettings.topStickerLayout === "auto");
-					subItem.onClick(() => {
-						if (topStickerVisible && readerSettings.topStickerLayout === "auto") {
-							return;
-						}
-						void this.actionHandlers.updateReaderSettings?.({
-							showTopSticker: true,
-							topStickerLayout: "auto",
-						});
-					});
-				});
-
-				stickerMenu.addItem((subItem) => {
-					subItem.setTitle(this.t("views.epubView.menu.inline"));
-					subItem.setChecked(topStickerVisible && readerSettings.topStickerLayout === "inline");
-					subItem.onClick(() => {
-						if (topStickerVisible && readerSettings.topStickerLayout === "inline") {
-							return;
-						}
-						void this.actionHandlers.updateReaderSettings?.({
-							showTopSticker: true,
-							topStickerLayout: "inline",
-						});
-					});
-				});
-
-				stickerMenu.addItem((subItem) => {
-					subItem.setTitle(this.t("views.epubView.menu.sidebar"));
-					subItem.setChecked(topStickerVisible && readerSettings.topStickerLayout === "sidebar");
-					subItem.onClick(() => {
-						if (topStickerVisible && readerSettings.topStickerLayout === "sidebar") {
-							return;
-						}
-						void this.actionHandlers.updateReaderSettings?.({
-							showTopSticker: true,
-							topStickerLayout: "sidebar",
-						});
-					});
-				});
-
-				stickerMenu.addSeparator();
-
-				stickerMenu.addItem((subItem) => {
-					subItem.setTitle(this.t("views.epubView.menu.topStickerWiggle"));
-					subItem.setChecked(readerSettings.topStickerWiggleEnabled !== false);
-					subItem.onClick(() => {
-						void this.actionHandlers.updateReaderSettings?.({
-							topStickerWiggleEnabled: readerSettings.topStickerWiggleEnabled === false,
-						});
-					});
-				});
-			});
 		});
 	}
 
@@ -832,16 +739,6 @@ export class EpubView extends ItemView {
 				});
 			});
 
-			if (this.actionHandlers.saveLastOpenBookmark) {
-				bookmarksMenu.addItem((subItem) => {
-					subItem.setTitle(this.t("views.epubView.menu.saveLastReadingPoint"));
-					subItem.setIcon("bookmark-check");
-					subItem.onClick(() => {
-						void this.actionHandlers.saveLastOpenBookmark?.();
-					});
-				});
-			}
-
 			bookmarksMenu.addItem((subItem) => {
 				subItem.setTitle(this.t("views.epubView.label.readingPosition"));
 				subItem.setIcon("flag");
@@ -851,15 +748,6 @@ export class EpubView extends ItemView {
 				});
 			});
 
-			if (this.hasWeaveIncrementalReadingHost()) {
-				bookmarksMenu.addItem((subItem) => {
-					subItem.setTitle(this.t("views.epubView.menu.markResumePoint"));
-					subItem.setIcon("bookmark-plus");
-					subItem.onClick((evt) => {
-						void this.actionHandlers.markIRResumePoint?.(evt as MouseEvent);
-					});
-				});
-			}
 		});
 	}
 
@@ -942,6 +830,31 @@ export class EpubView extends ItemView {
 						addCreationTime: !excerptSettings.addCreationTime,
 					});
 				});
+			});
+
+			subMenu.addItem((item) => {
+				item.setTitle(this.t("views.epubView.menu.chapterLocation"));
+				item.setIcon("map-pin");
+				const chapterLocationMenu = this.resolveMenuSubmenu(item, subMenu);
+				const formatOptions = [
+					{ format: "root" as const, labelKey: "views.epubView.menu.chapterLocationRoot" },
+					{ format: "leaf" as const, labelKey: "views.epubView.menu.chapterLocationLeaf" },
+					{ format: "full" as const, labelKey: "views.epubView.menu.chapterLocationFull" },
+				];
+				for (const option of formatOptions) {
+					chapterLocationMenu.addItem((subItem) => {
+						subItem.setTitle(this.t(option.labelKey));
+						subItem.setChecked(excerptSettings.chapterLocationFormat === option.format);
+						subItem.onClick(() => {
+							if (excerptSettings.chapterLocationFormat === option.format) {
+								return;
+							}
+							void this.actionHandlers.updateExcerptSettings?.({
+								chapterLocationFormat: option.format,
+							});
+						});
+					});
+				}
 			});
 		} else if (this.isPremiumFeaturePreviewEnabled()) {
 			subMenu.addItem((item) => {
@@ -1379,13 +1292,6 @@ export class EpubView extends ItemView {
 				this.openReadingPositionMenu(evt);
 			}
 		);
-		this.inlineResumePointBtn = this.appendInlineActionButton(
-			"bookmark-plus",
-			this.t("views.epubView.menu.markResumePoint"),
-			(evt) => {
-				void this.actionHandlers.markIRResumePoint?.(evt);
-			}
-		);
 		this.inlineTutorialBtn = this.appendInlineActionButton(
 			"circle-help",
 			this.t("views.epubView.menu.tutorial"),
@@ -1457,7 +1363,6 @@ export class EpubView extends ItemView {
 		this.updateScreenshotBtn();
 		this.updateAutoInsertBtn();
 		this.updateReadingReferencePointBtn();
-		this.updateResumePointBtn();
 		this.updateFlowBtn();
 		this.updateLayoutBtn();
 		this.updateParagraphModeBtn();
@@ -1707,6 +1612,9 @@ export class EpubView extends ItemView {
 			onBackFromBookshelf: async () => {
 				await this.returnFromBookshelfToRecentBook();
 			},
+			onCancelBookLoad: async () => {
+				this.leaf.detach();
+			},
 			onActionsReady: (actions: typeof this.actionHandlers) => {
 				this.actionHandlers = actions;
 				if (!this.areHeaderActionsMounted()) {
@@ -1780,7 +1688,6 @@ export class EpubView extends ItemView {
 		this.inlineCanvasDirBtn = null;
 		this.inlineCanvasBtn = null;
 		this.inlineReadingReferenceBtn = null;
-		this.inlineResumePointBtn = null;
 		this.inlineTutorialBtn = null;
 		this.readingReferenceBtn = null;
 		this.readingPositionAutoSaveEnabled = false;
@@ -2198,21 +2105,6 @@ export class EpubView extends ItemView {
 		if (this.inlineReadingReferenceBtn) {
 			this.inlineReadingReferenceBtn.setAttribute("aria-label", shortLabel);
 		}
-	}
-
-	private updateResumePointBtn(): void {
-		const visible = this.hasWeaveIncrementalReadingHost();
-		const label = this.t("views.epubView.menu.markResumePoint");
-		this.applyActionButtonState(this.resumePointBtn, {
-			icon: "bookmark-plus",
-			label,
-			visible,
-		});
-		this.applyActionButtonState(this.inlineResumePointBtn, {
-			icon: "bookmark-plus",
-			label,
-			visible,
-		});
 	}
 
 	private updateCanvasBtn(): void {

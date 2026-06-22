@@ -1,13 +1,27 @@
 import type { App } from "obsidian";
-import { EpubStorageService } from "./EpubStorageService";
+import { EpubStorageService, flushEpubStoragePendingProgress } from "./EpubStorageService";
 import { resolveEpubHost } from "./epub-host";
 
 const fallbackStorageServiceByApp = new WeakMap<App, EpubStorageService>();
 
+export async function flushEpubPendingProgress(storageService: EpubStorageService): Promise<void> {
+	if (!storageService || typeof storageService !== "object") {
+		return;
+	}
+	await flushEpubStoragePendingProgress(storageService);
+}
+
+export function resetEpubStorageServiceCache(app: App): void {
+	fallbackStorageServiceByApp.delete(app);
+}
+
 export function getEpubStorageService(app: App): EpubStorageService {
 	const host = resolveEpubHost(app) as { getEpubStorageService?: () => EpubStorageService } | null;
 	if (typeof host?.getEpubStorageService === "function") {
-		return host.getEpubStorageService();
+		const hostedService = host.getEpubStorageService();
+		if (hostedService) {
+			return hostedService;
+		}
 	}
 
 	let service = fallbackStorageServiceByApp.get(app);

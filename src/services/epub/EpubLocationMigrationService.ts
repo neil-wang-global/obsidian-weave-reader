@@ -2,6 +2,7 @@ import type { App } from "obsidian";
 import { logger } from "../../utils/logger";
 import { EpubIrResumePointAccess } from "./epub-ir-resume-point-access";
 import type { EpubStorageService } from "./EpubStorageService";
+import { flushEpubStoragePendingProgress } from "./EpubStorageService";
 import type { EpubReaderEngine } from "./reader-engine-types";
 
 export interface EpubLocationMigrationSummary {
@@ -63,7 +64,7 @@ export class EpubLocationMigrationService {
 			...progress,
 			cfi: nextCfi,
 		});
-		await this.storageService.flushPendingProgress();
+		await flushEpubStoragePendingProgress(this.storageService);
 		return true;
 	}
 

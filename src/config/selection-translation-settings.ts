@@ -2,18 +2,25 @@ import {
 	BUILTIN_WEB_TRANSLATION_PROVIDERS,
 	BUILTIN_WEB_TRANSLATION_PROVIDER_IDS,
 	type BuiltinWebTranslationProviderDefinition,
+	type SelectionLookupCategory,
 } from "./web-translation-providers";
+
+export type CustomSelectionLookupCategory = SelectionLookupCategory;
 
 export interface CustomWebTranslationProvider {
 	id: string;
 	name: string;
 	urlTemplate: string;
 	enabled: boolean;
+	category: CustomSelectionLookupCategory;
 }
 
 export interface SelectionTranslationSettings {
 	disabledBuiltinIds: string[];
 	customProviders: CustomWebTranslationProvider[];
+	smartRoutingEnabled: boolean;
+	preferNativeDictionaryApp: boolean;
+	clipboardFallbackOnSchemeOpen: boolean;
 }
 
 export interface ResolvedWebTranslationProvider {
@@ -22,11 +29,18 @@ export interface ResolvedWebTranslationProvider {
 	urlTemplate: string;
 	icon: string;
 	builtin: boolean;
+	category: SelectionLookupCategory;
+	fallbackProviderId?: string;
+	supportsContext?: boolean;
+	preferExternalOpen?: boolean;
 }
 
 export const DEFAULT_SELECTION_TRANSLATION_SETTINGS: SelectionTranslationSettings = {
 	disabledBuiltinIds: [],
 	customProviders: [],
+	smartRoutingEnabled: false,
+	preferNativeDictionaryApp: false,
+	clipboardFallbackOnSchemeOpen: true,
 };
 
 export function normalizeSelectionTranslationSettings(
@@ -56,11 +70,16 @@ export function normalizeSelectionTranslationSettings(
 			if (!name || !urlTemplate.includes("{query}")) {
 				continue;
 			}
+			const category =
+				item.category === "dictionary" || item.category === "translation"
+					? item.category
+					: "translation";
 			customProviders.push({
 				id,
 				name,
 				urlTemplate,
 				enabled: item.enabled !== false,
+				category,
 			});
 		}
 	}
@@ -68,6 +87,9 @@ export function normalizeSelectionTranslationSettings(
 	return {
 		disabledBuiltinIds,
 		customProviders,
+		smartRoutingEnabled: record.smartRoutingEnabled === true,
+		preferNativeDictionaryApp: record.preferNativeDictionaryApp === true,
+		clipboardFallbackOnSchemeOpen: record.clipboardFallbackOnSchemeOpen !== false,
 	};
 }
 
@@ -84,6 +106,7 @@ export function isBuiltinTranslationEnabled(
 export function createCustomTranslationProvider(input?: {
 	name?: string;
 	urlTemplate?: string;
+	category?: CustomSelectionLookupCategory;
 }): CustomWebTranslationProvider {
 	return {
 		id: `custom-${Date.now()}`,
@@ -92,30 +115,49 @@ export function createCustomTranslationProvider(input?: {
 			String(input?.urlTemplate || "").trim() ||
 			"https://translate.google.com/?sl=auto&tl=zh-CN&text={query}",
 		enabled: true,
+		category: input?.category === "dictionary" ? "dictionary" : "translation",
+	};
+}
+
+function resolveBuiltinProvider(
+	builtin: BuiltinWebTranslationProviderDefinition,
+	resolveBuiltinLabel: (provider: BuiltinWebTranslationProviderDefinition) => string
+): ResolvedWebTranslationProvider {
+	return {
+		id: builtin.id,
+		label: resolveBuiltinLabel(builtin),
+		urlTemplate: builtin.urlTemplate,
+		icon: builtin.icon || "languages",
+		builtin: true,
+		category: builtin.category,
+		fallbackProviderId: builtin.fallbackProviderId,
+		supportsContext: builtin.supportsContext,
+		preferExternalOpen: builtin.preferExternalOpen,
 	};
 }
 
 export function listResolvedWebTranslationProviders(input: {
 	settings: SelectionTranslationSettings;
 	resolveBuiltinLabel: (provider: BuiltinWebTranslationProviderDefinition) => string;
+	category?: SelectionLookupCategory;
 }): ResolvedWebTranslationProvider[] {
 	const providers: ResolvedWebTranslationProvider[] = [];
 
 	for (const builtin of BUILTIN_WEB_TRANSLATION_PROVIDERS) {
+		if (input.category && builtin.category !== input.category) {
+			continue;
+		}
 		if (!isBuiltinTranslationEnabled(input.settings, builtin.id)) {
 			continue;
 		}
-		providers.push({
-			id: builtin.id,
-			label: input.resolveBuiltinLabel(builtin),
-			urlTemplate: builtin.urlTemplate,
-			icon: builtin.icon || "languages",
-			builtin: true,
-		});
+		providers.push(resolveBuiltinProvider(builtin, input.resolveBuiltinLabel));
 	}
 
 	for (const custom of input.settings.customProviders) {
 		if (!custom.enabled) {
+			continue;
+		}
+		if (input.category && custom.category !== input.category) {
 			continue;
 		}
 		const name = String(custom.name || "").trim();
@@ -127,10 +169,38 @@ export function listResolvedWebTranslationProviders(input: {
 			id: custom.id,
 			label: name,
 			urlTemplate,
-			icon: "globe",
+			icon: custom.category === "dictionary" ? "book-open" : "globe",
 			builtin: false,
+			category: custom.category,
 		});
 	}
 
 	return providers;
+}
+
+export function listResolvedDictionaryProviders(input: {
+	settings: SelectionTranslationSettings;
+	resolveBuiltinLabel: (provider: BuiltinWebTranslationProviderDefinition) => string;
+}): ResolvedWebTranslationProvider[] {
+	return listResolvedWebTranslationProviders({ ...input, category: "dictionary" });
+}
+
+export function listResolvedTranslationProviders(input: {
+	settings: SelectionTranslationSettings;
+	resolveBuiltinLabel: (provider: BuiltinWebTranslationProviderDefinition) => string;
+}): ResolvedWebTranslationProvider[] {
+	return listResolvedWebTranslationProviders({ ...input, category: "translation" });
+}
+
+export function findResolvedWebTranslationProvider(input: {
+	settings: SelectionTranslationSettings;
+	resolveBuiltinLabel: (provider: BuiltinWebTranslationProviderDefinition) => string;
+	providerId: string;
+}): ResolvedWebTranslationProvider | null {
+	return (
+		listResolvedWebTranslationProviders({
+			settings: input.settings,
+			resolveBuiltinLabel: input.resolveBuiltinLabel,
+		}).find((provider) => provider.id === input.providerId) ?? null
+	);
 }

@@ -31,6 +31,7 @@ export function createEpubNavigationController(options: EpubNavigationController
 					href: nav.href,
 					text: nav.text,
 					flashStyle: nav.flashStyle,
+					flashColor: nav.flashColor,
 				});
 			} else {
 				await readerService.navigateTo({
@@ -119,6 +120,9 @@ export function createEpubNavigationController(options: EpubNavigationController
 		}
 		if (detail.flashStyle === "pulse" || detail.flashStyle === "highlight" || detail.flashStyle === "none") {
 			nav.flashStyle = detail.flashStyle;
+		}
+		if (typeof detail.flashColor === "string" && detail.flashColor.trim()) {
+			nav.flashColor = detail.flashColor.trim();
 		}
 		if (typeof detail.showLocateOverlay === "boolean") {
 			nav.showLocateOverlay = detail.showLocateOverlay;

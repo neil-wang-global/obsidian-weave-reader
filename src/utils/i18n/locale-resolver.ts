@@ -4,6 +4,7 @@ export type InterfaceLanguagePreference = "auto" | SupportedLanguage;
 
 const PLUGIN_LANGUAGE_VALUES = new Set<SupportedLanguage>([
 	"zh-CN",
+	"zh-TW",
 	"en-US",
 	"ja-JP",
 	"ko-KR",
@@ -43,7 +44,11 @@ export function mapObsidianLocaleToPluginLanguage(
 		return null;
 	}
 
-	if (tag === "zh" || tag.startsWith("zh-")) {
+	if (tag === "zh-tw" || tag === "zh-hk" || tag === "zh-hant") {
+		return "zh-TW";
+	}
+
+	if (tag === "zh" || tag === "zh-cn" || tag === "zh-hans" || tag.startsWith("zh-")) {
 		return "zh-CN";
 	}
 

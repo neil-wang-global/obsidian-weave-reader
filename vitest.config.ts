@@ -44,6 +44,7 @@ export default defineConfig({
       'src/utils/__tests__/epub-reader-keyboard-guards.test.ts',
       'src/utils/__tests__/dom-instance-of.test.ts',
       'src/utils/__tests__/blob-url-text.test.ts',
+      'src/utils/__tests__/clipboard-copy.test.ts',
       'src/utils/__tests__/epub-author-color-sanitizer.test.ts',
       'src/utils/__tests__/i18n-locales.test.ts',
       'src/utils/__tests__/locale-resolver.test.ts',

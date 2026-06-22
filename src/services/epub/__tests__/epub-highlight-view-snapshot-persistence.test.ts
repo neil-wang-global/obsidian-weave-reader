@@ -61,7 +61,7 @@ describe("EpubHighlightViewSnapshotService disk persistence", () => {
 								cfiRange: "epubcfi(/6/8)",
 								text: "磁盘摘录",
 								hasCommentDivider: false,
-								commentStateLabel: "无批注",
+								commentStateLabel: "无想法",
 								color: "yellow",
 								colorLabel: "黄色",
 								noteType: "高亮",

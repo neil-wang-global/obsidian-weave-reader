@@ -1,4 +1,5 @@
 import * as blobUrlText from "../../../utils/blob-url-text";
+import { inlineFoliateBlobMarkup } from "../foliate-blob-markup-normalizer";
 import { FoliateVaultPublicationParser } from "../FoliateVaultPublicationParser";
 
 describe("FoliateVaultPublicationParser stylesheet normalization", () => {
@@ -107,6 +108,41 @@ describe("FoliateVaultPublicationParser stylesheet normalization", () => {
 		expect(doc.querySelector("p")?.getAttribute("style")).toBe("margin: 1em");
 		expect(doc.querySelectorAll("p")[1]?.getAttribute("bgcolor")).toBeNull();
 		expect(doc.querySelectorAll("p")[1]?.getAttribute("color")).toBeNull();
+	});
+
+	it("removes epub content-security-policy meta tags", async () => {
+		const transformed = await inlineFoliateBlobMarkup(
+			`<html>
+				<head>
+					<meta http-equiv="Content-Security-Policy" content="style-src 'unsafe-inline' 'self' https://fonts.googleapis.com">
+					<style>body { margin: 0; }</style>
+				</head>
+				<body><p>hello</p></body>
+			</html>`,
+			"text/html"
+		);
+
+		const doc = new DOMParser().parseFromString(transformed, "text/html");
+		expect(doc.querySelector('meta[http-equiv="Content-Security-Policy"]')).toBeNull();
+		expect(doc.querySelector("style")?.textContent).toContain("margin: 0");
+	});
+
+	it("drops unreadable blob stylesheet links instead of leaving blocked hrefs", async () => {
+		vi.spyOn(blobUrlText, "readBlobUrlAsText").mockRejectedValue(new Error("revoked"));
+
+		const transformed = await inlineFoliateBlobMarkup(
+			`<html>
+				<head>
+					<link rel="stylesheet" href="blob:app://obsidian.md/missing.css"/>
+				</head>
+				<body><p>hello</p></body>
+			</html>`,
+			"text/html"
+		);
+
+		expect(transformed).not.toContain("blob:app://obsidian.md/missing.css");
+		const doc = new DOMParser().parseFromString(transformed, "text/html");
+		expect(doc.querySelectorAll('link[rel~="stylesheet"]').length).toBe(0);
 	});
 
 	it("removes scripted epub content while preserving readable markup", async () => {

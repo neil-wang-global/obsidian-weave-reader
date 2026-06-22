@@ -410,7 +410,9 @@
       item.setTitle(t('epub.globalSidebar.searchUi.commentLabel'));
       item.setDisabled(true);
     });
-    const values = availableCommentStates.length > 0 ? availableCommentStates : ['有批注', '无批注'];
+    const values = availableCommentStates.length > 0
+      ? availableCommentStates
+      : [t('epub.notes.commented'), t('epub.notes.uncommented')];
     values.forEach((value) => {
       menu.addItem((item) => {
         item.setTitle(value);

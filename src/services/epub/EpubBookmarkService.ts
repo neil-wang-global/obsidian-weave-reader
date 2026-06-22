@@ -13,12 +13,14 @@ import type {
 } from "./epub-bookmark-page-types";
 import {
 	EPUB_BOOKMARK_ACCEPTED_FORMATS,
-	EPUB_BOOKMARK_FILE_FORMAT_V2,
+	EPUB_BOOKMARK_FILE_FORMAT_V3,
 } from "./epub-bookmark-page-types";
 import {
-	EPUB_BOOKMARK_PAGE_CALLOUT,
+	EPUB_BOOKMARK_PAGE_MAINTENANCE_NOTE,
 	renderEpubBookmarkFileContent,
 } from "./epub-bookmark-page-render";
+import { deriveEpubBookmarkDisplayTitle } from "./epub-bookmark-display-title";
+import { ensureEpubBookmarkCoverPath } from "./epub-bookmark-cover";
 import { normalizeReadingPaceStats } from "./reading-pace";
 import type { ReaderHighlightInput } from "./reader-engine-types";
 import type { EpubBook, ReadingPosition, ReadingStats } from "./types";
@@ -27,10 +29,10 @@ import { errorPlainText, unknownPlainText } from "../../utils/unknown-plain-text
 export const DEFAULT_EPUB_BOOKMARK_FOLDER = "weave/epub-bookmarks";
 /** Vault-visible bookmark / reading-progress note prefix (human-readable, no book id). */
 export const EPUB_BOOKMARK_DATA_FILE_PREFIX = "data_";
-const EPUB_BOOKMARK_FILE_FORMAT = EPUB_BOOKMARK_FILE_FORMAT_V2;
+const EPUB_BOOKMARK_FILE_FORMAT = EPUB_BOOKMARK_FILE_FORMAT_V3;
 
-/** Obsidian callout shown at the top of every EPUB bookmark file. */
-export const EPUB_BOOKMARK_AUTO_MAINTAINED_CALLOUT = EPUB_BOOKMARK_PAGE_CALLOUT;
+/** Obsidian note shown at the top of every EPUB bookmark file. */
+export const EPUB_BOOKMARK_AUTO_MAINTAINED_CALLOUT = EPUB_BOOKMARK_PAGE_MAINTENANCE_NOTE;
 
 export type { EpubBookmarkAnalytics } from "./epub-bookmark-page-types";
 export { buildEpubBookmarkAnalytics } from "./epub-bookmark-analytics";
@@ -77,9 +79,17 @@ interface EpubBookmarkFileFrontmatter {
 	sourceId?: string;
 	sourceFingerprint?: string;
 	bookPath: string;
+	displayTitle?: string;
 	bookTitle: string;
 	bookAuthor?: string;
 	bookLanguage?: string;
+	publisher?: string;
+	isbn?: string;
+	publishDate?: string;
+	subjects?: string[];
+	description?: string;
+	translator?: string;
+	coverPath?: string;
 	wordCount?: number;
 	chapterCount?: number;
 	updatedAt: number;
@@ -396,6 +406,45 @@ export class EpubBookmarkService {
 	async readReadingState(book: EpubBook): Promise<EpubBookmarkReadingState | null> {
 		const fileData = await this.readBookmarkFileForBook(book);
 		return fileData?.readingState ?? null;
+	}
+
+	async readBookmarkSnapshotForBook(
+		book: EpubBook
+	): Promise<EpubBookmarkFileFrontmatter | null> {
+		return await this.readBookmarkFileForBook(book);
+	}
+
+	async readReadingStateByBookPath(filePath: string): Promise<EpubBookmarkReadingState | null> {
+		const snapshot = await this.findBookmarkSnapshotByBookPath(filePath);
+		return snapshot?.readingState ?? null;
+	}
+
+	async findBookmarkSnapshotByBookPath(
+		filePath: string
+	): Promise<EpubBookmarkFileFrontmatter | null> {
+		const normalizedPath = normalizePath(String(filePath || "").trim());
+		if (!normalizedPath) {
+			return null;
+		}
+
+		const folderPath = this.getBookmarkFolder();
+		for (const file of this.app.vault.getFiles()) {
+			if (
+				file.extension !== "md" ||
+				!this.isBookmarkFileInsideFolder(file.path, folderPath)
+			) {
+				continue;
+			}
+
+			const fileData = await this.readBookmarkFileByPath(file.path);
+			if (!fileData || normalizePath(fileData.bookPath) !== normalizedPath) {
+				continue;
+			}
+
+			return fileData;
+		}
+
+		return null;
 	}
 
 	async writeReadingState(
@@ -773,6 +822,18 @@ export class EpubBookmarkService {
 		if (current.chapterCount !== next.chapterCount) {
 			return true;
 		}
+		if (current.displayTitle !== next.displayTitle) {
+			return true;
+		}
+		if (current.coverPath !== next.coverPath) {
+			return true;
+		}
+		if (current.publisher !== next.publisher) {
+			return true;
+		}
+		if (current.description !== next.description) {
+			return true;
+		}
 		return false;
 	}
 
@@ -830,6 +891,14 @@ export class EpubBookmarkService {
 		book: EpubBook
 	): EpubBookmarkFileFrontmatter {
 		const metadata = book.metadata;
+		const bookTitle = this.resolveBookTitle(book);
+		const bookAuthor = this.resolveBookAuthor(book);
+		const bookPath = normalizePath(String(book.filePath || "").trim());
+		const displayTitle = deriveEpubBookmarkDisplayTitle({
+			bookTitle,
+			bookAuthor,
+			bookPath,
+		});
 		return {
 			...frontmatter,
 			format: EPUB_BOOKMARK_FILE_FORMAT,
@@ -839,10 +908,21 @@ export class EpubBookmarkService {
 			sourceId: typeof book.sourceId === "string" ? book.sourceId : undefined,
 			sourceFingerprint:
 				typeof book.sourceFingerprint === "string" ? book.sourceFingerprint : undefined,
-			bookPath: normalizePath(String(book.filePath || "").trim()),
-			bookTitle: this.resolveBookTitle(book),
-			bookAuthor: this.resolveBookAuthor(book),
-			bookLanguage: String(metadata?.language || "").trim() || undefined,
+			bookPath,
+			displayTitle: frontmatter.displayTitle || displayTitle,
+			bookTitle,
+			bookAuthor,
+			bookLanguage: String(metadata?.language || "").trim() || frontmatter.bookLanguage,
+			publisher: metadata?.publisher || frontmatter.publisher,
+			isbn: metadata?.isbn || frontmatter.isbn,
+			publishDate: metadata?.publishDate || frontmatter.publishDate,
+			subjects:
+				metadata?.subjects && metadata.subjects.length > 0
+					? metadata.subjects
+					: frontmatter.subjects,
+			description: metadata?.description || frontmatter.description,
+			translator: metadata?.translator || frontmatter.translator,
+			coverPath: frontmatter.coverPath,
 			wordCount:
 				typeof metadata?.wordCount === "number" && metadata.wordCount > 0
 					? metadata.wordCount
@@ -965,26 +1045,62 @@ export class EpubBookmarkService {
 			sourceFingerprint:
 				typeof value.sourceFingerprint === "string" ? value.sourceFingerprint : undefined,
 			bookPath,
+			displayTitle:
+				typeof value.displayTitle === "string" ? value.displayTitle.trim() : undefined,
 			bookTitle,
 			bookAuthor: typeof value.bookAuthor === "string" ? value.bookAuthor : undefined,
 			bookLanguage: typeof value.bookLanguage === "string" ? value.bookLanguage : undefined,
+			publisher: typeof value.publisher === "string" ? value.publisher : undefined,
+			isbn: typeof value.isbn === "string" ? value.isbn : undefined,
+			publishDate: typeof value.publishDate === "string" ? value.publishDate : undefined,
+			subjects: Array.isArray(value.subjects)
+				? value.subjects.map((item) => String(item || "").trim()).filter(Boolean)
+				: undefined,
+			description: typeof value.description === "string" ? value.description : undefined,
+			translator: typeof value.translator === "string" ? value.translator : undefined,
+			coverPath: typeof value.coverPath === "string" ? value.coverPath : undefined,
 			wordCount: typeof value.wordCount === "number" ? value.wordCount : undefined,
 			chapterCount: typeof value.chapterCount === "number" ? value.chapterCount : undefined,
 			updatedAt: typeof value.updatedAt === "number" ? value.updatedAt : 0,
 			bookmarks: this.normalizeBookmarkRecords(value.bookmarks, stableKey),
 			readingState: this.normalizeReadingState(value.readingState) || undefined,
-			analytics: this.normalizeAnalytics(value.analytics) || undefined,
+			analytics:
+				this.normalizeAnalytics(value.analytics, {
+					highlightCount:
+						typeof value["highlight-count"] === "number" ? value["highlight-count"] : undefined,
+					excerptNoteCount:
+						typeof value["excerpt-note-count"] === "number"
+							? value["excerpt-note-count"]
+							: undefined,
+				}) || undefined,
 			user: this.normalizeUserMetadata(value.user) || undefined,
 		};
 	}
 
-	private normalizeAnalytics(value: unknown): EpubBookmarkAnalytics | null {
+	private normalizeAnalytics(
+		value: unknown,
+		flatCounts?: { highlightCount?: number; excerptNoteCount?: number }
+	): EpubBookmarkAnalytics | null {
 		if (!value || typeof value !== "object") {
-			return null;
+			if (!flatCounts?.highlightCount && !flatCounts?.excerptNoteCount) {
+				return null;
+			}
+			return {
+				updatedAt: Date.now(),
+				highlightCount: flatCounts?.highlightCount ?? 0,
+				highlightsByColor: {},
+				excerptNoteCount: flatCounts?.excerptNoteCount ?? 0,
+				commentCount: 0,
+				concealedCount: 0,
+				topChaptersByHighlights: [],
+				linkedNotePaths: [],
+			};
 		}
 		const record = value as Record<string, unknown>;
 		const highlightCount =
-			typeof record.highlightCount === "number" ? Math.max(0, record.highlightCount) : 0;
+			typeof record.highlightCount === "number"
+				? Math.max(0, record.highlightCount)
+				: flatCounts?.highlightCount ?? 0;
 		const highlightsByColor =
 			record.highlightsByColor && typeof record.highlightsByColor === "object"
 				? (record.highlightsByColor as Partial<Record<string, number>>)
@@ -1050,7 +1166,7 @@ export class EpubBookmarkService {
 			excerptNoteCount:
 				typeof record.excerptNoteCount === "number"
 					? Math.max(0, record.excerptNoteCount)
-					: linkedNotePaths.length,
+					: flatCounts?.excerptNoteCount ?? linkedNotePaths.length,
 			commentCount: typeof record.commentCount === "number" ? Math.max(0, record.commentCount) : 0,
 			concealedCount:
 				typeof record.concealedCount === "number" ? Math.max(0, record.concealedCount) : 0,
@@ -1184,7 +1300,8 @@ export class EpubBookmarkService {
 			throw new Error("Bookmark file path is required");
 		}
 
-		const content = this.renderBookmarkFileContent(frontmatter);
+		const prepared = await this.prepareFrontmatterForWrite(frontmatter);
+		const content = this.renderBookmarkFileContent(prepared);
 		const adapter = this.app.vault.adapter;
 		await DirectoryUtils.ensureDirForFile(adapter, normalizedPath);
 
@@ -1216,7 +1333,47 @@ export class EpubBookmarkService {
 		}
 	}
 
+	private async prepareFrontmatterForWrite(
+		frontmatter: EpubBookmarkFileFrontmatter
+	): Promise<EpubBookmarkFileFrontmatter> {
+		const bookmarkFolder = this.getBookmarkFolder();
+		const displayTitle =
+			frontmatter.displayTitle ||
+			deriveEpubBookmarkDisplayTitle({
+				bookTitle: frontmatter.bookTitle,
+				bookAuthor: frontmatter.bookAuthor,
+				bookPath: frontmatter.bookPath,
+			});
+		const coverPath =
+			(await ensureEpubBookmarkCoverPath(this.app, {
+				bookPath: frontmatter.bookPath,
+				stableKey: frontmatter.stableKey,
+				bookmarkFolder,
+				existingCoverPath: frontmatter.coverPath,
+			})) || frontmatter.coverPath;
+
+		return {
+			...frontmatter,
+			format: EPUB_BOOKMARK_FILE_FORMAT,
+			displayTitle,
+			coverPath,
+			user: frontmatter.user ?? {
+				tags: [],
+				rating: null,
+				priority: "",
+				notes: "",
+			},
+		};
+	}
+
 	private renderBookmarkFileContent(frontmatter: EpubBookmarkFileFrontmatter): string {
+		const displayTitle =
+			frontmatter.displayTitle ||
+			deriveEpubBookmarkDisplayTitle({
+				bookTitle: frontmatter.bookTitle,
+				bookAuthor: frontmatter.bookAuthor,
+				bookPath: frontmatter.bookPath,
+			});
 		return renderEpubBookmarkFileContent(
 			{
 				stableKey: frontmatter.stableKey,
@@ -1224,9 +1381,17 @@ export class EpubBookmarkService {
 				sourceId: frontmatter.sourceId,
 				sourceFingerprint: frontmatter.sourceFingerprint,
 				bookPath: frontmatter.bookPath,
+				displayTitle,
 				bookTitle: frontmatter.bookTitle,
 				bookAuthor: frontmatter.bookAuthor,
 				bookLanguage: frontmatter.bookLanguage,
+				publisher: frontmatter.publisher,
+				isbn: frontmatter.isbn,
+				publishDate: frontmatter.publishDate,
+				subjects: frontmatter.subjects,
+				description: frontmatter.description,
+				translator: frontmatter.translator,
+				coverPath: frontmatter.coverPath,
 				wordCount: frontmatter.wordCount,
 				chapterCount: frontmatter.chapterCount,
 				updatedAt: frontmatter.updatedAt,

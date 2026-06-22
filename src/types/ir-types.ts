@@ -374,7 +374,7 @@ export interface IRBlockStats {
 	extracts: number;
 	/** 制卡次数 */
 	cardsCreated: number;
-	/** 批注/改写次数 */
+	/** 想法/改写次数 */
 	notesWritten: number;
 	/** 最后交互时间 (ms timestamp) */
 	lastInteraction: number;

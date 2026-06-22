@@ -1396,7 +1396,7 @@ describe('EpubBacklinkHighlightService', () => {
 			'> [!EPUB|blue] [[Books/demo.epub#weave-cfi=readium%3Acommented|Demo]]',
 			'> 我自己改写过的摘录正文',
 			'> ---div---',
-			'> 这是批注正文',
+			'> 这是想法正文',
 			'',
 		].join('\n');
 		const { app, files } = createMockApp({
@@ -1409,7 +1409,7 @@ describe('EpubBacklinkHighlightService', () => {
 				expect.objectContaining({
 					cfiRange: 'readium:commented',
 					text: '我自己改写过的摘录正文',
-					commentText: '这是批注正文',
+					commentText: '这是想法正文',
 					hasCommentDivider: true,
 				}),
 			])
@@ -1426,7 +1426,7 @@ describe('EpubBacklinkHighlightService', () => {
 		expect(files.get(notePath)).toContain('> [!EPUB|blue+underline] [[Books/demo.epub#weave-cfi=readium%3Acommented|Demo]]');
 		expect(files.get(notePath)).toContain('> 我自己改写过的摘录正文');
 		expect(files.get(notePath)).toContain('> ---div---');
-		expect(files.get(notePath)).toContain('> 这是批注正文');
+		expect(files.get(notePath)).toContain('> 这是想法正文');
 	});
 
 	it('writes divider comments back to markdown excerpts', async () => {
@@ -1445,14 +1445,14 @@ describe('EpubBacklinkHighlightService', () => {
 			notePath,
 			'readium:comment-edit',
 			'Books/demo.epub',
-			'第一行批注\n第二行批注'
+			'第一行想法\n第二行想法'
 		);
 
 		expect(changed).toBe(true);
 		expect(files.get(notePath)).toContain('> 原摘录正文');
 		expect(files.get(notePath)).toContain('> ---div---');
-		expect(files.get(notePath)).toContain('> 第一行批注');
-		expect(files.get(notePath)).toContain('> 第二行批注');
+		expect(files.get(notePath)).toContain('> 第一行想法');
+		expect(files.get(notePath)).toContain('> 第二行想法');
 	});
 
 	it('writes divider comments back when the live reader CFI drifts from the stored callout locator', async () => {
@@ -1473,13 +1473,13 @@ describe('EpubBacklinkHighlightService', () => {
 			notePath,
 			'epubcfi(/6/14!/4/12,/1:0,/1:12)',
 			bookPath,
-			'漂移后的批注'
+			'漂移后的想法'
 		);
 
 		expect(changed).toBe(true);
 		expect(files.get(notePath)).toContain('> 我认识他是在1984年');
 		expect(files.get(notePath)).toContain('> ---div---');
-		expect(files.get(notePath)).toContain('> 漂移后的批注');
+		expect(files.get(notePath)).toContain('> 漂移后的想法');
 	});
 
 	it('updates only the targeted canvas node highlight color when sourceRef is provided', async () => {

@@ -14,13 +14,15 @@
 		ReaderFrame,
 		ReaderViewportRect,
 	} from '../../services/epub';
-	import type { BuiltinWebTranslationProviderDefinition } from '../../config/web-translation-providers';
+	import type { ResolvedWebTranslationProvider } from '../../config/selection-translation-settings';
 	import { openObsidianVaultSearch } from '../../services/obsidian/obsidian-vault-search';
 	import { openObsidianWebSearch } from '../../services/obsidian/obsidian-web-search';
 	import {
-		listActiveWebTranslationProviders,
+		listActiveTranslationProviders,
 		openWebTranslationProvider,
+		readSelectionTranslationSettings,
 	} from '../../services/obsidian/obsidian-web-translate';
+	import { extractSelectionContext } from '../../services/obsidian/selection-lookup-routing';
 	import { showNotification } from '../../utils/notifications';
 	import {
 		computeToolbarPosition,
@@ -52,6 +54,11 @@
 		mobileDockBottomOffset?: number;
 		externalSelection?: ExternalSelectionState | null;
 		onInsertToNote?: (text: string, cfiRange: string, color?: string, style?: EpubHighlightStyle) => void;
+		onCopySelectionLink?: (
+			action: 'protocolMarkdown' | 'vaultWikilink' | 'obsidianUri' | 'plainText',
+			text: string,
+			cfiRange: string
+		) => void | Promise<void>;
 		onAutoInsert?: (text: string, cfiRange: string, color?: string, style?: EpubHighlightStyle) => void;
 		onExtractToCard?: (text: string, cfiRange: string) => void;
 		onCreateReadingPoint?: (text: string, cfiRange: string) => void;
@@ -73,6 +80,7 @@
 		mobileDockBottomOffset = 0,
 		externalSelection = null,
 		onInsertToNote,
+		onCopySelectionLink,
 		onAutoInsert,
 		onExtractToCard,
 		onCreateReadingPoint,
@@ -330,6 +338,19 @@
 		clearAndHide();
 	}
 
+	async function runSelectionLinkCopy(
+		action: 'protocolMarkdown' | 'vaultWikilink' | 'obsidianUri' | 'plainText'
+	) {
+		if (!canUseExcerptNotes && showPremiumFeaturePreviewEnabled) {
+			handlePremiumExcerptFeaturePreview();
+			return;
+		}
+		if (selectedText && currentCfiRange) {
+			await onCopySelectionLink?.(action, selectedText, currentCfiRange);
+		}
+		clearAndHide();
+	}
+
 	function handleExtractToCard() {
 		if (selectedText && currentCfiRange) {
 			onExtractToCard?.(selectedText, currentCfiRange);
@@ -370,16 +391,60 @@
 	}
 
 	function resolveBuiltinTranslationLabel(
-		provider: BuiltinWebTranslationProviderDefinition
+		provider: { nameKey: string }
 	): string {
 		return t(`epub.translationProviders.${provider.nameKey}`);
 	}
 
-	function listActiveTranslationProviders() {
-		return listActiveWebTranslationProviders({
+	function listTranslationProviders(): ResolvedWebTranslationProvider[] {
+		return listActiveTranslationProviders({
 			app,
 			resolveBuiltinLabel: resolveBuiltinTranslationLabel,
 		});
+	}
+
+	async function openLookupProvider(
+		provider: ResolvedWebTranslationProvider,
+		query: string
+	): Promise<boolean> {
+		const settings = readSelectionTranslationSettings(app);
+		const context = extractSelectionContext(iframeDoc, query);
+		return openWebTranslationProvider(app, provider, query, {
+			context,
+			settings,
+			resolveBuiltinLabel: resolveBuiltinTranslationLabel,
+		});
+	}
+
+	function addLookupProviderMenuItems(
+		menu: Menu,
+		providers: ResolvedWebTranslationProvider[],
+		query: string,
+		unavailableLabel: string,
+		openFailedLabel: string
+	): void {
+		if (providers.length === 0) {
+			menu.addItem((subItem) => {
+				subItem.setTitle(unavailableLabel);
+				subItem.setIcon('info');
+				subItem.setDisabled(true);
+			});
+			return;
+		}
+
+		for (const provider of providers) {
+			menu.addItem((subItem) => {
+				subItem.setTitle(provider.label);
+				subItem.setIcon(provider.icon);
+				subItem.onClick(async () => {
+					const opened = await openLookupProvider(provider, query);
+					if (!opened) {
+						showNotification(openFailedLabel, 'warning');
+					}
+					clearAndHide();
+				});
+			});
+		}
 	}
 
 	function resolveSelectionToolbarSubmenu(item: unknown, fallbackMenu: Menu): Menu {
@@ -398,7 +463,7 @@
 		}
 
 		dismissActiveToolbarMenu();
-		const translationProviders = listActiveTranslationProviders();
+		const translationProviders = listTranslationProviders();
 		const menu = new Menu();
 		activeToolbarMenu = menu;
 
@@ -415,28 +480,46 @@
 			item.setTitle(t('epub.selectionToolbar.translate'));
 			item.setIcon('languages');
 			const translateMenu = resolveSelectionToolbarSubmenu(item, menu);
-			if (translationProviders.length === 0) {
-				translateMenu.addItem((subItem) => {
-					subItem.setTitle(t('epub.selectionToolbar.translateUnavailable'));
-					subItem.setIcon('info');
-					subItem.setDisabled(true);
-				});
-				return;
-			}
-			for (const provider of translationProviders) {
-				translateMenu.addItem((subItem) => {
-					subItem.setTitle(provider.label);
-					subItem.setIcon(provider.icon);
-					subItem.onClick(async () => {
-						const opened = await openWebTranslationProvider(app, provider, text);
-						if (!opened) {
-							showNotification(t('epub.selectionToolbar.translateOpenFailed'), 'warning');
-						}
-						clearAndHide();
-					});
-				});
-			}
+			addLookupProviderMenuItems(
+				translateMenu,
+				translationProviders,
+				text,
+				t('epub.selectionToolbar.translateUnavailable'),
+				t('epub.selectionToolbar.translateOpenFailed')
+			);
 		});
+
+		if (onCopySelectionLink && (canUseExcerptNotes || canPreviewLockedExcerptFeature())) {
+			menu.addSeparator();
+			menu.addItem((item) => {
+				item.setTitle(t('epub.selectionToolbar.copyMdLink'));
+				item.setIcon('link');
+				item.onClick(() => {
+					void runSelectionLinkCopy('protocolMarkdown');
+				});
+			});
+			menu.addItem((item) => {
+				item.setTitle(t('epub.selectionToolbar.copyVaultLink'));
+				item.setIcon('links-going-out');
+				item.onClick(() => {
+					void runSelectionLinkCopy('vaultWikilink');
+				});
+			});
+			menu.addItem((item) => {
+				item.setTitle(t('epub.selectionToolbar.copyObsidianUri'));
+				item.setIcon('external-link');
+				item.onClick(() => {
+					void runSelectionLinkCopy('obsidianUri');
+				});
+			});
+			menu.addItem((item) => {
+				item.setTitle(t('epub.selectionToolbar.copyPlainText'));
+				item.setIcon('clipboard-copy');
+				item.onClick(() => {
+					void runSelectionLinkCopy('plainText');
+				});
+			});
+		}
 
 		menu.showAtMouseEvent(event);
 	}

@@ -83,5 +83,7 @@ describe("reading-pace", () => {
 		expect(estimate.bookMs).toBeGreaterThan(0);
 		expect(estimate.chapterMs).toBeGreaterThan(0);
 		expect(estimate.chapterMs || 0).toBeLessThan(estimate.bookMs || 0);
+		expect(estimate.chapterProgressPercent).toBeGreaterThan(0);
+		expect(estimate.chapterProgressPercent).toBeLessThan(100);
 	});
 });
