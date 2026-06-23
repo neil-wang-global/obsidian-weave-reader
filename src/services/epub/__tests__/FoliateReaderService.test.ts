@@ -1747,7 +1747,81 @@ describe("FoliateReaderService", () => {
 		}
 	});
 
-	it("opens the highlight toolbar on annotation overlay clicks even when the iframe selection is active", async () => {
+	it("ignores frame highlight clicks while a real text selection is active", async () => {
+		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
+		try {
+			const frameDoc = document.implementation.createHTMLDocument("novel");
+			const paragraph = frameDoc.createElement("p");
+			paragraph.textContent = "不能要太高悬赏";
+			frameDoc.body.appendChild(paragraph);
+
+			const highlight = {
+				cfiRange: "epubcfi(/6/26!/4/2/1,/1:0,/1:7)",
+				color: "yellow",
+				text: "不能要太高悬赏",
+				chapterIndex: 12,
+				excerptId: "excerpt-a",
+				presentation: "highlight" as const,
+			};
+			const key = getReaderHighlightIdentityKey(highlight);
+			const callback = vi.fn();
+			const iframe = document.createElement("iframe");
+			document.body.appendChild(iframe);
+			Object.defineProperty(frameDoc, "defaultView", {
+				configurable: true,
+				value: {
+					frameElement: iframe,
+					getSelection: () => ({
+						isCollapsed: false,
+						rangeCount: 1,
+						toString: () => "不能要太高悬赏",
+						removeAllRanges: vi.fn(),
+					}),
+				},
+			});
+
+			(service as any).highlightDataMap.set(key, highlight);
+			(service as any).highlightClickCallbacks.add(callback);
+			vi.spyOn((service as any).parser, "getSectionIndexForCfi").mockReturnValue(12);
+			vi.spyOn(service as any, "getVisibleFramesWithIndex").mockReturnValue([
+				{
+					index: 12,
+					frameDocument: frameDoc,
+					frameElement: iframe,
+					frame: {},
+				},
+			]);
+			vi.spyOn(service as any, "getCurrentHighlightViewportGeometry").mockReturnValue({
+				rect: {
+					top: 110,
+					left: 100,
+					bottom: 150,
+					right: 260,
+					width: 160,
+					height: 40,
+				},
+			});
+
+			(service as any).handleFrameHighlightClick(
+				{
+					button: 0,
+					clientX: 120,
+					clientY: 130,
+					preventDefault: vi.fn(),
+					stopPropagation: vi.fn(),
+					defaultPrevented: false,
+				} as unknown as MouseEvent,
+				frameDoc
+			);
+
+			expect(callback).not.toHaveBeenCalled();
+			document.body.removeChild(iframe);
+		} finally {
+			service.destroy();
+		}
+	});
+
+	it("ignores show-annotation overlay hits while a real text selection is active", async () => {
 		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
 		try {
 			const highlight = {
@@ -1771,6 +1845,55 @@ describe("FoliateReaderService", () => {
 						isCollapsed: false,
 						rangeCount: 1,
 						toString: () => "Selection text for testing",
+						removeAllRanges: vi.fn(),
+					}),
+				},
+			});
+			(service as any).highlightDataMap.set(key, highlight);
+			(service as any).highlightClickCallbacks.add(callback);
+			vi.spyOn(service as any, "getVisibleFramesWithIndex").mockReturnValue([
+				{ index: 0, frameDocument: frameDoc, frameElement: null, frame: {} },
+			]);
+
+			(service as any).handleShowAnnotationEvent({
+				currentTarget: (service as any).foliateView,
+				detail: {
+					value: highlight.cfiRange,
+					index: 0,
+					range,
+				},
+			} as CustomEvent);
+
+			expect(callback).not.toHaveBeenCalled();
+		} finally {
+			service.destroy();
+		}
+	});
+
+	it("opens the excerpt toolbar from show-annotation overlay hits without an active selection", async () => {
+		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
+		try {
+			const highlight = {
+				cfiRange: "epubcfi(/6/2!/4/2,/1:0,/1:9)",
+				color: "yellow",
+				text: "Selection text for testing",
+				excerptId: "excerpt-a",
+				presentation: "highlight" as const,
+			};
+			const key = getReaderHighlightIdentityKey(highlight);
+			const callback = vi.fn();
+			const frameDoc = document.implementation.createHTMLDocument("frame");
+			const paragraph = frameDoc.createElement("p");
+			paragraph.textContent = "Selection text for testing";
+			frameDoc.body.appendChild(paragraph);
+			const range = frameDoc.createRange();
+			range.selectNodeContents(paragraph);
+			Object.defineProperty(frameDoc, "defaultView", {
+				value: {
+					getSelection: () => ({
+						isCollapsed: true,
+						rangeCount: 0,
+						toString: () => "",
 						removeAllRanges: vi.fn(),
 					}),
 				},

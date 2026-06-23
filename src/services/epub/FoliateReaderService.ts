@@ -1756,11 +1756,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 			this.getVisibleFramesWithIndex().find((item) => item.index === detail.index) ||
 			this.getVisibleFramesWithIndex()[0];
 
-		// Foliate hit-tests annotation overlays on the same click that selects text in the
-		// iframe (common for TXT). Clear that selection so the excerpt toolbar can open.
-		if (detail?.range) {
-			this.clearSelections();
-		} else if (this.hasActiveReaderSelection(frame?.frameDocument)) {
+		// Foliate may hit-test annotation overlays on the same pointer gesture that selects
+		// text (common for TXT and cross-line ranges over excerpts). Prefer the selection
+		// toolbar while a non-collapsed reader selection is active.
+		if (this.hasActiveReaderSelection(frame?.frameDocument)) {
 			return;
 		}
 
@@ -4910,6 +4909,10 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 		const highlight = this.findHighlightAtPointer(event.clientX, event.clientY, frame);
 		if (!highlight) {
+			return;
+		}
+
+		if (this.hasActiveReaderSelection(doc)) {
 			return;
 		}
 

@@ -633,10 +633,11 @@
 	function scheduleActiveSync() {
 		if (!activeFrame) return;
 		const frame = activeFrame;
+		const trackedCfiRange = currentCfiRange;
 		clearPendingSync();
 		pendingSyncFrame = window.requestAnimationFrame(() => {
 			pendingSyncFrame = null;
-			void syncSelection(frame);
+			void syncSelection(frame, trackedCfiRange || undefined);
 		});
 	}
 
@@ -672,36 +673,47 @@
 	}
 
 	async function syncSelection(frame: ReaderFrame, cfiRange?: string) {
+		const repositionOnly = isVisible && Boolean(cfiRange);
 		try {
 			const iframeWindow = frame.window || frame.frameDocument?.defaultView;
 			if (!iframeWindow) {
-				hideToolbar();
+				if (!repositionOnly) {
+					hideToolbar();
+				}
 				return;
 			}
 
 			iframeDoc = iframeWindow.document;
 			const selection = iframeWindow.getSelection();
 			if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-				hideToolbar();
+				if (!repositionOnly) {
+					hideToolbar();
+				}
 				return;
 			}
 
 			const text = selection.toString().trim();
 			if (!text) {
-				hideToolbar();
+				if (!repositionOnly) {
+					hideToolbar();
+				}
 				return;
 			}
 
 			const range = selection.getRangeAt(0);
 			const resolvedCfiRange = cfiRange || frame.cfiFromRange(range);
 			if (!resolvedCfiRange) {
-				hideToolbar();
+				if (!repositionOnly) {
+					hideToolbar();
+				}
 				return;
 			}
 
 			const viewportEl = getViewportContainer(frame);
 			if (!viewportEl) {
-				hideToolbar();
+				if (!repositionOnly) {
+					hideToolbar();
+				}
 				return;
 			}
 
@@ -711,7 +723,9 @@
 
 			const geometry = resolveSelectionGeometry(resolvedCfiRange, frame, selection);
 			if (!geometry) {
-				hideToolbar();
+				if (!repositionOnly) {
+					hideToolbar();
+				}
 				return;
 			}
 
@@ -719,7 +733,9 @@
 			await positionToolbar(geometry.rect, viewportEl, geometry.rects, geometry.anchorPoint);
 		} catch (e) {
 			logger.warn('[SelectionToolbar] Failed to sync selection:', e);
-			hideToolbar();
+			if (!repositionOnly) {
+				hideToolbar();
+			}
 		}
 	}
 
