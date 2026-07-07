@@ -5,6 +5,7 @@
 	import type { ReferenceSourceInfo, ReferenceStats } from '../../services/epub/EpubReferenceStatsService';
 	import { tr } from '../../utils/i18n';
 	import { createEventBinder, isEventOutsideToolbar } from './toolbar-positioning';
+	import { domInstanceOf } from '../../utils/dom-instance-of';
 
 	interface Props {
 		open: boolean;
@@ -109,7 +110,7 @@
 		}
 
 		const binder = createEventBinder();
-		const eventTargets = new Set<EventTarget>([document]);
+		const eventTargets = new Set<EventTarget>([activeDocument]);
 		for (const frame of readerService?.getVisibleFrames?.() || []) {
 			if (frame?.frameDocument) {
 				eventTargets.add(frame.frameDocument);
@@ -131,7 +132,7 @@
 			return;
 		}
 		const target = event.target;
-		if (!(target instanceof Node) || !popoverEl.contains(target)) {
+		if (!domInstanceOf(target, Node) || !popoverEl.contains(target)) {
 			return;
 		}
 		if (event.key === 'Escape') {

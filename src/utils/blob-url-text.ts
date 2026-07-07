@@ -76,6 +76,69 @@ export async function readBlobUrlAsText(url: string): Promise<string> {
 	return text;
 }
 
+function readNonBlobResourceViaXhr(
+	resourceUrl: string,
+	responseType: "text" | "arraybuffer"
+): Promise<{ data: string | ArrayBuffer; mimeType: string }> {
+	return new Promise((resolve, reject) => {
+		const xhr = new XMLHttpRequest();
+		xhr.open("GET", resourceUrl, true);
+		xhr.responseType = responseType;
+		xhr.onload = () => {
+			if (!isSuccessfulBlobXhrStatus(xhr.status)) {
+				reject(
+					new Error(`HTTP ${xhr.status} ${xhr.statusText || "Unknown error"}`)
+				);
+				return;
+			}
+			const mimeType = String(
+				xhr.getResponseHeader("content-type") || "application/octet-stream"
+			)
+				.trim()
+				.toLowerCase();
+			if (responseType === "text") {
+				resolve({ data: xhr.responseText || "", mimeType });
+				return;
+			}
+			if (xhr.response instanceof ArrayBuffer) {
+				resolve({ data: xhr.response, mimeType });
+				return;
+			}
+			reject(new Error(`Failed to load resource: ${resourceUrl}`));
+		};
+		xhr.onerror = () => reject(new Error(`Failed to load resource: ${resourceUrl}`));
+		xhr.send();
+	});
+}
+
+/** Read vault `app://` and other same-origin resource URLs without fetch. */
+export async function readResourceUrlAsText(resourceUrl: string): Promise<string> {
+	if (isBlobResourceUrl(resourceUrl)) {
+		return readBlobUrlAsText(resourceUrl);
+	}
+	const { data } = await readNonBlobResourceViaXhr(resourceUrl, "text");
+	return data;
+}
+
+export async function readResourceUrlAsArrayBuffer(resourceUrl: string): Promise<ArrayBuffer> {
+	if (isBlobResourceUrl(resourceUrl)) {
+		const { bytes } = await readBlobUrlAsArrayBuffer(resourceUrl);
+		return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+	}
+	const { data } = await readNonBlobResourceViaXhr(resourceUrl, "arraybuffer");
+	return data as ArrayBuffer;
+}
+
+export async function readResourceUrlAsBinary(
+	resourceUrl: string
+): Promise<{ bytes: Uint8Array; mimeType: string }> {
+	if (isBlobResourceUrl(resourceUrl)) {
+		return readBlobUrlAsArrayBuffer(resourceUrl);
+	}
+	const { data, mimeType } = await readNonBlobResourceViaXhr(resourceUrl, "arraybuffer");
+	return { bytes: new Uint8Array(data as ArrayBuffer), mimeType };
+}
+
 function readBlobUrlAsTextViaXhr(url: string): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const xhr = new XMLHttpRequest();

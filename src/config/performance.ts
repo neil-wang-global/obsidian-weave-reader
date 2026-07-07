@@ -299,7 +299,7 @@ export function debounce<T extends UnknownFn>(
 
 	return (...args: FnArgs<T>) => {
 		if (timeoutId) {
-			clearTimeout(timeoutId);
+			window.clearTimeout(timeoutId);
 		}
 
 		timeoutId = window.setTimeout(() => {
@@ -365,7 +365,7 @@ export class BatchProcessor<T> {
 	 */
 	flush(): void {
 		if (this.timeoutId) {
-			clearTimeout(this.timeoutId);
+			window.clearTimeout(this.timeoutId);
 			this.timeoutId = null;
 		}
 

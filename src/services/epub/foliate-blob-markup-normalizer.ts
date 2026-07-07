@@ -4,7 +4,8 @@ import {
 	prefetchBlobUrlsFromText,
 	readBlobUrlAsArrayBuffer,
 	readBlobUrlAsText,
-	shouldPreferFetchForResourceUrl,
+	readResourceUrlAsBinary,
+	readResourceUrlAsText,
 } from "../../utils/blob-url-text";
 import "../../utils/blob-url-registry";
 import {
@@ -114,7 +115,7 @@ async function readTextResource(href: string): Promise<string> {
 		if (isBlobResourceUrl(href)) {
 			return await readBlobUrlAsText(href);
 		}
-		return await readTextResourceViaXhr(href);
+		return await readResourceUrlAsText(href);
 	} catch (error) {
 		if (!isBlobResourceUrl(href)) {
 			logger.warn("[foliate-blob-markup-normalizer] Failed to read transformed resource:", {
@@ -133,7 +134,7 @@ async function readBinaryResource(
 		if (isBlobResourceUrl(href)) {
 			return await readBlobUrlAsArrayBuffer(href);
 		}
-		return await readBinaryResourceViaFetch(href);
+		return await readResourceUrlAsBinary(href);
 	} catch (error) {
 		if (!isBlobResourceUrl(href)) {
 			logger.warn("[foliate-blob-markup-normalizer] Failed to read transformed binary resource:", {
@@ -335,76 +336,3 @@ export async function inlineFoliateBlobMarkup(
 }
 
 export { shouldRemoveHttpEquivMeta };
-
-function readTextResourceViaXhr(href: string): Promise<string> {
-	if (isBlobResourceUrl(href)) {
-		return readBlobUrlAsText(href);
-	}
-	if (shouldPreferFetchForResourceUrl(href) && typeof window.fetch === "function") {
-		return readTextResourceViaFetch(href);
-	}
-
-	return new Promise((resolve, reject) => {
-		const request = new XMLHttpRequest();
-		request.open("GET", href, true);
-		request.responseType = "text";
-		request.onload = () => {
-			if (request.status === 0 || (request.status >= 200 && request.status < 300)) {
-				resolve(request.responseText || "");
-				return;
-			}
-			reject(
-				new Error(
-					`Failed to load text resource: ${request.status} ${request.statusText || "Unknown error"}`
-				)
-			);
-		};
-		request.onerror = async () => {
-			if (isBlobResourceUrl(href)) {
-				reject(new Error("Failed to read blob URL"));
-				return;
-			}
-			try {
-				resolve(await readTextResourceViaFetch(href));
-			} catch (error) {
-				reject(error instanceof Error ? error : new Error(String(error)));
-			}
-		};
-		request.send();
-	});
-}
-
-async function readTextResourceViaFetch(href: string): Promise<string> {
-	if (typeof window.fetch !== "function") {
-		throw new Error("Failed to load text resource");
-	}
-
-	const response = await window.fetch(href);
-	if (!response.ok) {
-		throw new Error(`Failed to load text resource: ${response.status} ${response.statusText}`);
-	}
-	return response.text();
-}
-
-async function readBinaryResourceViaFetch(
-	href: string
-): Promise<{ bytes: Uint8Array; mimeType: string }> {
-	if (isBlobResourceUrl(href)) {
-		return readBlobUrlAsArrayBuffer(href);
-	}
-	if (typeof window.fetch !== "function") {
-		throw new Error("Failed to load binary resource");
-	}
-
-	const response = await window.fetch(href);
-	if (!response.ok) {
-		throw new Error(`Failed to load binary resource: ${response.status} ${response.statusText}`);
-	}
-	const bytes = new Uint8Array(await response.arrayBuffer());
-	return {
-		bytes,
-		mimeType: String(response.headers.get("content-type") || "application/octet-stream")
-			.trim()
-			.toLowerCase(),
-	};
-}

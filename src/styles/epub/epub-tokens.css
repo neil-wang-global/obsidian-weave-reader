@@ -205,6 +205,11 @@ body.styled-scrollbars
 	--epub-hl-red: rgba(239, 68, 68, 0.3);
 	--epub-hl-purple: rgba(171, 71, 188, 0.3);
 
+	--epub-toc-mark-important: var(--color-red, #e93147);
+	--epub-toc-mark-question: var(--color-yellow, #e5a500);
+	--epub-toc-mark-mastered: var(--color-green, #30a768);
+	--epub-toc-mark-incremental: var(--color-blue, #0084ff);
+
 	display: flex;
 	flex-direction: column;
 	height: 100%;
@@ -557,3 +562,11 @@ body.styled-scrollbars
 	color: var(--interactive-accent);
 }
 
+.weave-epub-reader-theme-host {
+	background-color: var(--weave-reader-host-bg, var(--background-primary));
+	color: var(--weave-reader-host-fg, var(--text-normal));
+}
+
+.weave-epub-reader-theme-host iframe {
+	background-color: var(--weave-reader-host-bg, var(--background-primary));
+}

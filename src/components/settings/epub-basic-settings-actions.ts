@@ -12,6 +12,8 @@ import {
 	type SelectionTranslationSettings,
 } from "../../config/selection-translation-settings";
 import { getEpubStorageService, normalizeEpubBookmarkFolderPath } from "../../services/epub";
+import { notifyExcerptSettingsChanged } from "../../services/epub/excerpt-settings-events";
+import { ensureDefaultBookNotesExportTemplates } from "../../services/epub/book-notes-export/install-templates";
 import { resolveBookNotesExportTemplateFolder } from "../../services/epub/book-notes-export/template-folder";
 import {
 	normalizeInterfaceLanguagePreference,
@@ -64,7 +66,9 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 		await deps.save();
 	}
 
-	async function refreshBookNotesExportTemplateFolder(): Promise<void> {
+	async function refreshBookNotesExportTemplateFolder(options?: {
+		notify?: boolean;
+	}): Promise<void> {
 		const settings = await getEpubStorageService(plugin.app).loadExcerptSettings();
 		const folderValue = resolveBookNotesExportTemplateFolder(settings);
 		deps.setBookNotesExportTemplateFolderValue(folderValue);
@@ -73,6 +77,9 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 			String(settings.bookNotesExportTemplatePath || "").trim()
 		);
 		deps.setExcerptSettingsVersion((value) => value + 1);
+		if (options?.notify) {
+			notifyExcerptSettingsChanged(settings);
+		}
 	}
 
 	return {
@@ -80,6 +87,10 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 
 		async updateBookmarkFolder(folderPath: string): Promise<void> {
 			const normalizedFolderPath = normalizeEpubBookmarkFolderPath(folderPath);
+			if (!normalizedFolderPath) {
+				deps.setBookmarkFolderInput(deps.getBookmarkFolderValue());
+				return;
+			}
 			if (normalizedFolderPath === deps.getBookmarkFolderValue()) {
 				deps.setBookmarkFolderInput(deps.getBookmarkFolderValue());
 				return;
@@ -131,6 +142,7 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 			});
 			deps.setBookNotesExportDefaultTemplatePath(normalizedPath);
 			deps.setExcerptSettingsVersion((value) => value + 1);
+			notifyExcerptSettingsChanged(await storageService.loadExcerptSettings());
 			showNotification(
 				t("epub.settings.notifications.templateSwitched", {
 					template: getVaultFileBasename(normalizedPath),
@@ -140,8 +152,11 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 		},
 
 		async updateBookNotesExportTemplateFolder(folderPath: string): Promise<void> {
-			const normalizedFolderPath =
-				normalizeVaultFolderPath(folderPath) || resolveBookNotesExportTemplateFolder(null);
+			const normalizedFolderPath = normalizeVaultFolderPath(folderPath);
+			if (!normalizedFolderPath) {
+				deps.setBookNotesExportTemplateFolderInput(deps.getBookNotesExportTemplateFolderValue());
+				return;
+			}
 
 			if (normalizedFolderPath === deps.getBookNotesExportTemplateFolderValue()) {
 				deps.setBookNotesExportTemplateFolderInput(deps.getBookNotesExportTemplateFolderValue());
@@ -154,8 +169,8 @@ export function createEpubBasicSettingsActions(deps: EpubBasicSettingsActionDeps
 				...currentSettings,
 				bookNotesExportTemplateFolder: normalizedFolderPath,
 			});
-			deps.setBookNotesExportTemplateFolderValue(normalizedFolderPath);
-			deps.setBookNotesExportTemplateFolderInput(normalizedFolderPath);
+			await ensureDefaultBookNotesExportTemplates(plugin.app, normalizedFolderPath);
+			await refreshBookNotesExportTemplateFolder({ notify: true });
 			showNotification(
 				t("epub.settings.notifications.bookNotesExportTemplateFolderUpdated"),
 				"success"

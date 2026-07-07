@@ -67,7 +67,7 @@
 		purple: t('epub.highlightToolbar.purple'),
 		green: t('epub.highlightToolbar.green')
 	}));
-	const isMobileToolbar = Platform.isMobile || document.body.classList.contains('is-mobile');
+	const isMobileToolbar = Platform.isMobile || activeDocument.body.classList.contains('is-mobile');
 
 	function icon(node: HTMLElement, name: string) {
 		setIcon(node, name);

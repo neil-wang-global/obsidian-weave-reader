@@ -16,6 +16,7 @@ import {
 	resolveEpubHighlightPersistenceSourcePath,
 	type EpubHighlightPersistenceSourceCandidate,
 } from "./epub-highlight-source-path";
+import { isEpubBookmarkManagedVaultPath } from "./epub-bookmark-vault-path";
 import { isSupportedBookPath } from "./book-format";
 import {
 	epubVaultPathsReferToSameBook,
@@ -372,17 +373,36 @@ export class EpubBacklinkHighlightService {
 		}
 
 		if (highlights.length === 0) {
-			const sourceIndex = await this.ensureSourceIndexSnapshotUpToDate();
-			highlights = this.collectHighlightsFromSourceIndexSnapshot(
-				sourceIndex,
+			const validatedCache = await this.tryResolveValidBookCacheEntry(
 				targetIdentity,
-				boundCanvasPath
+				boundCanvasPath,
+				store
 			);
-			manifest = this.buildHighlightSourceManifestFromSourceIndex(
-				sourceIndex,
-				targetIdentity,
-				boundCanvasPath
+			const manifestHasSources = Boolean(
+				validatedCache &&
+					(validatedCache.manifest.markdownSources.length > 0 ||
+						validatedCache.manifest.canvasSources.length > 0 ||
+						validatedCache.manifest.cardDataSources.length > 0)
 			);
+			if (
+				validatedCache &&
+				(validatedCache.highlights.length > 0 || manifestHasSources)
+			) {
+				highlights = validatedCache.highlights;
+				manifest = validatedCache.manifest;
+			} else {
+				const sourceIndex = await this.ensureSourceIndexSnapshotUpToDate();
+				highlights = this.collectHighlightsFromSourceIndexSnapshot(
+					sourceIndex,
+					targetIdentity,
+					boundCanvasPath
+				);
+				manifest = this.buildHighlightSourceManifestFromSourceIndex(
+					sourceIndex,
+					targetIdentity,
+					boundCanvasPath
+				);
+			}
 		} else {
 			const supplemented = await this.supplementScopedHighlightsFromSourceIndex(
 				highlights,
@@ -558,10 +578,25 @@ export class EpubBacklinkHighlightService {
 		targetIdentity: EpubTargetIdentity,
 		boundCanvasPath?: string | null
 	): Promise<BacklinkHighlight[] | null> {
+		const resolved = await this.tryResolveValidBookCacheEntry(targetIdentity, boundCanvasPath);
+		if (!resolved || resolved.highlights.length === 0) {
+			return null;
+		}
+		return resolved.highlights;
+	}
+
+	private async tryResolveValidBookCacheEntry(
+		targetIdentity: EpubTargetIdentity,
+		boundCanvasPath?: string | null,
+		store?: EpubBacklinkHighlightsCacheStore
+	): Promise<{
+		highlights: BacklinkHighlight[];
+		manifest: EpubBacklinkHighlightsCacheManifest;
+	} | null> {
 		const cacheKey = this.buildCacheKey(targetIdentity, boundCanvasPath);
-		const store = await this.loadDiskCacheStore();
-		const entry = store.entries[cacheKey];
-		if (!entry?.manifest || !Array.isArray(entry.highlights) || entry.highlights.length === 0) {
+		const resolvedStore = store ?? (await this.loadDiskCacheStore());
+		const entry = resolvedStore.entries[cacheKey];
+		if (!entry?.manifest || !Array.isArray(entry.highlights)) {
 			return null;
 		}
 		const refreshedManifest = await this.refreshManifestStamps(
@@ -575,7 +610,10 @@ export class EpubBacklinkHighlightService {
 		if (entry.manifestFingerprint !== manifestFingerprint) {
 			return null;
 		}
-		return this.cloneHighlightsForCache(entry.highlights);
+		return {
+			highlights: this.cloneHighlightsForCache(entry.highlights),
+			manifest: refreshedManifest,
+		};
 	}
 
 	private normalizeCacheManifest(
@@ -874,9 +912,15 @@ export class EpubBacklinkHighlightService {
 		if (isEphemeralEditorHighlightSourcePath(this.app, normalizedSourcePath)) {
 			return false;
 		}
+		if (isEpubBookmarkManagedVaultPath(this.app, normalizedSourcePath)) {
+			return false;
+		}
 		const normalizedBoundCanvasPath = normalizePath(String(boundCanvasPath || "").trim());
 		if (normalizedBoundCanvasPath && normalizedSourcePath === normalizedBoundCanvasPath) {
 			return true;
+		}
+		if (!this.isPotentialSourceIndexPath(normalizedSourcePath)) {
+			return false;
 		}
 
 		const file = this.app.vault.getAbstractFileByPath(normalizedSourcePath);
@@ -1171,6 +1215,10 @@ export class EpubBacklinkHighlightService {
 			return;
 		}
 		this.touchedSourceIndexPaths.add(normalizedPath);
+	}
+
+	isPotentialHighlightSourcePath(path: string): boolean {
+		return this.isPotentialSourceIndexPath(path);
 	}
 
 	private isPotentialSourceIndexPath(path: string): boolean {
@@ -3344,7 +3392,7 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 				cards.push(current);
 			}
 
-			for (const value of Object.values(current as Record<string, unknown>)) {
+			for (const value of Object.values(current)) {
 				if (value && typeof value === "object") {
 					queue.push(value);
 				}
@@ -3384,9 +3432,9 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 				return;
 			}
 
-			for (const [childKey, childValue] of Object.entries(current as Record<string, unknown>)) {
+			for (const [childKey, childValue] of Object.entries(current)) {
 				if (childValue && typeof childValue === "object") {
-					walk(childValue, current as Record<string, unknown>, childKey);
+					walk(childValue, current, childKey);
 				}
 			}
 		};
@@ -4006,15 +4054,23 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 				if (!view || typeof view !== "object") {
 					return false;
 				}
-				const markdownView = view as OpenMarkdownViewLike;
 				const path =
-					typeof markdownView.file?.path === "string"
-						? normalizePath(markdownView.file.path)
+					"file" in view &&
+					view.file &&
+					typeof view.file === "object" &&
+					"path" in view.file &&
+					typeof view.file.path === "string"
+						? normalizePath(view.file.path)
 						: "";
 				return (
 					path === normalizedSourcePath &&
-					typeof markdownView.editor?.getValue === "function" &&
-					typeof markdownView.editor?.setValue === "function"
+					"editor" in view &&
+					view.editor &&
+					typeof view.editor === "object" &&
+					"getValue" in view.editor &&
+					typeof view.editor.getValue === "function" &&
+					"setValue" in view.editor &&
+					typeof view.editor.setValue === "function"
 				);
 			});
 	}

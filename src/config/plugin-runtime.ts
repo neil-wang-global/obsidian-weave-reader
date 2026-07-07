@@ -6,8 +6,16 @@ export const CURRENT_PLUGIN_NAME = manifest.name;
 export const CURRENT_PLUGIN_VERSION = manifest.version;
 export const CURRENT_PLUGIN_DISPLAY_VERSION = `v${CURRENT_PLUGIN_VERSION}`;
 
-/** Permanent EPUB Reader license purchase page (ldxp storefront). */
-export const LIFETIME_LICENSE_PURCHASE_URL = "https://pay.ldxp.cn/item/zu4nrm";
+/** Permanent EPUB Reader license purchase page (ldxp storefront, Mainland China). */
+export const LIFETIME_LICENSE_PURCHASE_URL = "https://pay.ldxp.cn/shop/4IRQ543S";
+
+/** PayPal checkout for EPUB Reader activation (international). */
+export const LIFETIME_LICENSE_PAYPAL_READER_PURCHASE_URL =
+	"https://www.paypal.com/ncp/payment/9MUPK6PMA6SCJ";
+
+/** PayPal checkout for Weave series activation (international). */
+export const WEAVE_SERIES_PAYPAL_PURCHASE_URL =
+	"https://www.paypal.com/ncp/payment/4B86NBDFWEDEJ";
 
 export const LEGACY_WEAVE_PRODUCT_IDS = new Set<string>([
 	"weave",

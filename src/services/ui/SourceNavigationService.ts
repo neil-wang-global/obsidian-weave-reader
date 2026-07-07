@@ -8,6 +8,9 @@ import {
 } from "../../types/obsidian-extensions";
 import { i18n } from "../../utils/i18n";
 import {
+	MARKDOWN_SOURCE_LOCATE_OVERLAY_TIMING,
+} from "./source-locate-overlay-timing";
+import {
 	openFileWithExistingLeaf,
 	openLinkWithExistingLeaf,
 } from "../../utils/workspace-navigation";
@@ -50,8 +53,14 @@ export class SourceNavigationService {
 	private readonly overlay = getSourceLocateOverlayService();
 	private readonly markdownLocateRetryDelayMs = 180;
 	private readonly markdownLocateMaxAttempts = 6;
-	private readonly markdownOverlayRetryDelayMs = 90;
-	private readonly markdownOverlayMaxAttempts = 8;
+	private readonly markdownOverlayRetryDelayMs =
+		MARKDOWN_SOURCE_LOCATE_OVERLAY_TIMING.retryDelayMs;
+	private readonly markdownOverlayMaxAttempts =
+		MARKDOWN_SOURCE_LOCATE_OVERLAY_TIMING.maxAttempts;
+	private readonly markdownOverlayInitialDelayMs =
+		MARKDOWN_SOURCE_LOCATE_OVERLAY_TIMING.initialDelayMs;
+	private readonly markdownOverlayInitialDelayFromViewMs =
+		MARKDOWN_SOURCE_LOCATE_OVERLAY_TIMING.initialDelayMsFromView;
 
 	constructor(private readonly app: App) {}
 
@@ -89,7 +98,7 @@ export class SourceNavigationService {
 		options: LocateOptions,
 		attempt: number
 	): void {
-		const delay = attempt === 0 ? 60 : this.markdownOverlayRetryDelayMs;
+		const delay = attempt === 0 ? this.markdownOverlayInitialDelayFromViewMs : this.markdownOverlayRetryDelayMs;
 		window.setTimeout(() => {
 			try {
 				const containerEl = view.containerEl;
@@ -119,7 +128,7 @@ export class SourceNavigationService {
 		fallbackTarget: { overlayRect: DOMRect; scrollTarget: HTMLElement },
 		attempt: number
 	): void {
-		const delay = attempt === 0 ? 40 : this.markdownOverlayRetryDelayMs;
+		const delay = attempt === 0 ? this.markdownOverlayInitialDelayMs : this.markdownOverlayRetryDelayMs;
 		window.setTimeout(() => {
 			try {
 				const containerEl = view.containerEl;

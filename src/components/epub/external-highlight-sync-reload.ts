@@ -9,19 +9,28 @@ export function attachExternalHighlightSyncReload(
 ): () => void {
 	const throttleMs =
 		typeof options.throttleMs === "number" && options.throttleMs > 0 ? options.throttleMs : 1200;
-	let lastReloadAt = 0;
+	let reloadTimer: ReturnType<typeof window.setTimeout> | null = null;
+	let pendingDelayMs: number | null = null;
 
 	const queueReload = (delayMs: number) => {
 		if (!options.canReload()) {
 			return;
 		}
 
-		const now = Date.now();
-		if (now - lastReloadAt < throttleMs) {
-			return;
+		pendingDelayMs =
+			pendingDelayMs === null ? delayMs : Math.max(pendingDelayMs, delayMs);
+		if (reloadTimer) {
+			window.clearTimeout(reloadTimer);
 		}
-		lastReloadAt = now;
-		options.onReload(delayMs);
+		reloadTimer = window.setTimeout(() => {
+			reloadTimer = null;
+			const delay = pendingDelayMs ?? delayMs;
+			pendingDelayMs = null;
+			if (!options.canReload()) {
+				return;
+			}
+			options.onReload(delay);
+		}, throttleMs);
 	};
 
 	const onVisibilityChange = () => {
@@ -43,6 +52,10 @@ export function attachExternalHighlightSyncReload(
 	window.addEventListener("pageshow", onPageShow);
 
 	return () => {
+		if (reloadTimer) {
+			window.clearTimeout(reloadTimer);
+			reloadTimer = null;
+		}
 		activeDocument.removeEventListener("visibilitychange", onVisibilityChange);
 		window.removeEventListener("focus", onWindowFocus);
 		window.removeEventListener("pageshow", onPageShow);

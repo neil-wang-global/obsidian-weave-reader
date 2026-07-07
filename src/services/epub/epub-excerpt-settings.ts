@@ -1,4 +1,5 @@
 import type { EpubStrikethroughDisplayMode } from "./types";
+import { DEFAULT_BOOK_NOTES_EXPORT_TEMPLATE_FOLDER } from "../../config/epub-user-vault-folders";
 
 export type BookNotesExportTargetMode = "new" | "append";
 export type BookNotesExportLegacyTemplate = "classic" | "callout";
@@ -10,7 +11,7 @@ export interface EpubExcerptSettings {
 	strikethroughDisplayMode: EpubStrikethroughDisplayMode;
 	showStrikethroughInSidebar: boolean;
 	bookNotesExportTemplatePath: string | null;
-	bookNotesExportTemplateFolder: string | null;
+	bookNotesExportTemplateFolder: string;
 	bookNotesExportLegacyTemplate: BookNotesExportLegacyTemplate;
 	bookNotesExportTargetMode: BookNotesExportTargetMode;
 	bookNotesExportAppendPath: string | null;
@@ -27,7 +28,7 @@ export const DEFAULT_EPUB_EXCERPT_SETTINGS: EpubExcerptSettings = {
 	strikethroughDisplayMode: "conceal",
 	showStrikethroughInSidebar: false,
 	bookNotesExportTemplatePath: null,
-	bookNotesExportTemplateFolder: null,
+	bookNotesExportTemplateFolder: DEFAULT_BOOK_NOTES_EXPORT_TEMPLATE_FOLDER,
 	bookNotesExportLegacyTemplate: "classic",
 	bookNotesExportTargetMode: "new",
 	bookNotesExportAppendPath: null,

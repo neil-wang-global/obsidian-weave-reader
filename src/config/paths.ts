@@ -102,7 +102,51 @@ const DEFAULT_OBSIDIAN_CONFIG_DIR = [".", "obsidian"].join("");
 
 function resolveVaultConfigDir(app?: { vault: { configDir: string } }): string {
 	const configDir = app?.vault?.configDir?.trim();
-	return configDir && configDir.length > 0 ? configDir : DEFAULT_OBSIDIAN_CONFIG_DIR;
+	const raw = configDir && configDir.length > 0 ? configDir : DEFAULT_OBSIDIAN_CONFIG_DIR;
+	const normalized = normalizePath(raw);
+	if (!/^[A-Za-z]:\//.test(normalized)) {
+		return normalized;
+	}
+
+	const configMarker = `/${DEFAULT_OBSIDIAN_CONFIG_DIR}`;
+	const configDirIndex = normalized.lastIndexOf(configMarker);
+	if (configDirIndex >= 0) {
+		return normalized.slice(configDirIndex + 1);
+	}
+
+	const segments = normalized.split("/").filter(Boolean);
+	return segments[segments.length - 1] || DEFAULT_OBSIDIAN_CONFIG_DIR;
+}
+
+/** vault.adapter 只接受相对 vault 根的路径；剥离 Windows 绝对路径前缀。 */
+export function toVaultAdapterPath(
+	app: { vault: { configDir: string } } | undefined,
+	inputPath: string
+): string {
+	const normalized = normalizePath(String(inputPath || "").trim());
+	if (!normalized || !/^[A-Za-z]:\//.test(normalized)) {
+		return normalized;
+	}
+
+	const configDir = resolveVaultConfigDir(app);
+	const configMarker = `/${configDir}/`;
+	const configIndex = normalized.indexOf(configMarker);
+	if (configIndex >= 0) {
+		return normalized.slice(configIndex + 1);
+	}
+
+	const legacyConfigMarker = `/${DEFAULT_OBSIDIAN_CONFIG_DIR}/`;
+	const legacyConfigIndex = normalized.indexOf(legacyConfigMarker);
+	if (legacyConfigIndex >= 0) {
+		return normalized.slice(legacyConfigIndex + 1);
+	}
+
+	const pluginsIndex = normalized.indexOf("/plugins/");
+	if (pluginsIndex >= 0) {
+		return `${configDir}${normalized.slice(pluginsIndex)}`;
+	}
+
+	return normalized;
 }
 
 export function normalizeWeaveParentFolder(parentFolder?: string): string {
@@ -197,7 +241,7 @@ export function getV2Paths(parentFolder?: string) {
 
 export function getV2PathsFromApp(app?: App | AppWithPluginAccess) {
 	try {
-		const parentFolder = getCompatibleWeaveParentFolder(app as AppWithPluginAccess | undefined);
+		const parentFolder = getCompatibleWeaveParentFolder(app);
 		return getV2Paths(parentFolder);
 	} catch {
 		return getV2Paths(undefined);
@@ -302,6 +346,7 @@ export function getPluginPathsById(
 		},
 		cache: {
 			root: cacheRoot,
+			epubParagraphModePositions: `${cacheRoot}/epub-paragraph-mode-positions.json`,
 			epubScanIndex: `${cacheRoot}/epub-scan-index.json`,
 			anchors: `${cacheRoot}/anchors-cache.json`,
 			editorTemp: editorTempRoot,

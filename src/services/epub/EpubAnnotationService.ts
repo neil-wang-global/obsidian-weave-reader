@@ -331,7 +331,7 @@ export class EpubAnnotationService {
 		}
 
 		const loadPromise = (async () => {
-			const allHighlights: ReaderHighlight[] = [];
+			const allHighlightsByKey = new Map<string, ReaderHighlight>();
 			// 历史版本会把 EPUB 高亮重复写入本地 highlights.json，导致源摘录删除后界面仍残留。
 			// 现在统一以 md/canvas/卡片中的真实摘录为准，因此这里直接移除遗留缓存文件。
 			await this.clearLegacyHighlightCache(bookId);
@@ -350,9 +350,7 @@ export class EpubAnnotationService {
 			for (const bh of backlinkHighlights) {
 				const incomingLocators = this.collectHighlightSourceLocators(bh);
 				const incomingIdentity = getReaderHighlightIdentityKey(bh);
-				const existing = allHighlights.find(
-					(h) => getReaderHighlightIdentityKey(h) === incomingIdentity
-				);
+				const existing = allHighlightsByKey.get(incomingIdentity);
 				if (existing) {
 					existing.sourceLocators = this.mergeHighlightSourceLocators(
 						existing.sourceLocators || [],
@@ -367,11 +365,11 @@ export class EpubAnnotationService {
 					if (existing.style === undefined && bh.style !== undefined) {
 						existing.style = bh.style;
 					}
-					if (!existing.commentText && bh.commentText) {
+					if (bh.commentText !== undefined) {
 						existing.commentText = bh.commentText;
 					}
-					if (!existing.hasCommentDivider && bh.hasCommentDivider) {
-						existing.hasCommentDivider = true;
+					if (bh.hasCommentDivider !== undefined) {
+						existing.hasCommentDivider = bh.hasCommentDivider;
 					}
 					if (existing.createdTime === undefined && bh.createdTime !== undefined) {
 						existing.createdTime = bh.createdTime;
@@ -384,7 +382,7 @@ export class EpubAnnotationService {
 					}
 				} else {
 					const primaryLocator = this.selectPrimarySourceLocator(incomingLocators);
-					allHighlights.push({
+					allHighlightsByKey.set(incomingIdentity, {
 						cfiRange: bh.cfiRange,
 						color: bh.color,
 						style: bh.style,
@@ -403,8 +401,8 @@ export class EpubAnnotationService {
 				}
 			}
 
-			const concealedTexts = await this.getConcealedTexts(bookId);
-			for (const concealedText of concealedTexts) {
+			const allHighlights = Array.from(allHighlightsByKey.values());
+			for (const concealedText of await this.getConcealedTexts(bookId)) {
 				allHighlights.push({
 					cfiRange: concealedText.cfiRange,
 					color: "mask",

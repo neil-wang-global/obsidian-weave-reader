@@ -10,6 +10,7 @@
 	import {
 		buildEpubDisplayHighlightSelectionKey,
 		type EpubDisplayHighlight,
+		type EpubHighlightRenderSnapshot,
 	} from '../../services/epub/EpubHighlightViewSnapshotService';
 	import { getEpubAnnotationIndexService } from '../../services/epub';
 	import type { EpubAnnotationService } from '../../services/epub';
@@ -373,33 +374,34 @@
 
 	let parsedHighlightSearchQuery = $derived.by(() => parseSearchQuery(searchQuery));
 
-	let filteredHighlights = $derived.by(() =>
-		highlights.filter((highlight) => matchesHighlightQuery(highlight, parsedHighlightSearchQuery))
-	);
+	let annotationListView = $derived.by(() => {
+		const parsed = parsedHighlightSearchQuery;
+		const filtered = highlights.filter((highlight) => matchesHighlightQuery(highlight, parsed));
+		return {
+			filtered,
+			availableTags: buildUniqueSortedValues(highlights.flatMap((highlight) => highlight.tags)),
+			availableSources: buildUniqueSortedValues(highlights.map((highlight) => highlight.sourceFile)),
+			availableCommentStates: buildUniqueSortedValues(
+				highlights.map((highlight) => highlight.commentStateLabel)
+			),
+			availableNoteTypes: buildUniqueSortedValues(highlights.map((highlight) => highlight.noteType)),
+			availableHighlightColors: buildUniqueSortedValues(
+				highlights.map((highlight) => highlight.colorLabel)
+			),
+			availableChapters: buildUniqueSortedValues(
+				highlights.map((highlight) => getHighlightChapterLabel(highlight))
+			),
+		};
+	});
 
-	let availableTagOptions = $derived.by(() =>
-		buildUniqueSortedValues(highlights.flatMap((highlight) => highlight.tags))
-	);
+	let filteredHighlights = $derived(annotationListView.filtered);
 
-	let availableSourceOptions = $derived.by(() =>
-		buildUniqueSortedValues(highlights.map((highlight) => highlight.sourceFile))
-	);
-
-	let availableCommentStateOptions = $derived.by(() =>
-		buildUniqueSortedValues(highlights.map((highlight) => highlight.commentStateLabel))
-	);
-
-	let availableNoteTypeOptions = $derived.by(() =>
-		buildUniqueSortedValues(highlights.map((highlight) => highlight.noteType))
-	);
-
-	let availableHighlightColorOptions = $derived.by(() =>
-		buildUniqueSortedValues(highlights.map((highlight) => highlight.colorLabel))
-	);
-
-	let availableChapterOptions = $derived.by(() =>
-		buildUniqueSortedValues(highlights.map((highlight) => getHighlightChapterLabel(highlight)))
-	);
+	let availableTagOptions = $derived(annotationListView.availableTags);
+	let availableSourceOptions = $derived(annotationListView.availableSources);
+	let availableCommentStateOptions = $derived(annotationListView.availableCommentStates);
+	let availableNoteTypeOptions = $derived(annotationListView.availableNoteTypes);
+	let availableHighlightColorOptions = $derived(annotationListView.availableHighlightColors);
+	let availableChapterOptions = $derived(annotationListView.availableChapters);
 
 	let selectedHighlights = $derived.by(() =>
 		filteredHighlights.filter((highlight) => selectedKeys.has(getHighlightSelectionKey(highlight)))
@@ -667,6 +669,13 @@
 		}
 	}
 
+	function shouldSkipBackgroundAnnotationRefresh(snapshot: EpubHighlightRenderSnapshot): boolean {
+		return (
+			snapshot.revision === highlightRevision &&
+			snapshot.pageLabelsResolved
+		);
+	}
+
 	async function refreshAnnotationsInBackground(
 		loadToken: number,
 		expectedBook: NonNullable<typeof book>,
@@ -749,6 +758,17 @@
 		if (cachedSnapshot) {
 			applySnapshot(cachedSnapshot.highlights);
 			preparing = false;
+			if (shouldSkipBackgroundAnnotationRefresh(cachedSnapshot)) {
+				return;
+			}
+			if (!cachedSnapshot.pageLabelsResolved) {
+				void hydratePageLabelsInBackground(
+					loadToken,
+					currentBook,
+					expectedFilePath,
+					showStrikethroughHighlights
+				);
+			}
 			void refreshAnnotationsInBackground(
 				loadToken,
 				currentBook,
@@ -771,6 +791,17 @@
 			if (warmedSnapshot) {
 				applySnapshot(warmedSnapshot.highlights);
 				preparing = false;
+				if (shouldSkipBackgroundAnnotationRefresh(warmedSnapshot)) {
+					return;
+				}
+				if (!warmedSnapshot.pageLabelsResolved) {
+					void hydratePageLabelsInBackground(
+						loadToken,
+						currentBook,
+						expectedFilePath,
+						showStrikethroughHighlights
+					);
+				}
 				void refreshAnnotationsInBackground(
 					loadToken,
 					currentBook,

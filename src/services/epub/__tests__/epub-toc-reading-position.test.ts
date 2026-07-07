@@ -65,6 +65,31 @@ describe("epub-toc-reading-position", () => {
 		);
 	});
 
+	it("resolves split spine sections to parent toc entries", () => {
+		const splitToc: TocItem[] = [
+			{
+				id: "1",
+				label: "第三章 复杂系统",
+				href: "Text/part0011.xhtml",
+				level: 1,
+				subitems: [
+					{
+						id: "2",
+						label: "3.1 小节",
+						href: "Text/part0011.xhtml#section-1",
+						level: 2,
+					},
+				],
+			},
+		];
+		expect(findTocHrefForSectionHref(splitToc, "Text/part0011_split_009.xhtml")).toBe(
+			"Text/part0011.xhtml"
+		);
+		expect(findTocHrefForSectionHref(splitToc, "OEBPS/Text/part0011_split_009.xhtml")).toBe(
+			"Text/part0011.xhtml"
+		);
+	});
+
 	it("matches active toc hrefs exactly", () => {
 		expect(
 			isTocHrefActive("Text/chapter1.xhtml#section-1", "Text/chapter1.xhtml#section-1")

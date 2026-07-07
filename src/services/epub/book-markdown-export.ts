@@ -31,6 +31,7 @@ export interface ExportBookSectionToMarkdownInput {
 	sourceLink?: string;
 	bookTitle?: string;
 	author?: string;
+	footnotesMarkdown?: string;
 	lastSelectedFolder?: string | null;
 }
 
@@ -90,6 +91,7 @@ function buildSectionMarkdownContent(options: {
 	sourceLink?: string;
 	bookTitle?: string;
 	author?: string;
+	footnotesMarkdown?: string;
 	assetReplacements?: Map<string, string>;
 }): string {
 	const title = sanitizeBookMarkdownTitle(options.title, "书籍章节");
@@ -107,6 +109,12 @@ function buildSectionMarkdownContent(options: {
 		sections.push(...metaLines, "");
 	}
 	sections.push("## 正文", "", body || "（当前章节暂无可导出的正文内容）", "");
+	const footnotesMarkdown = String(options.footnotesMarkdown || "")
+		.replace(/\r\n?/g, "\n")
+		.trim();
+	if (footnotesMarkdown) {
+		sections.push("", footnotesMarkdown, "");
+	}
 	const markdown = sections.join("\n");
 	return options.sourceLink
 		? createContentWithMetadata({ we_source: options.sourceLink }, markdown)
@@ -291,6 +299,7 @@ export async function exportBookSectionToMarkdown(
 		sourceLink: input.sourceLink,
 		bookTitle: input.bookTitle,
 		author: input.author,
+		footnotesMarkdown: input.footnotesMarkdown,
 		assetReplacements,
 	});
 	return await finalizeMarkdownExport(app, targetPath, content);

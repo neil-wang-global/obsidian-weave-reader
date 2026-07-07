@@ -111,7 +111,7 @@ export class DeferredLeafRedirectController {
 			return;
 		}
 
-		clearTimeout(this.redirectTimer);
+		window.clearTimeout(this.redirectTimer);
 		this.redirectTimer = null;
 	}
 

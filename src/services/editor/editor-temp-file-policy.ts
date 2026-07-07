@@ -114,7 +114,7 @@ export function getPluginEditorTempDir(app: App): string {
 }
 
 export function getVaultEditorTempDir(app: App): string {
-	return normalizePath(`${getV2PathsFromApp(app as unknown).root}/editor`);
+	return normalizePath(`${getV2PathsFromApp(app).root}/editor`);
 }
 
 export function isDetachedEditorTempFileName(name: string): boolean {

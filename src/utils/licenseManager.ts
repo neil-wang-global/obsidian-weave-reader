@@ -809,7 +809,7 @@ export class ActivationAttemptLimiter {
 	 * 重置尝试记录（用于测试）
 	 */
 	static resetAttempts(): void {
-		this.app?.saveLocalStorage(this.STORAGE_KEY, undefined as unknown);
+		this.app?.saveLocalStorage(this.STORAGE_KEY, undefined);
 	}
 }
 

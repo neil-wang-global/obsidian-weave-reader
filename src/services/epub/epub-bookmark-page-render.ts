@@ -1,4 +1,5 @@
 import { isBookCompleted } from "./book-progress";
+import { buildEpubBookmarkLinkAlias } from "./epub-bookmark-display-title";
 import type { EpubLinkService } from "./EpubLinkService";
 import type {
 	EpubBookmarkAnalytics,
@@ -264,7 +265,12 @@ function renderBookInfoSection(input: EpubBookmarkPageRenderInput): string[] {
 	if (input.bookLanguage) {
 		lines.push(`| 语言 | ${input.bookLanguage} |`);
 	}
-	lines.push(`| 书籍文件 | [[${input.bookPath}|📂 打开书籍]] |`);
+	lines.push(
+		`| 书籍文件 | [[${input.bookPath}|📂 ${buildEpubBookmarkLinkAlias({
+			displayTitle: input.displayTitle,
+			bookPath: input.bookPath,
+		})}]] |`
+	);
 
 	const description = String(input.description || "").trim();
 	if (description) {

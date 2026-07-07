@@ -1,3 +1,4 @@
+import { domInstanceOf } from './dom-instance-of';
 import {
 	bindMobileFloatingViewport,
 	getVisualViewportLayout,
@@ -68,12 +69,12 @@ export function resolveReadingViewportLockTarget(
 
 	const leafContent = rootEl.closest('.workspace-leaf-content[data-type="weave-epub-reader"]');
 	const viewContent = leafContent?.querySelector(':scope > .view-content');
-	if (viewContent instanceof HTMLElement) {
+	if (domInstanceOf(viewContent, HTMLElement)) {
 		return viewContent;
 	}
 
 	const shell = rootEl.closest('.weave-epub-view-shell');
-	return shell instanceof HTMLElement ? shell : null;
+	return domInstanceOf(shell, HTMLElement) ? shell : null;
 }
 
 /**

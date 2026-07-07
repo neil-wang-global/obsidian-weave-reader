@@ -12,7 +12,13 @@
   import { showNotification } from "../../utils/notifications";
   import { copyTextToClipboard } from "../../utils/clipboard-copy";
   import { tr } from "../../utils/i18n";
-  import { LIFETIME_LICENSE_PURCHASE_URL } from "../../config/plugin-runtime";
+  import {
+    LIFETIME_LICENSE_PAYPAL_READER_PURCHASE_URL,
+    LIFETIME_LICENSE_PURCHASE_URL,
+    WEAVE_SERIES_PAYPAL_PURCHASE_URL,
+  } from "../../config/plugin-runtime";
+  import { openObsidianWebUrl } from "../../services/obsidian/obsidian-open-web-url";
+  import { Menu } from "obsidian";
   import type StandaloneEpubPlugin from "../../main";
 
   interface Props {
@@ -122,6 +128,52 @@
       isRemoving = false;
     }
   }
+
+  function attachMenuApp(menu: Menu): void {
+    (menu as Menu & { app?: StandaloneEpubPlugin["app"] }).app = plugin.app;
+  }
+
+  function openPurchaseUrl(url: string): void {
+    void openObsidianWebUrl(plugin.app, url, { preferExternal: true });
+  }
+
+  function showPurchaseMenu(event: MouseEvent): void {
+    const menu = new Menu();
+    attachMenuApp(menu);
+
+    menu.addItem((item) => {
+      item.setTitle(t("epub.settings.license.purchaseOptionMainland"));
+      item.setIcon("store");
+      item.onClick(() => {
+        openPurchaseUrl(LIFETIME_LICENSE_PURCHASE_URL);
+      });
+    });
+
+    menu.addItem((item) => {
+      item.setTitle(t("epub.settings.license.purchaseOptionPaypal"));
+      item.setIcon("globe");
+      const subMenu = item.setSubmenu();
+      attachMenuApp(subMenu);
+
+      subMenu.addItem((subItem) => {
+        subItem.setTitle(t("epub.settings.license.purchaseOptionPaypalReader"));
+        subItem.setIcon("book-open");
+        subItem.onClick(() => {
+          openPurchaseUrl(LIFETIME_LICENSE_PAYPAL_READER_PURCHASE_URL);
+        });
+      });
+
+      subMenu.addItem((subItem) => {
+        subItem.setTitle(t("epub.settings.license.purchaseOptionPaypalSeries"));
+        subItem.setIcon("layers");
+        subItem.onClick(() => {
+          openPurchaseUrl(WEAVE_SERIES_PAYPAL_PURCHASE_URL);
+        });
+      });
+    });
+
+    menu.showAtMouseEvent(event);
+  }
 </script>
 
 <section class="epub-license-settings-panel">
@@ -129,14 +181,13 @@
     <div class="epub-license-settings-header">
       <div class="section-title-row">
         <h3 class="section-title with-accent-bar accent-purple">{t("epub.settings.license.title")}</h3>
-        <a
-          class="license-purchase-link"
-          href={LIFETIME_LICENSE_PURCHASE_URL}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
+          class="clickable-icon license-purchase-link"
+          onclick={showPurchaseMenu}
         >
           {t("epub.settings.license.purchaseLink")}
-        </a>
+        </button>
       </div>
       <p class="section-description">{t("epub.settings.license.description")}</p>
     </div>
@@ -210,18 +261,47 @@
     min-width: 0;
   }
 
-  .license-purchase-link {
+  .epub-license-settings-panel button.clickable-icon.license-purchase-link,
+  .epub-license-settings-panel button.clickable-icon.license-purchase-link:hover,
+  .epub-license-settings-panel button.clickable-icon.license-purchase-link:focus,
+  .epub-license-settings-panel button.clickable-icon.license-purchase-link:active {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    border: none;
+    border-width: 0;
+    border-color: transparent;
+    box-shadow: none;
+    outline: none;
+    background: transparent;
+    background-color: transparent;
+  }
+
+  .epub-license-settings-panel button.clickable-icon.license-purchase-link {
     flex-shrink: 0;
+    margin: 0;
+    padding: 0;
+    width: auto;
+    height: auto;
+    min-width: 0;
+    min-height: 0;
+    font: inherit;
     font-size: var(--epub-settings-font-size-desc, var(--font-ui-smaller, 0.85rem));
     color: var(--text-accent);
     text-decoration: none;
     white-space: nowrap;
+    cursor: pointer;
     transition: color 0.15s ease, opacity 0.15s ease;
   }
 
-  .license-purchase-link:hover {
+  .epub-license-settings-panel button.clickable-icon.license-purchase-link:hover {
     color: var(--text-accent-hover, var(--text-accent));
     opacity: 0.88;
+  }
+
+  .epub-license-settings-panel button.clickable-icon.license-purchase-link:focus-visible {
+    outline: 2px solid var(--text-accent);
+    outline-offset: 2px;
   }
 
   .epub-license-settings-content {
@@ -313,7 +393,7 @@
       row-gap: var(--epub-settings-gap-sm);
     }
 
-    .license-purchase-link {
+    .epub-license-settings-panel button.clickable-icon.license-purchase-link {
       white-space: normal;
     }
 

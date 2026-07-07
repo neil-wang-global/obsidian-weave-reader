@@ -2,6 +2,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { setIcon } from 'obsidian';
 	import { tr } from '../../utils/i18n';
+	import { domInstanceOf } from '../../utils/dom-instance-of';
 	import {
 		isInteractiveFormTarget,
 		shouldIgnoreEpubReaderShortcut,
@@ -318,7 +319,7 @@
 			return;
 		}
 
-		const prefixRange = document.createRange();
+		const prefixRange = (textEl.ownerDocument ?? activeDocument).createRange();
 		prefixRange.selectNodeContents(textEl);
 		prefixRange.setEnd(range.startContainer, range.startOffset);
 		const startOffset = prefixRange.toString().length;
@@ -384,7 +385,7 @@
 			return false;
 		}
 		const target = event.target;
-		if (!(target instanceof Node)) {
+		if (!domInstanceOf(target, Node)) {
 			return false;
 		}
 		return overlayEl === target || overlayEl.contains(target);
@@ -394,7 +395,7 @@
 		if (!active || !overlayEl) {
 			return;
 		}
-		if (isInteractiveFormTarget(document.activeElement)) {
+		if (isInteractiveFormTarget(activeDocument.activeElement)) {
 			return;
 		}
 		try {
@@ -615,8 +616,8 @@
 			}
 		};
 
-		document.addEventListener('selectionchange', syncSelection);
-		document.addEventListener('pointerdown', handlePointerDown, true);
+		activeDocument.addEventListener('selectionchange', syncSelection);
+		activeDocument.addEventListener('pointerdown', handlePointerDown, true);
 		const resizeObserver = new ResizeObserver(() => {
 			syncSubpageMetrics(true);
 		});
@@ -630,8 +631,8 @@
 			resizeObserver.observe(textEl);
 		}
 		return () => {
-			document.removeEventListener('selectionchange', syncSelection);
-			document.removeEventListener('pointerdown', handlePointerDown, true);
+			activeDocument.removeEventListener('selectionchange', syncSelection);
+			activeDocument.removeEventListener('pointerdown', handlePointerDown, true);
 			resizeObserver.disconnect();
 		};
 	});

@@ -84,7 +84,7 @@ export class EpubScreenshotService {
 		visibleFrames?: EpubVisibleFrameLike[]
 	): Promise<Blob | null> {
 		try {
-			const canvas = activeDocument.createElement("canvas");
+			const canvas = activeWindow.createEl("canvas");
 			const dpr = window.devicePixelRatio || 1;
 			canvas.width = rect.width * dpr;
 			canvas.height = rect.height * dpr;
@@ -323,7 +323,6 @@ export class EpubScreenshotService {
 				}
 			}
 
-			range.detach?.();
 			currentNode = walker.nextNode();
 		}
 

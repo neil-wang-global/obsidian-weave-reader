@@ -259,4 +259,20 @@ describe('toolbar-positioning', () => {
 		Object.defineProperty(outsideEvent, 'target', { value: outside });
 		expect(shouldDismissToolbarOnPointerDown(toolbar, outsideEvent)).toBe(true);
 	});
+
+	it('dismisses toolbar for pointer targets inside EPUB iframe documents', () => {
+		const toolbar = document.createElement('div');
+		document.body.appendChild(toolbar);
+
+		const iframe = document.createElement('iframe');
+		document.body.appendChild(iframe);
+		const iframeDoc = iframe.contentDocument;
+		expect(iframeDoc).toBeTruthy();
+		const insideIframe = iframeDoc!.createElement('p');
+		iframeDoc!.body.appendChild(insideIframe);
+
+		const iframeEvent = new MouseEvent('mousedown', { bubbles: true });
+		Object.defineProperty(iframeEvent, 'target', { value: insideIframe });
+		expect(shouldDismissToolbarOnPointerDown(toolbar, iframeEvent)).toBe(true);
+	});
 });

@@ -17,6 +17,7 @@ import {
 import * as blobUrlText from "../../../utils/blob-url-text";
 import { logger } from "../../../utils/logger";
 import { flushThemeManagerForTests } from "../../../utils/theme-detection";
+import { READER_SOURCE_LOCATE_FOCUS_DURATION_MS } from "../../ui/source-locate-overlay-timing";
 
 async function createSampleEpubBuffer(): Promise<ArrayBuffer> {
 	const zip = new JSZip();
@@ -1583,7 +1584,7 @@ describe("FoliateReaderService", () => {
 					color: "blue",
 					text: persistentHighlight.text,
 				},
-				2200
+				READER_SOURCE_LOCATE_FOCUS_DURATION_MS
 			);
 
 			await vi.waitFor(() => {
@@ -1592,7 +1593,7 @@ describe("FoliateReaderService", () => {
 			expect((service as any).highlightDataMap.get(key)?.color).toBe("yellow");
 			expect((service as any).savedHighlights).toHaveLength(1);
 
-			await vi.advanceTimersByTimeAsync(2200);
+			await vi.advanceTimersByTimeAsync(READER_SOURCE_LOCATE_FOCUS_DURATION_MS);
 
 			expect((service as any).temporaryHighlightDataMap.has(key)).toBe(false);
 			expect((service as any).highlightDataMap.get(key)?.color).toBe("yellow");
@@ -1600,6 +1601,94 @@ describe("FoliateReaderService", () => {
 			expect((service as any).savedHighlights[0]?.color).toBe("yellow");
 		} finally {
 			vi.useRealTimers();
+			service.destroy();
+		}
+	});
+
+	it("uses source-locate focus overlay instead of replacing an existing excerpt highlight", async () => {
+		vi.useFakeTimers();
+		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
+		try {
+			const persistentHighlight = {
+				cfiRange: "epubcfi(/6/2!/4/2,/1:0,/1:9)",
+				color: "yellow",
+				text: "Saved excerpt quote",
+				presentation: "highlight" as const,
+			};
+			const key = getReaderHighlightIdentityKey(persistentHighlight);
+			await service.applyHighlights([persistentHighlight]);
+			vi.spyOn(service as any, "resolveNavigationRequest").mockResolvedValue({
+				canonical: persistentHighlight.cfiRange,
+			});
+			const refreshSpy = vi.spyOn(service, "refreshHighlights");
+
+			await service.navigateAndHighlight({
+				cfi: persistentHighlight.cfiRange,
+				text: "Different navigation hint",
+				flashStyle: "highlight",
+				flashColor: "blue",
+			});
+
+			expect((service as any).temporaryHighlightDataMap.size).toBe(0);
+			expect((service as any).sourceLocateFocusByCfiKey.size).toBe(1);
+			expect((service as any).highlightDataMap.get(key)?.color).toBe("yellow");
+			expect(refreshSpy).toHaveBeenCalled();
+
+			await vi.advanceTimersByTimeAsync(READER_SOURCE_LOCATE_FOCUS_DURATION_MS);
+
+			expect((service as any).sourceLocateFocusByCfiKey.size).toBe(0);
+			expect((service as any).highlightDataMap.get(key)?.color).toBe("yellow");
+			expect((service as any).savedHighlights).toHaveLength(1);
+		} finally {
+			vi.useRealTimers();
+			service.destroy();
+		}
+	});
+
+	it("still flashes a temporary highlight when navigating to a location without a saved excerpt", async () => {
+		vi.useFakeTimers();
+		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
+		try {
+			const cfiRange = "epubcfi(/6/2!/4/2,/1:0,/1:9)";
+			vi.spyOn((service as any).parser, "canonicalizeLocation").mockResolvedValue(cfiRange);
+			vi.spyOn(service as any, "resolveNavigationRequest").mockResolvedValue({
+				canonical: cfiRange,
+			});
+
+			await service.navigateAndHighlight({
+				cfi: cfiRange,
+				text: "Search result snippet",
+				flashStyle: "highlight",
+			});
+
+			expect((service as any).temporaryHighlightDataMap.size).toBe(1);
+			expect((service as any).sourceLocateFocusByCfiKey.size).toBe(0);
+
+			await vi.advanceTimersByTimeAsync(READER_SOURCE_LOCATE_FOCUS_DURATION_MS);
+
+			expect((service as any).temporaryHighlightDataMap.size).toBe(0);
+		} finally {
+			vi.useRealTimers();
+			service.destroy();
+		}
+	});
+
+	it("keeps source-locate overlay anchor cfis while focus ring uses persistent excerpt highlights", async () => {
+		const service = new FoliateReaderService(createMockApp(new ArrayBuffer(0)) as any);
+		try {
+			const persistentHighlight = {
+				cfiRange: "epubcfi(/6/2!/4/2,/1:0,/1:9)",
+				color: "yellow",
+				text: "Saved excerpt quote",
+				presentation: "highlight" as const,
+			};
+			await service.applyHighlights([persistentHighlight]);
+			(service as any).setSourceLocateFocus(persistentHighlight.cfiRange, "blue");
+
+			expect((service as any).collectSourceLocateOverlayAnchorCfis()).toEqual([
+				persistentHighlight.cfiRange,
+			]);
+		} finally {
 			service.destroy();
 		}
 	});

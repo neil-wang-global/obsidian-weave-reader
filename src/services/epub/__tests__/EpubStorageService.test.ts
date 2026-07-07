@@ -7,6 +7,8 @@ const LOCAL_EPUB_DATA_PATH = '.obsidian/plugins/weave/state/epub-local-state.jso
 const LEGACY_LOCAL_EPUB_DATA_PATH = '.obsidian/plugins/weave/state/incremental-reading/epub-reader-data.json';
 const LOCAL_EPUB_SCAN_INDEX_PATH = '.obsidian/plugins/weave/cache/epub-scan-index.json';
 const LOCAL_EPUB_STATE_ROOT = '.obsidian/plugins/weave/state/incremental-reading/reader-state/epub';
+const LOCAL_EPUB_PARAGRAPH_MODE_POSITIONS_PATH =
+	'.obsidian/plugins/weave/cache/epub-paragraph-mode-positions.json';
 const LOCAL_EPUB_ARTIFACTS_ROOT = '.obsidian/plugins/weave/cache/incremental-reading/reader-artifacts/epub';
 
 function resolveLocalEpubDataPath(files: Map<string, string>): string {
@@ -1232,8 +1234,8 @@ describe('EpubStorageService', () => {
     ]);
   });
 
-  it('drops missing bookshelf entries and prunes stale membership on list', async () => {
-    const { app, files, vaultFiles } = createMemoryApp({
+  it('lists missing bookshelf entries as empty without mutating stored membership', async () => {
+    const { app, files } = createMemoryApp({
       [LOCAL_EPUB_DATA_PATH]: JSON.stringify({
         version: 1,
         updatedAt: 1,
@@ -1256,9 +1258,36 @@ describe('EpubStorageService', () => {
     await expect(service.listBookshelfEntries()).resolves.toEqual([]);
 
     const localData = readLocalEpubData(files);
-    expect(localData.bookshelfMembership).toEqual([]);
+    expect(localData.bookshelfMembership).toEqual([
+      { path: 'Books/missing.epub', addedAt: 10 },
+    ]);
+  });
+
+  it('prunes stale bookshelf membership when missing files are explicitly cleaned up', async () => {
+    const { app, files } = createMemoryApp({
+      [LOCAL_EPUB_DATA_PATH]: JSON.stringify({
+        version: 1,
+        updatedAt: 1,
+        bookshelfMembership: [
+          { path: 'Books/missing.epub', addedAt: 10 },
+        ],
+      }),
+      [LOCAL_EPUB_SCAN_INDEX_PATH]: JSON.stringify([
+        {
+          path: 'Books/missing.epub',
+          name: 'missing',
+          folder: 'Books',
+          size: 1024,
+          mtime: 0,
+        },
+      ]),
+    });
+
+    const service = new EpubStorageService(app);
+    await service.pruneMissingBooks();
+
+    expect(readLocalEpubData(files).bookshelfMembership).toEqual([]);
     expect(readLocalScanIndex(files)).toEqual([]);
-    expect(vaultFiles.has('Books/missing.epub')).toBe(false);
   });
 
   it('removeMissingBookshelfEntry clears membership and scan cache for a missing file', async () => {
@@ -2017,5 +2046,107 @@ describe('EpubStorageService', () => {
 
     expect(progress?.percent).toBe(42);
     expect(progress?.cfi).toBe('/6/6');
+  });
+
+  it('stores paragraph mode positions in plugin cache and migrates legacy vault markdown', async () => {
+    const legacyPath = `${SYNC_EPUB_ROOT}/paragraph-mode-positions.md`;
+    const legacyMarkdown = [
+      '# EPUB Paragraph Mode Positions',
+      '',
+      '<!-- weave-epub-paragraph-mode-v1 -->',
+      '',
+      '## book-1',
+      '```json',
+      JSON.stringify(
+        {
+          bookId: 'book-1',
+          filePath: 'Books/demo.epub',
+          bookTitle: 'Demo',
+          chapterTitle: 'Chapter 1',
+          chapterHref: 'chapter-1.xhtml',
+          chapterIndex: 1,
+          cfi: 'epubcfi(/6/4!/4/2,/1:0,/1:10)',
+          percent: 12,
+          paragraphId: '1:0:abc',
+          paragraphIndex: 0,
+          paragraphTextPreview: 'Preview text',
+          savedAt: 1234567890,
+        },
+        null,
+        2
+      ),
+      '```',
+      '',
+    ].join('\n');
+
+    const { app, files } = createMemoryApp({
+      [legacyPath]: legacyMarkdown,
+    });
+    const service = new EpubStorageService(app);
+
+    const loaded = await service.loadParagraphModeReadingPosition('book-1');
+
+    expect(loaded?.cfi).toBe('epubcfi(/6/4!/4/2,/1:0,/1:10)');
+    expect(files.has(LOCAL_EPUB_PARAGRAPH_MODE_POSITIONS_PATH)).toBe(true);
+    expect(files.has(legacyPath)).toBe(false);
+
+    await service.saveParagraphModeReadingPosition({
+      bookId: 'book-1',
+      filePath: 'Books/demo.epub',
+      bookTitle: 'Demo',
+      chapterTitle: 'Chapter 2',
+      chapterHref: 'chapter-2.xhtml',
+      chapterIndex: 2,
+      cfi: 'epubcfi(/6/6!/4/2,/1:0,/1:10)',
+      percent: 24,
+      paragraphId: '2:0:def',
+      paragraphIndex: 0,
+      paragraphTextPreview: 'Updated preview',
+      savedAt: 2234567890,
+    });
+
+    const updated = await service.loadParagraphModeReadingPosition('book-1');
+    expect(updated?.chapterTitle).toBe('Chapter 2');
+    expect(JSON.parse(files.get(LOCAL_EPUB_PARAGRAPH_MODE_POSITIONS_PATH) || '{}').version).toBe(1);
+  });
+
+  it('stores paragraph mode positions when configDir is an absolute Windows path', async () => {
+    const legacyPath = `${SYNC_EPUB_ROOT}/paragraph-mode-positions.md`;
+    const legacyMarkdown = [
+      '## book-absolute',
+      '```json',
+      JSON.stringify(
+        {
+          bookId: 'book-absolute',
+          filePath: 'Books/demo.epub',
+          bookTitle: 'Demo',
+          chapterTitle: 'Chapter 1',
+          chapterHref: 'chapter-1.xhtml',
+          chapterIndex: 1,
+          cfi: 'epubcfi(/6/4!/4/2,/1:0,/1:10)',
+          percent: 12,
+          paragraphId: '1:0:abc',
+          paragraphIndex: 0,
+          paragraphTextPreview: 'Preview text',
+          savedAt: 1234567890,
+        },
+        null,
+        2
+      ),
+      '```',
+      '',
+    ].join('\n');
+
+    const { app, files } = createMemoryApp({
+      [legacyPath]: legacyMarkdown,
+    });
+    app.vault.configDir = 'C:/Users/test/vault/.obsidian';
+
+    const service = new EpubStorageService(app);
+    const loaded = await service.loadParagraphModeReadingPosition('book-absolute');
+
+    expect(loaded?.cfi).toBe('epubcfi(/6/4!/4/2,/1:0,/1:10)');
+    expect(files.has(LOCAL_EPUB_PARAGRAPH_MODE_POSITIONS_PATH)).toBe(true);
+    expect(files.has(legacyPath)).toBe(false);
   });
 });

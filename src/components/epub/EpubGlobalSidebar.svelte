@@ -5,7 +5,9 @@
 	import type { App } from 'obsidian';
  	import { logger } from '../../utils/logger';
 	import { findOpenEpubLeaf } from '../../utils/epub-leaf-utils';
-	import { EPUB_RUNTIME, getEpubAnnotationIndexService, type EpubBook, type TocItem } from '../../services/epub';
+	import { EPUB_RUNTIME, type EpubBook, type TocItem } from '../../services/epub';
+	import type { EpubTocChapterMark } from '../../services/epub/epub-toc-chapter-mark';
+	import type { FlatTocExportItem } from '../../services/epub/epub-toc-export-scope';
 	import { EpubBookmarkService, type EpubBookmarkRecord } from '../../services/epub/EpubBookmarkService';
   	import { epubActiveDocumentStore } from '../../stores/epub-active-document-store';
   	import type { EpubNavigationRequest, EpubSharedState } from '../../stores/epub-active-document-store';
@@ -46,7 +48,7 @@
 	let searchResults = $state<Array<{ cfi: string; excerpt: string; chapterTitle: string }>>([]);
 	let searching = $state(false);
 	let searched = $state(false);
-	let searchTimer: ReturnType<typeof setTimeout> | null = null;
+	let searchTimer: ReturnType<typeof window.setTimeout> | null = null;
 	let searchRequestToken = 0;
 	let searchInputEl: HTMLInputElement | undefined = $state(undefined);
 	let isSearchActive = $derived(searchQuery.trim().length > 0);
@@ -135,7 +137,7 @@
 		}
  		activeTab = tab;
  		if (isSearchActive) {
- 			if (searchTimer) clearTimeout(searchTimer);
+ 			if (searchTimer) window.clearTimeout(searchTimer);
  			lastSearchContextKey = '';
  		}
 	}
@@ -179,7 +181,7 @@
 			lastSearchContextKey = '';
 			return;
 		}
-		if (searchTimer) clearTimeout(searchTimer);
+		if (searchTimer) window.clearTimeout(searchTimer);
 		searched = false;
 		if (!searchQuery.trim()) {
 			searching = false;
@@ -188,7 +190,7 @@
 			lastSearchContextKey = '';
 			return;
 		}
-		searchTimer = setTimeout(() => doSearch(), 500);
+		searchTimer = window.setTimeout(() => doSearch(), 500);
 	}
 
 	async function doSearch() {
@@ -247,7 +249,7 @@
 
 	function handleSearchKeydown(e: KeyboardEvent) {
 		if (e.key === 'Enter') {
-			if (searchTimer) clearTimeout(searchTimer);
+			if (searchTimer) window.clearTimeout(searchTimer);
 			doSearch();
 		}
 		if (e.key === 'Escape') {
@@ -411,14 +413,6 @@
 			|| null;
 		if (cachedSnapshot) {
 			highlightCount = cachedSnapshot.highlights.length;
-			void getEpubAnnotationIndexService(app).prefetchBook({
-				...snapshotContext,
-				annotationService,
-				backlinkService: backlinkService ?? undefined,
-				readerService: sharedState?.readerService ?? undefined,
-				highlightRevision: sharedState?.annotationRevision ?? 0,
-				priority: 'background',
-			});
 			return;
 		}
 		try {
@@ -555,6 +549,53 @@
 		}
 	}
 
+	async function handleTocExportChapterMarked(
+		item: FlatTocExportItem,
+		itemIndex: number,
+		flatTocItems: FlatTocExportItem[]
+	) {
+		if (!sharedState?.onExportTocChapterMarked) {
+			new Notice(t('epub.reader.exportMarkdownUnavailable'));
+			return;
+		}
+
+		try {
+			await ensureEpubLeafActive();
+			await sharedState.onExportTocChapterMarked(item, itemIndex, flatTocItems);
+		} catch (error) {
+			logger.error('[EpubGlobalSidebar] Failed to export toc chapter marked markdown:', error);
+			new Notice(t('epub.reader.exportMarkdownFailed'));
+		}
+	}
+
+	async function handleTocSetChapterMark(item: TocItem, mark: EpubTocChapterMark | null) {
+		if (!sharedState?.onSetTocChapterMark) {
+			return;
+		}
+
+		try {
+			await ensureEpubLeafActive();
+			await sharedState.onSetTocChapterMark(item, mark);
+		} catch (error) {
+			logger.error('[EpubGlobalSidebar] Failed to update toc chapter mark:', error);
+			new Notice(t('epub.globalSidebar.tocMarkUpdateFailed'));
+		}
+	}
+
+	async function handleTocSaveChapterMarkSettings(settings: EpubTocChapterMarkSettings) {
+		if (!sharedState?.onSaveTocChapterMarkSettings) {
+			return;
+		}
+
+		try {
+			await ensureEpubLeafActive();
+			await sharedState.onSaveTocChapterMarkSettings(settings);
+		} catch (error) {
+			logger.error('[EpubGlobalSidebar] Failed to save toc chapter mark settings:', error);
+			new Notice(t('epub.globalSidebar.tocMarkSettingsSaveFailed'));
+		}
+	}
+
 	async function handleHighlightNavigate(
 		cfi: string,
 		text?: string,
@@ -625,7 +666,7 @@
 		searchQuery = externalSearchQuery;
 		searched = false;
 		if (searchTimer) {
-			clearTimeout(searchTimer);
+			window.clearTimeout(searchTimer);
 			searchTimer = null;
 		}
 		void doSearch();
@@ -708,7 +749,7 @@
 		}
 		if (lastSearchedQuery === q && lastSearchContextKey !== contextKey) {
 			if (searchTimer) {
-				clearTimeout(searchTimer);
+				window.clearTimeout(searchTimer);
 				searchTimer = null;
 			}
 			void doSearch();
@@ -726,7 +767,7 @@
 			highlightCountLoadToken += 1;
 			bookmarkCountLoadToken += 1;
 			if (searchTimer) {
-				clearTimeout(searchTimer);
+				window.clearTimeout(searchTimer);
 				searchTimer = null;
 			}
 			unsubscribe();
@@ -939,9 +980,14 @@
 						loadFailed={tocLoadFailed && !tocLoading}
 						activeHref={activeTocHref}
 						lastReadHref={lastReadTocHref}
+						chapterMarks={sharedState?.tocChapterMarks ?? {}}
+						tocChapterMarkSettings={sharedState?.tocChapterMarkSettings ?? {}}
 						autoScrollToActive={activeTab === 'toc' && !isSearchActive}
 						onNavigate={handleTocNavigate}
+						onSetChapterMark={sharedState?.onSetTocChapterMark ? handleTocSetChapterMark : undefined}
+						onSaveTocChapterMarkSettings={sharedState?.onSaveTocChapterMarkSettings ? handleTocSaveChapterMarkSettings : undefined}
 						onAddToIncrementalReading={sharedState?.onCreateChapterReadingPoint ? handleTocCreateReadingPoint : undefined}
+						onExportChapterMarked={sharedState?.onExportTocChapterMarked ? handleTocExportChapterMarked : undefined}
 					/>
 				{:else if activeTab === 'bookmarks'}
 					<EpubBookmarksPanel

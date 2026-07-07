@@ -11,15 +11,30 @@
 	interface Props {
 		visible: boolean;
 		onClose: () => void;
+		initialTab?: TutorialTabId;
+		showDismissOption?: boolean;
+		onDismissPermanently?: () => void;
 	}
 
-	let { visible, onClose }: Props = $props();
+	let {
+		visible,
+		onClose,
+		initialTab,
+		showDismissOption = false,
+		onDismissPermanently,
+	}: Props = $props();
 	let t = $derived($tr);
 	let tutorialLanguage = $derived(resolveTutorialLanguage($currentLanguage));
 	let tutorialTabs = $derived(EPUB_TUTORIAL_TABS_BY_LANG[tutorialLanguage]);
 	let tutorialContent = $derived(EPUB_TUTORIAL_CONTENT_BY_LANG[tutorialLanguage]);
 
 	let activeTab = $state<TutorialTabId>('basics');
+
+	$effect(() => {
+		if (visible) {
+			activeTab = initialTab ?? 'basics';
+		}
+	});
 
 	function icon(node: HTMLElement, name: string) {
 		setIcon(node, name);
@@ -34,6 +49,10 @@
 
 	function switchTab(tab: TutorialTabId) {
 		activeTab = tab;
+	}
+
+	function handleDismissPermanently() {
+		onDismissPermanently?.();
 	}
 </script>
 
@@ -156,5 +175,17 @@
 				{/each}
 			</div>
 		</div>
+
+		{#if showDismissOption}
+			<div class="epub-tutorial-footer">
+				<button
+					type="button"
+					class="clickable-icon epub-tutorial-dismiss"
+					onclick={handleDismissPermanently}
+				>
+					{t('epub.reader.tutorial.dontShowAgain')}
+				</button>
+			</div>
+		{/if}
 	</div>
 {/if}

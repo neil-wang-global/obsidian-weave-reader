@@ -1,4 +1,5 @@
 import { Platform } from "obsidian";
+import { domInstanceOf } from "../../utils/dom-instance-of";
 import type {
 	ResolvedWebTranslationProvider,
 	SelectionTranslationSettings,
@@ -84,7 +85,7 @@ export function extractSelectionContext(
 			node = node.parentElement;
 		}
 
-		while (node instanceof HTMLElement) {
+		while (node && domInstanceOf(node, HTMLElement)) {
 			const tag = node.tagName.toLowerCase();
 			if (PARAGRAPH_LIKE_TAGS.has(tag)) {
 				const paragraphText = node.textContent?.replace(/\s+/g, " ").trim() || fallback;

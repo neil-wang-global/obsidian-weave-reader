@@ -114,6 +114,15 @@ describe("epub-book-notes-export-store", () => {
 			DEFAULT_EPUB_EXCERPT_SETTINGS.bookNotesExportTemplatePath
 		);
 	});
+
+	it("clears template path when it falls outside the configured folder", () => {
+		const normalized = normalizeBookNotesExportExcerptFields({
+			bookNotesExportTemplateFolder: "Library/templates",
+			bookNotesExportTemplatePath: "Weave EPUB/Export templates/excerpt-digest-b.md",
+		});
+		expect(normalized.bookNotesExportTemplateFolder).toBe("Library/templates");
+		expect(normalized.bookNotesExportTemplatePath).toBeNull();
+	});
 });
 
 describe("reader-paginated-layout-recovery", () => {

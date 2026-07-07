@@ -11,7 +11,10 @@ import {
 	isMarkdownVaultFile,
 	resolveBuiltinTemplatePath,
 } from "./install-templates";
-import { resolveBookNotesExportTemplateFolder } from "./template-folder";
+import {
+	resolveBookNotesExportTemplateFolder,
+	type ResolveBookNotesExportTemplateFolderOptions,
+} from "./template-folder";
 import { bookNotesTemplateContentMatches } from "./template-content";
 
 export interface BookNotesExportTemplateListItem {
@@ -23,12 +26,19 @@ export interface BookNotesExportTemplateListItem {
 
 export async function listBookNotesExportTemplateFiles(
 	app: App,
-	templateFolder?: string | null
+	templateFolder?: string | null,
+	options: ResolveBookNotesExportTemplateFolderOptions = {}
 ): Promise<BookNotesExportTemplateListItem[]> {
-	const folderPath = resolveBookNotesExportTemplateFolder({
-		bookNotesExportTemplateFolder: templateFolder,
-	});
-	await ensureDefaultBookNotesExportTemplates(app, folderPath);
+	const folderPath = resolveBookNotesExportTemplateFolder(
+		{
+			bookNotesExportTemplateFolder: templateFolder,
+		},
+		options
+	);
+	if (!folderPath) {
+		return [];
+	}
+	await ensureDefaultBookNotesExportTemplates(app, folderPath, options);
 
 	const folder = app.vault.getAbstractFileByPath(folderPath);
 	if (!(folder instanceof TFolder)) {
@@ -83,12 +93,19 @@ export async function createBookNotesExportTemplateFile(
 		fileName: string;
 		content?: string;
 		builtinTemplateId?: BookNotesExportBuiltinTemplateId;
+		resolveFolderOptions?: ResolveBookNotesExportTemplateFolderOptions;
 	}
 ): Promise<string> {
-	const folderPath = resolveBookNotesExportTemplateFolder({
-		bookNotesExportTemplateFolder: options.templateFolder,
-	});
-	await ensureDefaultBookNotesExportTemplates(app, folderPath);
+	const folderPath = resolveBookNotesExportTemplateFolder(
+		{
+			bookNotesExportTemplateFolder: options.templateFolder,
+		},
+		options.resolveFolderOptions
+	);
+	if (!folderPath) {
+		throw new Error("Export template folder is not configured");
+	}
+	await ensureDefaultBookNotesExportTemplates(app, folderPath, options.resolveFolderOptions);
 
 	const fileName = String(options.fileName || "").trim();
 	if (!fileName.toLowerCase().endsWith(".md")) {
@@ -200,12 +217,19 @@ export interface OpenPresetBookNotesExportTemplateResult {
 export async function findPresetBookNotesExportTemplatePath(
 	app: App,
 	presetId: BookNotesExportBuiltinTemplateId,
-	templateFolder?: string | null
+	templateFolder?: string | null,
+	options: ResolveBookNotesExportTemplateFolderOptions = {}
 ): Promise<string | null> {
-	const folderPath = resolveBookNotesExportTemplateFolder({
-		bookNotesExportTemplateFolder: templateFolder,
-	});
-	await ensureDefaultBookNotesExportTemplates(app, folderPath);
+	const folderPath = resolveBookNotesExportTemplateFolder(
+		{
+			bookNotesExportTemplateFolder: templateFolder,
+		},
+		options
+	);
+	if (!folderPath) {
+		return null;
+	}
+	await ensureDefaultBookNotesExportTemplates(app, folderPath, options);
 
 	const expectedContent = getBuiltinBookNotesExportTemplate(presetId);
 	const canonicalFileName = getBuiltinBookNotesExportTemplateFileName(presetId);
@@ -216,7 +240,7 @@ export async function findPresetBookNotesExportTemplatePath(
 		return canonicalPath;
 	}
 
-	const templates = await listBookNotesExportTemplateFiles(app, templateFolder);
+	const templates = await listBookNotesExportTemplateFiles(app, templateFolder, options);
 	for (const item of templates) {
 		const content = await readBookNotesExportTemplateFile(app, item.path);
 		if (bookNotesTemplateContentMatches(content, expectedContent)) {

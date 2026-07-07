@@ -5,6 +5,7 @@ import {
 	getPluginPathsById,
 	LEGACY_PATHS,
 	getV2Paths,
+	toVaultAdapterPath,
 } from "../../config/paths";
 import { DirectoryUtils } from "../../utils/directory-utils";
 import { logger } from "../../utils/logger";
@@ -85,6 +86,16 @@ import {
 	type EpubBookshelfPlaylist,
 } from "./epub-bookshelf-playlist-store";
 import { peelEmbeddedScanIndexFromUnifiedData } from "./epub-unified-local-data-read";
+import {
+	normalizeTocChapterMarkKey,
+	normalizeTocChapterMarkMap,
+	type EpubTocChapterMark,
+	type EpubTocChapterMarkMap,
+} from "./epub-toc-chapter-mark";
+import {
+	normalizeTocChapterMarkSettings,
+	type EpubTocChapterMarkSettings,
+} from "./epub-toc-chapter-mark-settings";
 
 
 export interface EpubBookshelfSettings {
@@ -309,16 +320,20 @@ export class EpubStorageService {
 	}
 
 	private getLocalReaderStateRoot(): string {
-		return normalizePath(
+		return this.getPluginAdapterPath(
 			`${
-				getPluginPathsById(this.app as unknown, this.localPluginId).state.incrementalReading.readerState
+				getPluginPathsById(this.app, this.localPluginId).state.incrementalReading.readerState
 			}/epub`
 		);
 	}
 
+	private getPluginAdapterPath(relativePath: string): string {
+		return toVaultAdapterPath(this.app, normalizePath(relativePath));
+	}
+
 	private getUnifiedLocalDataPath(): string {
-		return normalizePath(
-			`${getPluginPathsById(this.app as unknown, this.localPluginId).state.epubLocalState}`
+		return this.getPluginAdapterPath(
+			getPluginPathsById(this.app, this.localPluginId).state.epubLocalState
 		);
 	}
 
@@ -328,7 +343,7 @@ export class EpubStorageService {
 			new Set([
 				normalizePath(
 					`${
-						getPluginPathsById(this.app as unknown, this.localPluginId).state.incrementalReading
+						getPluginPathsById(this.app, this.localPluginId).state.incrementalReading
 							.epubReaderData
 					}`
 				),
@@ -337,9 +352,9 @@ export class EpubStorageService {
 	}
 
 	private getLocalReaderArtifactsRoot(): string {
-		return normalizePath(
+		return this.getPluginAdapterPath(
 			`${
-				getPluginPathsById(this.app as unknown, this.localPluginId).cache.incrementalReading
+				getPluginPathsById(this.app, this.localPluginId).cache.incrementalReading
 					.readerArtifacts
 			}/epub`
 		);
@@ -380,8 +395,8 @@ export class EpubStorageService {
 	}
 
 	private getScanIndexPath(): string {
-		return normalizePath(
-			`${getPluginPathsById(this.app as unknown, this.localPluginId).cache.epubScanIndex}`
+		return this.getPluginAdapterPath(
+			getPluginPathsById(this.app, this.localPluginId).cache.epubScanIndex
 		);
 	}
 
@@ -397,8 +412,115 @@ export class EpubStorageService {
 		return `${this.basePath}/epub-source-registry.json`;
 	}
 
+	private paragraphModePositionsMigrated = false;
+
 	private getParagraphModePositionsPath(): string {
-		return `${this.basePath}/paragraph-mode-positions.md`;
+		return this.getPluginAdapterPath(
+			getPluginPathsById(this.app, this.localPluginId).cache.epubParagraphModePositions
+		);
+	}
+
+	private getLegacyParagraphModePositionsPaths(): string[] {
+		return Array.from(
+			new Set(
+				[this.basePath, ...this.getLegacyEpubBasePaths()].map(
+					(basePath) => `${normalizePath(basePath)}/paragraph-mode-positions.md`
+				)
+			)
+		).filter(Boolean);
+	}
+
+	private async ensureParagraphModePositionsDirectory(): Promise<void> {
+		await DirectoryUtils.ensureDirForFile(
+			this.app.vault.adapter,
+			this.getParagraphModePositionsPath()
+		);
+	}
+
+	private async migrateLegacyParagraphModePositionsIfNeeded(): Promise<void> {
+		if (this.paragraphModePositionsMigrated) {
+			return;
+		}
+		this.paragraphModePositionsMigrated = true;
+
+		const adapter = this.app.vault.adapter as typeof this.app.vault.adapter & {
+			remove?: (path: string) => Promise<void>;
+		};
+		const targetPath = this.getParagraphModePositionsPath();
+		if (await adapter.exists(targetPath)) {
+			return;
+		}
+
+		for (const legacyPath of this.getLegacyParagraphModePositionsPaths()) {
+			if (!(await adapter.exists(legacyPath))) {
+				continue;
+			}
+			try {
+				const content = await adapter.read(legacyPath);
+				const positions = this.parseParagraphModePositionsMarkdown(content);
+				if (Object.keys(positions).length === 0) {
+					continue;
+				}
+				await this.ensureParagraphModePositionsDirectory();
+				await adapter.write(
+					targetPath,
+					JSON.stringify({ version: 1, positions }, null, 2)
+				);
+				if (typeof adapter.remove === "function") {
+					await adapter.remove(legacyPath);
+				}
+				return;
+			} catch (error) {
+				logger.warn(
+					"[EpubStorageService] Failed to migrate legacy paragraph mode positions:",
+					error
+				);
+			}
+		}
+	}
+
+	private parseParagraphModePositionsJson(
+		content: string
+	): Record<string, EpubParagraphModeReadingPosition> {
+		try {
+			const parsed = JSON.parse(content) as {
+				positions?: Record<string, Partial<EpubParagraphModeReadingPosition>>;
+			};
+			if (!parsed.positions || typeof parsed.positions !== "object") {
+				return {};
+			}
+			const result: Record<string, EpubParagraphModeReadingPosition> = {};
+			for (const [bookId, position] of Object.entries(parsed.positions)) {
+				const normalizedBookId = String(bookId || "").trim();
+				const cfi = String(position?.cfi || "").trim();
+				const paragraphId = String(position?.paragraphId || "").trim();
+				if (!normalizedBookId || !cfi || !paragraphId) {
+					continue;
+				}
+				result[normalizedBookId] = {
+					bookId: normalizedBookId,
+					filePath: String(position?.filePath || ""),
+					bookTitle: String(position?.bookTitle || ""),
+					chapterTitle: String(position?.chapterTitle || ""),
+					chapterHref: String(position?.chapterHref || ""),
+					chapterIndex: Number.isFinite(position?.chapterIndex)
+						? Number(position.chapterIndex)
+						: 0,
+					cfi,
+					percent: Number.isFinite(position?.percent) ? Number(position.percent) : 0,
+					paragraphId,
+					paragraphIndex: Number.isFinite(position?.paragraphIndex)
+						? Number(position.paragraphIndex)
+						: 0,
+					paragraphTextPreview: String(position?.paragraphTextPreview || ""),
+					savedAt: Number.isFinite(position?.savedAt) ? Number(position.savedAt) : Date.now(),
+				};
+			}
+			return result;
+		} catch (error) {
+			logger.warn("[EpubStorageService] Failed to parse paragraph mode positions json:", error);
+			return {};
+		}
 	}
 
 	private getCurrentDeviceKind(): EpubReaderSettingsDeviceKind {
@@ -2782,20 +2904,6 @@ export class EpubStorageService {
 			await this.updateBookFileReferences(oldPath, newPath);
 		}
 
-		if (orphanedMembershipPaths.size > 0) {
-			const nextMembership = membership.filter(
-				(entry) => !orphanedMembershipPaths.has(entry.path)
-			);
-			await this.saveBookshelfMembership(nextMembership);
-
-			const nextScanEntries = scanEntries.filter(
-				(entry) => !orphanedMembershipPaths.has(entry.path)
-			);
-			if (nextScanEntries.length !== scanEntries.length) {
-				await this.saveScanIndex(nextScanEntries);
-			}
-		}
-
 		if (synthesizedEntries.length > 0) {
 			await this.saveScanIndex(scanEntries.concat(synthesizedEntries));
 		}
@@ -3901,6 +4009,66 @@ export class EpubStorageService {
 		});
 	}
 
+	async getTocChapterMarks(bookId: string): Promise<EpubTocChapterMarkMap> {
+		bookId = await this.resolveCanonicalBookId(bookId);
+		const unifiedData = await this.readUnifiedLocalReaderData();
+		const bookRecord = unifiedData.books?.[bookId];
+		if (!bookRecord?.tocChapterMarks) {
+			return {};
+		}
+		return { ...bookRecord.tocChapterMarks };
+	}
+
+	async setTocChapterMark(
+		bookId: string,
+		href: string,
+		mark: EpubTocChapterMark | null
+	): Promise<EpubTocChapterMarkMap> {
+		bookId = await this.resolveCanonicalBookId(bookId);
+		const hrefKey = normalizeTocChapterMarkKey(href);
+		if (!hrefKey) {
+			return this.getTocChapterMarks(bookId);
+		}
+
+		let nextMarks: EpubTocChapterMarkMap = {};
+		await this.updateUnifiedLocalReaderData((localData) => {
+			localData.books = localData.books || {};
+			const current = localData.books[bookId] || {};
+			const existing = normalizeTocChapterMarkMap(current.tocChapterMarks);
+			nextMarks = { ...existing };
+			if (mark) {
+				nextMarks[hrefKey] = mark;
+			} else {
+				delete nextMarks[hrefKey];
+			}
+			localData.books[bookId] = {
+				...current,
+				tocChapterMarks: Object.keys(nextMarks).length > 0 ? nextMarks : undefined,
+			};
+		});
+		return nextMarks;
+	}
+
+	async loadTocChapterMarkSettings(): Promise<EpubTocChapterMarkSettings> {
+		const unifiedData = await this.readUnifiedLocalReaderData();
+		if (Object.prototype.hasOwnProperty.call(unifiedData, "tocChapterMarkSettings")) {
+			return normalizeTocChapterMarkSettings(unifiedData.tocChapterMarkSettings);
+		}
+		return {};
+	}
+
+	async saveTocChapterMarkSettings(settings: EpubTocChapterMarkSettings): Promise<EpubTocChapterMarkSettings> {
+		const normalizedSettings = normalizeTocChapterMarkSettings(settings);
+		await this.updateUnifiedLocalReaderData((localData) => {
+			if (Object.keys(normalizedSettings).length > 0) {
+				localData.tocChapterMarkSettings = normalizedSettings;
+				return;
+			}
+			delete localData.tocChapterMarkSettings;
+		});
+		return normalizedSettings;
+	}
+
 	private parseParagraphModePositionsMarkdown(markdown: string): Record<string, EpubParagraphModeReadingPosition> {
 		const result: Record<string, EpubParagraphModeReadingPosition> = {};
 		const blockPattern = /^##\s+(.+?)\r?\n```json\r?\n([\s\S]*?)\r?\n```\r?\n?/gm;
@@ -3940,36 +4108,20 @@ export class EpubStorageService {
 		return result;
 	}
 
-	private formatParagraphModePositionsMarkdown(
-		positions: Record<string, EpubParagraphModeReadingPosition>
-	): string {
-		const lines: string[] = [
-			"# EPUB Paragraph Mode Positions",
-			"",
-			"<!-- weave-epub-paragraph-mode-v1 -->",
-			"",
-		];
-		const entries = Object.entries(positions).sort((a, b) => (b[1].savedAt || 0) - (a[1].savedAt || 0));
-		for (const [bookId, position] of entries) {
-			lines.push(`## ${bookId}`);
-			lines.push("```json");
-			lines.push(JSON.stringify(position, null, 2));
-			lines.push("```");
-			lines.push("");
-		}
-		return lines.join("\n");
-	}
-
 	private async loadParagraphModePositionsMap(): Promise<Record<string, EpubParagraphModeReadingPosition>> {
+		await this.migrateLegacyParagraphModePositionsIfNeeded();
 		const path = this.getParagraphModePositionsPath();
 		if (!(await this.app.vault.adapter.exists(path))) {
 			return {};
 		}
 		try {
 			const content = await this.app.vault.adapter.read(path);
+			if (path.endsWith(".json")) {
+				return this.parseParagraphModePositionsJson(content);
+			}
 			return this.parseParagraphModePositionsMarkdown(content);
 		} catch (error) {
-			logger.warn("[EpubStorageService] Failed to read paragraph mode positions markdown:", error);
+			logger.warn("[EpubStorageService] Failed to read paragraph mode positions cache:", error);
 			return {};
 		}
 	}
@@ -3992,7 +4144,7 @@ export class EpubStorageService {
 		}
 
 		const path = this.getParagraphModePositionsPath();
-		await this.ensureSyncBaseDirectory();
+		await this.ensureParagraphModePositionsDirectory();
 		const map = await this.loadParagraphModePositionsMap();
 		map[normalizedBookId] = {
 			...position,
@@ -4001,11 +4153,13 @@ export class EpubStorageService {
 			paragraphId: normalizedParagraphId,
 			savedAt: Number.isFinite(position.savedAt) ? position.savedAt : Date.now(),
 		};
-		const markdown = this.formatParagraphModePositionsMarkdown(map);
 		try {
-			await this.app.vault.adapter.write(path, markdown);
+			await this.app.vault.adapter.write(
+				path,
+				JSON.stringify({ version: 1, positions: map }, null, 2)
+			);
 		} catch (error) {
-			logger.warn("[EpubStorageService] Failed to write paragraph mode positions markdown:", error);
+			logger.warn("[EpubStorageService] Failed to write paragraph mode positions cache:", error);
 		}
 	}
 

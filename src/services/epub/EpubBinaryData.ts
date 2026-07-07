@@ -1,6 +1,6 @@
 import type { App, TFile } from "obsidian";
 import JSZip from "jszip";
-import { shouldPreferFetchForResourceUrl } from "../../utils/blob-url-text";
+import { readResourceUrlAsArrayBuffer } from "../../utils/blob-url-text";
 import { logger } from "../../utils/logger";
 
 type ByteArrayLike = ArrayLike<number> & { [index: number]: number };
@@ -226,51 +226,7 @@ function createBinaryReadAttempts(app: App, file: TFile): BinaryReadAttempt[] {
 }
 
 function readArrayBufferResource(resourcePath: string): Promise<ArrayBuffer> {
-	if (shouldPreferFetchForResourceUrl(resourcePath) && typeof window.fetch === "function") {
-		return readArrayBufferResourceViaFetch(resourcePath);
-	}
-
-	return new Promise((resolve, reject) => {
-		const request = new XMLHttpRequest();
-		request.open("GET", resourcePath, true);
-		request.responseType = "arraybuffer";
-		request.onload = () => {
-			if (
-				(request.status === 0 || (request.status >= 200 && request.status < 300)) &&
-				request.response instanceof ArrayBuffer
-			) {
-				resolve(request.response);
-				return;
-			}
-			reject(
-				new Error(
-					`Failed to load binary resource: ${request.status} ${
-						request.statusText || "Unknown error"
-					}`
-				)
-			);
-		};
-		request.onerror = async () => {
-			try {
-				resolve(await readArrayBufferResourceViaFetch(resourcePath));
-			} catch (error) {
-				reject(new Error(error));
-			}
-		};
-		request.send();
-	});
-}
-
-async function readArrayBufferResourceViaFetch(resourcePath: string): Promise<ArrayBuffer> {
-	if (typeof window.fetch !== "function") {
-		throw new Error("Failed to load binary resource");
-	}
-
-	const response = await window.fetch(resourcePath);
-	if (!response.ok) {
-		throw new Error(`Failed to load binary resource: ${response.status} ${response.statusText}`);
-	}
-	return response.arrayBuffer();
+	return readResourceUrlAsArrayBuffer(resourcePath);
 }
 
 export async function readVaultBinaryData(

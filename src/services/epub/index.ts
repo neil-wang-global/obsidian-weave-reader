@@ -104,7 +104,6 @@ export {
 	EPUB_BOOKMARK_AUTO_MAINTAINED_CALLOUT,
 	type EpubBookmarkReadingState,
 	DEFAULT_EPUB_BOOKMARK_FOLDER,
-	getEpubBookmarkFolderDisplayPath,
 	normalizeEpubBookmarkFolderPath,
 } from "./EpubBookmarkService";
 export { EpubLinkService } from "./EpubLinkService";

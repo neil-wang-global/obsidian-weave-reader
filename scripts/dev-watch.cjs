@@ -96,7 +96,10 @@ const existingLock = readLockFile();
 if (existingLock?.pid && existingLock.pid !== process.pid) {
 	if (isProcessAlive(existingLock.pid)) {
 		console.log(`Desktop watcher is already running. PID: ${existingLock.pid}`);
-		console.log("Run `node scripts/kill-vite.cjs` before restarting.");
+		if (existingLock.pluginId) {
+			console.log(`Plugin: ${existingLock.pluginId}`);
+		}
+		console.log("Run `npm run kill:vite:desktop` before restarting this project.");
 		process.exit(0);
 	}
 

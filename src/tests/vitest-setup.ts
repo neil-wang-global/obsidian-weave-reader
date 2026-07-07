@@ -99,6 +99,75 @@ function installObsidianPopoutGlobals(): void {
       },
     });
   }
+
+  installObsidianCreateElHelpers();
+}
+
+type ObsidianDomOptions = {
+  cls?: string | string[];
+  text?: string;
+  attr?: Record<string, string | number | boolean | null>;
+  type?: string;
+};
+
+function applyObsidianDomOptions(element: HTMLElement, options?: ObsidianDomOptions | string): void {
+  if (!options) {
+    return;
+  }
+  if (typeof options === "string") {
+    element.className = options;
+    return;
+  }
+  if (options.cls) {
+    element.className = Array.isArray(options.cls) ? options.cls.join(" ") : options.cls;
+  }
+  if (options.text) {
+    element.textContent = options.text;
+  }
+  if (options.type) {
+    element.type = options.type;
+  }
+  if (options.attr) {
+    for (const [name, value] of Object.entries(options.attr)) {
+      if (value != null) {
+        element.setAttribute(name, String(value));
+      }
+    }
+  }
+}
+
+function installObsidianCreateElHelpers(): void {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return;
+  }
+
+  const testWindow = window as Window & {
+    createEl?: <K extends keyof HTMLElementTagNameMap>(
+      tag: K,
+      options?: ObsidianDomOptions | string
+    ) => HTMLElementTagNameMap[K];
+    createDiv?: (options?: ObsidianDomOptions | string) => HTMLDivElement;
+    createSpan?: (options?: ObsidianDomOptions | string) => HTMLSpanElement;
+  };
+
+  if (typeof testWindow.createEl !== "function") {
+    testWindow.createEl = ((tag, options) => {
+      const element = document.createElement(tag);
+      applyObsidianDomOptions(element, options);
+      return element;
+    }) as typeof testWindow.createEl;
+    testWindow.createDiv = (options) => testWindow.createEl!("div", options);
+    testWindow.createSpan = (options) => testWindow.createEl!("span", options);
+  }
+
+  if (typeof Document !== "undefined" && !("win" in Document.prototype)) {
+    Object.defineProperty(Document.prototype, "win", {
+      configurable: true,
+      get(this: Document): Window {
+        return (this.defaultView as Window | null) ?? window;
+      },
+    });
+  }
 }
 
 installObsidianPopoutGlobals();

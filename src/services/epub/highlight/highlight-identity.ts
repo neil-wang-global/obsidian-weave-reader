@@ -15,6 +15,51 @@ export function normalizeHighlightQuoteText(text: string | undefined): string {
 		.toLowerCase();
 }
 
+/** Normalizes quote punctuation differences for range-vs-saved-text coverage checks. */
+export function normalizeHighlightQuoteCoverageText(text: string | undefined): string {
+	return normalizeHighlightQuoteText(text)
+		.replace(/[\u201c\u201d\u2018\u2019「」『』""'']/g, "")
+		.replace(/[•·・]/g, "");
+}
+
+/** Collapses excerpt quote text for coverage checks across line/block boundaries. */
+export function compactHighlightQuoteText(text: string | undefined): string {
+	return normalizeHighlightQuoteCoverageText(text).replace(/\s+/g, "");
+}
+
+/** Whether a resolved DOM range covers the saved excerpt quote (not a truncated prefix). */
+export function resolvedRangeCoversHighlightText(
+	range: Range | null | undefined,
+	highlightText: string | undefined,
+	minCoverageRatio = 0.85
+): boolean {
+	const expected = normalizeHighlightQuoteCoverageText(highlightText);
+	if (!expected) {
+		return true;
+	}
+	if (!range) {
+		return false;
+	}
+	const actual = normalizeHighlightQuoteCoverageText(range.toString());
+	if (!actual) {
+		return false;
+	}
+	if (actual === expected) {
+		return true;
+	}
+	const compactActual = compactHighlightQuoteText(range.toString());
+	const compactExpected = compactHighlightQuoteText(highlightText);
+	if (compactActual === compactExpected) {
+		return true;
+	}
+	const shorter = compactActual.length <= compactExpected.length ? compactActual : compactExpected;
+	const longer = compactActual.length <= compactExpected.length ? compactExpected : compactActual;
+	if (!longer.includes(shorter)) {
+		return false;
+	}
+	return shorter.length / longer.length >= minCoverageRatio;
+}
+
 /**
  * Stable identity for one in-book highlight mark.
  * Same CFI + different excerpt or quote text => different keys.
@@ -65,7 +110,7 @@ function mergeHighlightSourceLocators(
 	return Array.from(merged.values());
 }
 
-function collectHighlightSourceLocators(highlight: ReaderHighlight): HighlightSourceLocator[] {
+export function collectHighlightSourceLocators(highlight: ReaderHighlight): HighlightSourceLocator[] {
 	const locators: HighlightSourceLocator[] = [];
 	const sourceFile = String(highlight.sourceFile || "").trim();
 	if (sourceFile) {
@@ -90,27 +135,42 @@ function collectHighlightSourceLocators(highlight: ReaderHighlight): HighlightSo
 }
 
 function mergeReaderHighlightRecords(
-	existing: ReaderHighlight,
-	incoming: ReaderHighlight
+	prior: ReaderHighlight,
+	later: ReaderHighlight
 ): ReaderHighlight {
 	const sourceLocators = mergeHighlightSourceLocators(
-		collectHighlightSourceLocators(existing),
-		collectHighlightSourceLocators(incoming)
+		collectHighlightSourceLocators(prior),
+		collectHighlightSourceLocators(later)
 	);
 	return {
-		...existing,
-		...incoming,
+		...later,
+		...prior,
 		sourceLocators,
-		sourceFile: incoming.sourceFile || existing.sourceFile,
-		sourceRef: incoming.sourceRef ?? existing.sourceRef,
-		excerptId: incoming.excerptId || existing.excerptId,
-		commentText: incoming.commentText || existing.commentText,
-		hasCommentDivider: existing.hasCommentDivider || incoming.hasCommentDivider,
-		chapterIndex: existing.chapterIndex ?? incoming.chapterIndex,
-		chapterTitle: existing.chapterTitle || incoming.chapterTitle,
-		style: incoming.style ?? existing.style,
-		createdTime: existing.createdTime ?? incoming.createdTime,
+		sourceFile: prior.sourceFile || later.sourceFile,
+		sourceRef: prior.sourceRef ?? later.sourceRef,
+		excerptId: prior.excerptId || later.excerptId,
+		commentText: prior.commentText ?? later.commentText,
+		hasCommentDivider: prior.hasCommentDivider ?? later.hasCommentDivider,
+		chapterIndex: prior.chapterIndex ?? later.chapterIndex,
+		chapterTitle: prior.chapterTitle || later.chapterTitle,
+		style: prior.style ?? later.style,
+		createdTime: prior.createdTime ?? later.createdTime,
 	};
+}
+
+/** Whether reader-visible highlight fields changed after an excerpt sync. */
+export function hasReaderHighlightPresentationChanged(
+	previous: ReaderHighlight,
+	next: ReaderHighlight
+): boolean {
+	return (
+		previous.commentText !== next.commentText ||
+		previous.hasCommentDivider !== next.hasCommentDivider ||
+		previous.text !== next.text ||
+		previous.color !== next.color ||
+		previous.style !== next.style ||
+		previous.presentation !== next.presentation
+	);
 }
 
 export function mergeReaderHighlightsByIdentity(

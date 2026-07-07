@@ -23,13 +23,19 @@ import type {
 	ReaderViewportGeometry,
 } from "./reader-engine-types";
 import type { EpubChapterLocationFormat } from "./epub-excerpt-settings";
+import type { FlatTocExportItem } from "./epub-toc-export-scope";
 import { buildReaderChapterStyles } from "./reader-chapter-styles";
 import { resolveReaderHighlightTint } from "./reader-highlight-tints";
 import {
 	buildReaderNavigationRectTargets,
 	resolveReaderSourceNavigationViewTargets,
 } from "./reader-navigation-targets";
+import {
+	mapHighlightViewportRectToDomRect,
+	resolveReaderSourceLocateOverlayRect,
+} from "./reader-source-locate-overlay-rect";
 import { applyReaderThemeHostSurfaces } from "./reader-theme-host";
+import { buildReaderHostSurfaceCss } from "./reader-host-surface-css";
 import {
 	readConcealmentPalette,
 	readObsidianColorScheme,
@@ -45,12 +51,15 @@ import {
 	shouldRecoverPaginatedLayout,
 } from "./reader-paginated-layout-recovery";
 import {
+	buildAnnotationRenderSignature,
+	createReaderFoliateAnnotation,
 	createRenderedFoliateAnnotation,
 	isSameFoliateAnnotation,
 	shouldRenderAnnotationAsConceal,
 	type ReaderFoliateAnnotation,
 	type RenderedReaderFoliateAnnotation,
 } from "./reader-annotation-model";
+import { READER_SOURCE_LOCATE_FOCUS_DURATION_MS } from "../ui/source-locate-overlay-timing";
 import {
 	buildHighlightClickInfo,
 	createAnchorPointFromRect,
@@ -61,7 +70,7 @@ import {
 	hasUsableOverlayRects,
 } from "./reader-highlight-geometry";
 import { resolveHighlightOverlayRects } from "./reader-highlight-overlay-rects";
-import { resolveHighlightSectionIndexForView } from "./reader-highlight-section-resolver";
+import { resolveHighlightSectionIndexForView, orderVisibleHighlightFrames } from "./reader-highlight-section-resolver";
 import { resolveHighlightViewportGeometry } from "./reader-highlight-viewport-geometry";
 import { mapRawRectToViewport } from "./reader-viewport-rect-map";
 import {
@@ -102,6 +111,7 @@ import {
 } from "./scrolled-chapter-end";
 import { logger } from "../../utils/logger";
 import { domInstanceOf } from "../../utils/dom-instance-of";
+import { createSpanInOwnerDocument } from "../../utils/obsidian-document-dom";
 import {
 	sanitizeLegacyAuthorColorAttributes,
 	stripInlineAuthorColorStyles,
@@ -122,6 +132,7 @@ import { FoliateSessionGuard } from "./FoliateSessionGuard";
 import {
 	getReaderHighlightIdentityKey,
 	normalizeHighlightQuoteText,
+	resolvedRangeCoversHighlightText,
 } from "./highlight/highlight-identity";
 import { EpubLinkService } from "./EpubLinkService";
 
@@ -338,9 +349,12 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private referenceBadgeClickCallbacks = new Set<(info: HighlightClickInfo) => void>();
 	private highlightDataMap = new Map<string, ReaderHighlight>();
 	private temporaryHighlightDataMap = new Map<string, ReaderHighlight>();
+	private highlightAnchorResolutionByKey = new Map<string, Promise<string>>();
 	private savedHighlights: ReaderHighlight[] = [];
 	private renderedAnnotations = new Map<string, RenderedFoliateAnnotation>();
 	private temporaryHighlightTimers = new Map<string, ReturnType<typeof window.setTimeout>>();
+	private sourceLocateFocusByCfiKey = new Map<string, { color: string; cfiRange: string }>();
+	private sourceLocateFocusTimers = new Map<string, ReturnType<typeof window.setTimeout>>();
 	private temporarilyRevealedConcealmentTimers = new Map<string, ReturnType<typeof window.setTimeout>>();
 	private documentFootnoteCleanups = new Map<Document, () => void>();
 	private documentSelectionCleanups = new Map<Document, () => void>();
@@ -428,7 +442,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		const viewModule = (await import("foliate-js/view.js")) as {
 			View?: CustomElementConstructor;
 		};
-		const viewConstructor = (viewModule as { View?: CustomElementConstructor }).View;
+		const viewConstructor = viewModule.View;
 		if (viewConstructor && !customElements.get("foliate-view")) {
 			customElements.define("foliate-view", viewConstructor);
 		}
@@ -518,7 +532,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 		container.replaceChildren();
 		container.dataset.foliate = "true";
 
-		const view = activeDocument.createElement("foliate-view") as FoliateViewElement;
+		const view = activeWindow.createEl("foliate-view") as FoliateViewElement;
 		view.classList.add("weave-epub-reader-host");
 		view.addEventListener("relocate", this.handleRelocateEvent as EventListener);
 		view.addEventListener("load", this.handleLoadEvent as EventListener);
@@ -843,17 +857,25 @@ export class FoliateReaderService implements EpubReaderEngine {
 		await this.enqueueNavigation(async (positionOperationToken) => {
 			const { canonical } = await this.resolveNavigationRequest(options, positionOperationToken);
 			if (canonical && options.flashStyle !== "none") {
+				await this.clearActiveTemporaryHighlights();
+				this.clearSourceLocateFocus();
+				const flashColor = options.flashColor || "yellow";
+				if (this.hasPersistentHighlightAtCfi(canonical)) {
+					this.setSourceLocateFocus(canonical, flashColor);
+					await this.refreshHighlights();
+					return;
+				}
 				await this.addResolvedHighlight(
 					{
 						cfiRange: canonical,
-						color: options.flashColor || "yellow",
+						color: flashColor,
 						text: options.text,
 						sourceFile: options.sourceFile,
 						sourceRef: options.sourceRef,
 						createdTime: options.createdTime,
 						temporary: true,
 					},
-					2200
+					READER_SOURCE_LOCATE_FOCUS_DURATION_MS
 				);
 			}
 		}, "navigateAndHighlight");
@@ -870,6 +892,26 @@ export class FoliateReaderService implements EpubReaderEngine {
 		return this.getRenderContainerRect();
 	}
 
+	getSourceLocateOverlayRect(options: ReaderNavigationRectOptions): DOMRect | null {
+		return resolveReaderSourceLocateOverlayRect({
+			cfi: options.cfi,
+			href: options.href,
+			text: options.text,
+			currentCfi: this.currentPosition.cfi,
+			temporaryHighlightCfis: this.collectSourceLocateOverlayAnchorCfis(),
+			resolveNavigationRect: (resolveOptions) =>
+				this.findPreciseNavigationTargetRect({
+					cfi: resolveOptions.cfi,
+					href: resolveOptions.href,
+					text: resolveOptions.text,
+				}),
+			resolveHighlightRect: (cfiRange, textHint) =>
+				mapHighlightViewportRectToDomRect(
+					this.getCurrentHighlightViewportGeometry(cfiRange, textHint)?.rect
+				),
+		});
+	}
+
 	getCurrentPosition(): ReadingPosition {
 		return { ...this.currentPosition };
 	}
@@ -881,7 +923,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 					target,
 					frame.frameDocument,
 					frame.index,
-					options.text
+					options.text?.trim() || undefined
 				);
 				if (!range) {
 					continue;
@@ -1210,12 +1252,52 @@ export class FoliateReaderService implements EpubReaderEngine {
 		return this.parser.getSectionReadingPointDraft(href, titleHint);
 	}
 
+	getTocChapterReadingPointDraft(
+		href: string,
+		titleHint: string | undefined,
+		flatTocItems: FlatTocExportItem[],
+		itemIndex: number
+	): Promise<EpubChapterReadingPointDraft | null> {
+		return this.parser.getTocReadingPointDraft(href, titleHint, flatTocItems, itemIndex);
+	}
+
 	getBookFootnotesDraft(): Promise<EpubBookFootnotesDraft | null> {
 		return this.parser.getBookFootnotesDraft();
 	}
 
 	getSectionHrefForCfi(cfi: string): string | null {
 		return this.parser.getSectionHrefForCfi(cfi);
+	}
+
+	getSectionIndexForCfi(cfi: string): number | null {
+		return this.parser.getSectionIndexForCfi(cfi);
+	}
+
+	async resolveChapterHighlightRangeText(
+		highlight: ReaderHighlight,
+		sectionHref: string,
+		sectionIndex: number
+	): Promise<string | null> {
+		const doc = await this.parser.getRawDocumentByHref(sectionHref);
+		if (!doc) {
+			return null;
+		}
+		const root = doc.body || doc.documentElement;
+		if (!root) {
+			return null;
+		}
+		const range = this.parser.resolveRangeInLoadedSection(
+			highlight.cfiRange,
+			doc,
+			sectionIndex,
+			highlight.text
+		);
+		if (!range) {
+			return null;
+		}
+		return String(range.toString() || "")
+			.replace(/\s+/g, " ")
+			.trim();
 	}
 
 	getSectionHrefByChapterIndex(chapterIndex: number): string | null {
@@ -1543,12 +1625,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 	async applyHighlights(highlights: ReaderHighlight[]): Promise<void> {
 		const deduped = new Map<string, ReaderHighlight>();
 		this.highlightDataMap.clear();
+		this.highlightAnchorResolutionByKey.clear();
 		for (const highlight of highlights) {
-			const anchorCfi = await this.resolveHighlightAnchorCfi(highlight);
-			const normalizedHighlight = this.normalizeHighlightSources({
-				...highlight,
-				cfiRange: anchorCfi,
-			});
+			const normalizedHighlight = this.normalizeHighlightSources(highlight);
 			const key = getReaderHighlightIdentityKey(normalizedHighlight);
 			const existing = deduped.get(key);
 			deduped.set(
@@ -1605,24 +1684,42 @@ export class FoliateReaderService implements EpubReaderEngine {
 			}
 		}
 		for (const key of keysToRemove) {
-			this.highlightDataMap.delete(key);
-			this.temporaryHighlightDataMap.delete(key);
-			const timer = this.temporaryHighlightTimers.get(key);
-			if (timer) {
-				window.clearTimeout(timer);
-				this.temporaryHighlightTimers.delete(key);
-			}
-			const revealedTimer = this.temporarilyRevealedConcealmentTimers.get(key);
-			if (revealedTimer) {
-				window.clearTimeout(revealedTimer);
-				this.temporarilyRevealedConcealmentTimers.delete(key);
-			}
+			this.removeStoredHighlightByKey(key);
 		}
 		this.savedHighlights = this.savedHighlights.filter(
 			(item) => this.normalizeLocationKey(item.cfiRange) !== cfiKey
 		);
 		this.invalidateParagraphPresentation();
 		void this.queueAnnotationSync(true);
+	}
+
+	removeHighlightByIdentityKey(identityKey: string): void {
+		const key = String(identityKey || "").trim();
+		if (!key) {
+			return;
+		}
+		this.removeStoredHighlightByKey(key);
+		this.savedHighlights = this.savedHighlights.filter(
+			(item) => getReaderHighlightIdentityKey(item) !== key
+		);
+		this.invalidateParagraphPresentation();
+		void this.queueAnnotationSync(true);
+	}
+
+	private removeStoredHighlightByKey(key: string): void {
+		this.highlightDataMap.delete(key);
+		this.temporaryHighlightDataMap.delete(key);
+		this.highlightAnchorResolutionByKey.delete(key);
+		const timer = this.temporaryHighlightTimers.get(key);
+		if (timer) {
+			window.clearTimeout(timer);
+			this.temporaryHighlightTimers.delete(key);
+		}
+		const revealedTimer = this.temporarilyRevealedConcealmentTimers.get(key);
+		if (revealedTimer) {
+			window.clearTimeout(revealedTimer);
+			this.temporarilyRevealedConcealmentTimers.delete(key);
+		}
 	}
 
 	destroy(): void {
@@ -2069,11 +2166,11 @@ export class FoliateReaderService implements EpubReaderEngine {
 		if (!node || typeof node.nodeType !== "number") {
 			return null;
 		}
-		if (node.nodeType === Node.ELEMENT_NODE) {
-			return node as Element;
+		if (domInstanceOf(node, Element)) {
+			return node;
 		}
-		if (node.nodeType === Node.TEXT_NODE) {
-			return (node as ChildNode).parentElement;
+		if (domInstanceOf(node, Text)) {
+			return node.parentElement;
 		}
 		return null;
 	}
@@ -2357,6 +2454,9 @@ export class FoliateReaderService implements EpubReaderEngine {
 		doc.documentElement.setAttribute("data-weave-host-scheme", colorScheme);
 		this.sanitizeRuntimeAuthorColorOverrides(doc);
 
+		const background = this.getObsidianCSSVar("--background-primary", "rgb(255, 255, 255)");
+		const textColor = this.getObsidianCSSVar("--text-normal", "rgb(28, 29, 31)");
+
 		let styleElement = this.documentStyleElements.get(doc);
 		if (!styleElement || !styleElement.isConnected) {
 			styleElement = doc.createElement("style");
@@ -2364,19 +2464,13 @@ export class FoliateReaderService implements EpubReaderEngine {
 			mountPoint.appendChild(styleElement);
 			this.documentStyleElements.set(doc, styleElement);
 		}
-		styleElement.textContent = this.buildReaderStyles();
+		styleElement.textContent = `${this.buildReaderStyles()}\n${buildReaderHostSurfaceCss(
+			background,
+			textColor,
+			colorScheme
+		)}`;
 		mountPoint.appendChild(styleElement);
 
-		const background = this.getObsidianCSSVar("--background-primary", "rgb(255, 255, 255)");
-		const textColor = this.getObsidianCSSVar("--text-normal", "rgb(28, 29, 31)");
-		doc.documentElement.style.colorScheme = colorScheme;
-		doc.documentElement.style.backgroundColor = background;
-		doc.documentElement.style.color = textColor;
-		if (doc.body) {
-			doc.body.style.colorScheme = colorScheme;
-			doc.body.style.backgroundColor = background;
-			doc.body.style.color = textColor;
-		}
 		this.attachFootnotePreviewListeners(doc);
 	}
 
@@ -2618,10 +2712,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	private scrollRangeIntoDocument(range: Range): void {
 		try {
 			const node = range.startContainer;
-			const element =
-				node.nodeType === Node.ELEMENT_NODE
-					? (node as Element)
-					: node.parentElement;
+			const element = domInstanceOf(node, Element) ? node : node.parentElement;
 			element?.scrollIntoView?.({ block: "center", behavior: "smooth" });
 		} catch (error) {
 			logger.debug("[FoliateReaderService] Failed to scroll resolved range into view:", error);
@@ -3571,7 +3662,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 					range.commonAncestorContainer.parentElement ||
 					range.startContainer.ownerDocument?.body ||
 					range.startContainer.ownerDocument?.documentElement ||
-					(range.commonAncestorContainer.ownerDocument?.documentElement as Element);
+					range.startContainer.ownerDocument?.documentElement;
 	}
 
 	private collectParagraphTextSegmentsInRange(
@@ -4418,7 +4509,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 			if (!cloneRange) {
 				continue;
 			}
-			const marker = clone.ownerDocument.createElement("span");
+			const marker = createSpanInOwnerDocument(clone.ownerDocument);
 			marker.className = "weave-paragraph-annotation";
 			marker.setAttribute("data-cfi-range", decoration.cfiRange);
 			marker.setAttribute("data-color", decoration.color || "yellow");
@@ -5736,6 +5827,13 @@ export class FoliateReaderService implements EpubReaderEngine {
 			...this.temporaryHighlightDataMap.keys(),
 		]);
 
+		const pendingVisible: Array<{
+			key: string;
+			persistentHighlight?: ReaderHighlight;
+			temporaryHighlight?: ReaderHighlight;
+			visibleHighlight: ReaderHighlight;
+		}> = [];
+
 		for (const key of highlightKeys) {
 			const persistentHighlight = this.highlightDataMap.get(key);
 			const temporaryHighlight = this.temporaryHighlightDataMap.get(key);
@@ -5751,17 +5849,38 @@ export class FoliateReaderService implements EpubReaderEngine {
 			if (sectionIndex === null || !visibleIndexes.has(sectionIndex)) {
 				continue;
 			}
-			desiredVisible.set(
+			pendingVisible.push({
 				key,
-				createRenderedFoliateAnnotation({
-					persistentHighlight,
-					temporaryHighlight,
-					currentStrikethroughPresentation: this.currentStrikethroughPresentation,
-					colorScheme: this.getCurrentColorScheme(),
-					temporarilyRevealedConcealmentKeys: this.temporarilyRevealedConcealmentTimers,
-				})
-			);
+				persistentHighlight,
+				temporaryHighlight,
+				visibleHighlight,
+			});
 		}
+
+		await Promise.all(
+			pendingVisible.map(async ({
+				key,
+				persistentHighlight,
+				temporaryHighlight,
+				visibleHighlight,
+			}) => {
+				const resolvedHighlight = await this.resolveHighlightAnchorForRender(visibleHighlight);
+				const sourceLocateFocusColor =
+					!temporaryHighlight && persistentHighlight
+						? this.getSourceLocateFocusColor(resolvedHighlight.cfiRange)
+						: undefined;
+				desiredVisible.set(
+					key,
+					this.createRenderedAnnotationWithOptionalSourceLocateFocus({
+						persistentHighlight: temporaryHighlight
+							? persistentHighlight
+							: resolvedHighlight,
+						temporaryHighlight: temporaryHighlight ? resolvedHighlight : temporaryHighlight,
+						sourceLocateFocusColor,
+					})
+				);
+			})
+		);
 
 		for (const [key, rendered] of Array.from(this.renderedAnnotations.entries())) {
 			const desired = desiredVisible.get(key);
@@ -5872,10 +5991,46 @@ export class FoliateReaderService implements EpubReaderEngine {
 		annotation: FoliateAnnotation,
 		suppliedRects: unknown[]
 	): unknown[] {
-		if (hasUsableOverlayRects(suppliedRects)) {
+		if (!hasUsableOverlayRects(suppliedRects)) {
+			const textHint = String(annotation.text || "").trim();
+			return textHint ? this.resolveHighlightOverlayRects(annotation) : [];
+		}
+
+		const textHint = String(annotation.text || "").trim();
+		if (!textHint || this.doesHighlightCfiCoverSavedText(annotation)) {
 			return suppliedRects;
 		}
-		return this.resolveHighlightOverlayRects(annotation);
+
+		const quoteRects = this.resolveHighlightOverlayRects(annotation);
+		return quoteRects.length > 0 ? quoteRects : suppliedRects;
+	}
+
+	private doesHighlightCfiCoverSavedText(
+		highlight: Pick<ReaderHighlight, "cfiRange" | "text" | "chapterIndex">
+	): boolean {
+		const textHint = String(highlight.text || "").trim();
+		if (!textHint) {
+			return true;
+		}
+		const preferredChapter =
+			typeof highlight.chapterIndex === "number" && Number.isFinite(highlight.chapterIndex)
+				? highlight.chapterIndex
+				: this.parser.getSectionIndexForCfi(highlight.cfiRange);
+		for (const frame of orderVisibleHighlightFrames(
+			this.getVisibleFramesWithIndex(),
+			preferredChapter
+		)) {
+			const cfiOnlyRange = this.parser.resolveRangeInLoadedSection(
+				highlight.cfiRange,
+				frame.frameDocument,
+				frame.index
+			);
+			if (!cfiOnlyRange) {
+				continue;
+			}
+			return resolvedRangeCoversHighlightText(cfiOnlyRange, textHint);
+		}
+		return false;
 	}
 
 	private resolveHighlightOverlayRects(highlight: {
@@ -6179,6 +6334,52 @@ export class FoliateReaderService implements EpubReaderEngine {
 		};
 	}
 
+	private async resolveHighlightAnchorForRender(highlight: ReaderHighlight): Promise<ReaderHighlight> {
+		const key = getReaderHighlightIdentityKey(highlight);
+		let inflight = this.highlightAnchorResolutionByKey.get(key);
+		if (!inflight) {
+			inflight = this.resolveHighlightAnchorCfiSafe(highlight).then((cfiRange) => {
+				if (cfiRange !== highlight.cfiRange) {
+					const updated = this.normalizeHighlightSources({ ...highlight, cfiRange });
+					if (this.highlightDataMap.has(key)) {
+						this.highlightDataMap.set(key, updated);
+						this.savedHighlights = this.savedHighlights.map((item) =>
+							getReaderHighlightIdentityKey(item) === key ? updated : item
+						);
+					}
+					const temporary = this.temporaryHighlightDataMap.get(key);
+					if (temporary) {
+						this.temporaryHighlightDataMap.set(
+							key,
+							this.normalizeHighlightSources({ ...temporary, cfiRange })
+						);
+					}
+				}
+				return cfiRange;
+			});
+			this.highlightAnchorResolutionByKey.set(key, inflight);
+		}
+		try {
+			const cfiRange = await inflight;
+			return cfiRange === highlight.cfiRange
+				? highlight
+				: this.normalizeHighlightSources({ ...highlight, cfiRange });
+		} catch {
+			return highlight;
+		}
+	}
+
+	private async resolveHighlightAnchorCfiSafe(highlight: ReaderHighlight): Promise<string> {
+		try {
+			return await this.resolveHighlightAnchorCfi(highlight);
+		} catch (error) {
+			logger.debugWithTag("FoliateReaderService", "Skipped highlight anchor resolution", {
+				error,
+			});
+			return String(highlight.cfiRange || "").trim();
+		}
+	}
+
 	private async resolveHighlightAnchorCfi(highlight: ReaderHighlight): Promise<string> {
 		const textHint = String(highlight.text || "").trim();
 		const originalCfi = String(highlight.cfiRange || "").trim();
@@ -6197,7 +6398,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 						originalIndex,
 						textHint
 					);
-					if (originalRange && originalRange.toString().trim().length > 0) {
+					if (originalRange && resolvedRangeCoversHighlightText(originalRange, textHint)) {
 						try {
 							return this.parser.createCfiFromRange(originalIndex, originalRange);
 						} catch {
@@ -6530,14 +6731,136 @@ export class FoliateReaderService implements EpubReaderEngine {
 		this.temporaryHighlightTimers.clear();
 	}
 
+	private resetSourceLocateFocusTimers(): void {
+		for (const timer of this.sourceLocateFocusTimers.values()) {
+			window.clearTimeout(timer);
+		}
+		this.sourceLocateFocusTimers.clear();
+	}
+
+	private normalizeSourceLocateFocusCfiKey(cfiRange: string): string {
+		return this.normalizeLocationKey(cfiRange);
+	}
+
+	private clearSourceLocateFocus(): void {
+		if (this.sourceLocateFocusByCfiKey.size === 0) {
+			return;
+		}
+		this.resetSourceLocateFocusTimers();
+		this.sourceLocateFocusByCfiKey.clear();
+	}
+
+	private setSourceLocateFocus(cfiRange: string, color: string): void {
+		const cfiKey = this.normalizeSourceLocateFocusCfiKey(cfiRange);
+		if (!cfiKey) {
+			return;
+		}
+		const existingTimer = this.sourceLocateFocusTimers.get(cfiKey);
+		if (existingTimer) {
+			window.clearTimeout(existingTimer);
+		}
+		this.sourceLocateFocusByCfiKey.set(cfiKey, {
+			color,
+			cfiRange: String(cfiRange || "").trim(),
+		});
+		const timer = window.setTimeout(() => {
+			this.sourceLocateFocusTimers.delete(cfiKey);
+			this.sourceLocateFocusByCfiKey.delete(cfiKey);
+			void this.refreshHighlights();
+		}, READER_SOURCE_LOCATE_FOCUS_DURATION_MS);
+		this.sourceLocateFocusTimers.set(cfiKey, timer);
+	}
+
+	private getSourceLocateFocusColor(cfiRange: string): string | undefined {
+		return this.sourceLocateFocusByCfiKey.get(
+			this.normalizeSourceLocateFocusCfiKey(cfiRange)
+		)?.color;
+	}
+
+	private collectSourceLocateOverlayAnchorCfis(): string[] {
+		const cfis: string[] = [];
+		const seen = new Set<string>();
+		const pushCfi = (value: string | undefined): void => {
+			const normalized = String(value || "").trim();
+			if (!normalized || seen.has(normalized)) {
+				return;
+			}
+			seen.add(normalized);
+			cfis.push(normalized);
+		};
+		for (const highlight of this.temporaryHighlightDataMap.values()) {
+			pushCfi(highlight.cfiRange);
+		}
+		for (const focus of this.sourceLocateFocusByCfiKey.values()) {
+			pushCfi(focus.cfiRange);
+		}
+		return cfis;
+	}
+
+	private hasPersistentHighlightAtCfi(cfiRange: string): boolean {
+		const cfiKey = this.normalizeSourceLocateFocusCfiKey(cfiRange);
+		if (!cfiKey) {
+			return false;
+		}
+		for (const highlight of this.highlightDataMap.values()) {
+			if (this.normalizeSourceLocateFocusCfiKey(highlight.cfiRange) === cfiKey) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private createRenderedAnnotationWithOptionalSourceLocateFocus(input: {
+		persistentHighlight?: ReaderHighlight;
+		temporaryHighlight?: ReaderHighlight;
+		sourceLocateFocusColor?: string;
+	}): RenderedReaderFoliateAnnotation {
+		const rendered = createRenderedFoliateAnnotation({
+			persistentHighlight: input.persistentHighlight,
+			temporaryHighlight: input.temporaryHighlight,
+			currentStrikethroughPresentation: this.currentStrikethroughPresentation,
+			colorScheme: this.getCurrentColorScheme(),
+			temporarilyRevealedConcealmentKeys: this.temporarilyRevealedConcealmentTimers,
+		});
+		if (!input.sourceLocateFocusColor) {
+			return rendered;
+		}
+		const annotation = createReaderFoliateAnnotation(
+			rendered.annotation,
+			input.sourceLocateFocusColor
+		);
+		return {
+			annotation,
+			renderSignature: buildAnnotationRenderSignature({
+				annotation,
+				currentStrikethroughPresentation: this.currentStrikethroughPresentation,
+				colorScheme: this.getCurrentColorScheme(),
+				temporarilyRevealedConcealmentKeys: this.temporarilyRevealedConcealmentTimers,
+			}),
+		};
+	}
+
+	private async clearActiveTemporaryHighlights(): Promise<void> {
+		if (this.temporaryHighlightDataMap.size === 0) {
+			return;
+		}
+		this.resetTemporaryHighlightTimers();
+		this.temporaryHighlightDataMap.clear();
+		this.invalidateParagraphPresentation();
+		await this.refreshHighlights();
+	}
+
 	private resetHighlightState(): void {
 		this.resetTemporaryHighlightTimers();
+		this.resetSourceLocateFocusTimers();
+		this.sourceLocateFocusByCfiKey.clear();
 		for (const timer of this.temporarilyRevealedConcealmentTimers.values()) {
 			window.clearTimeout(timer);
 		}
 		this.temporarilyRevealedConcealmentTimers.clear();
 		this.highlightDataMap.clear();
 		this.temporaryHighlightDataMap.clear();
+		this.highlightAnchorResolutionByKey.clear();
 		this.savedHighlights = [];
 		this.renderedAnnotations.clear();
 		this.resetAnnotationSyncState();

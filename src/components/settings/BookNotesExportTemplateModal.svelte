@@ -2,7 +2,8 @@
   import { Component, MarkdownRenderer, Menu, Notice, setIcon } from "obsidian";
   import { onDestroy, onMount, tick } from "svelte";
   import type StandaloneEpubPlugin from "../../main";
-  import { EPUB_RUNTIME, getEpubStorageService } from "../../services/epub";
+  import { getEpubStorageService } from "../../services/epub";
+  import { notifyExcerptSettingsChanged } from "../../services/epub/excerpt-settings-events";
   import {
     renderBookNotesTemplatePreview,
   } from "../../services/epub/book-notes-export/book-notes-export";
@@ -42,7 +43,7 @@
   const app = plugin.app;
   const previewHost = new Component();
 
-  let templateFolder = $state(resolveBookNotesExportTemplateFolder(null));
+  let templateFolder = $state("");
   let templates = $state<BookNotesExportTemplateListItem[]>([]);
   let activeTemplatePath = $state("");
   let defaultTemplatePath = $state("");
@@ -354,10 +355,7 @@
   }
 
   function dispatchExcerptSettingsChanged(): void {
-    if (typeof window === "undefined") {
-      return;
-    }
-    window.dispatchEvent(new CustomEvent(EPUB_RUNTIME.events.excerptSettingsChanged));
+    notifyExcerptSettingsChanged();
   }
 
   function insertAtCursor(text: string): void {

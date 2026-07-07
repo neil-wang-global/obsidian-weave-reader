@@ -16,6 +16,7 @@ export type BookNotesExportSettingKey =
 export interface BookNotesExportPopoverProps {
 	app: App;
 	open: boolean;
+	excerptSettingsReady?: boolean;
 	exportNotesPopoverEl?: HTMLDivElement | null;
 	excerptSettings: EpubExcerptSettings;
 	exportNotesSubmitting: boolean;
@@ -31,6 +32,7 @@ export interface BookNotesExportPopoverProps {
 let {
 	app,
 	open = false,
+	excerptSettingsReady = true,
 	exportNotesPopoverEl = $bindable(null),
 	excerptSettings,
 	exportNotesSubmitting = false,
@@ -57,6 +59,7 @@ let {
 			<BookNotesExportTemplateSelect
 				{app}
 				active={open}
+				settingsReady={excerptSettingsReady}
 				templatePath={excerptSettings.bookNotesExportTemplatePath}
 				templateFolderSettings={excerptSettings}
 				onSelect={(path) => void onUpdateSetting({ bookNotesExportTemplatePath: path })}

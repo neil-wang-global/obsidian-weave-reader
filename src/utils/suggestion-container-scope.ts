@@ -1,3 +1,5 @@
+import { domInstanceOf } from "./dom-instance-of";
+
 const WEAVE_SUGGEST_OWNERSHIP_CLASSES = [
 	"weave-vault-file-suggest-container",
 	"weave-markdown-file-suggest-popover",
@@ -25,17 +27,17 @@ export function resolveSuggestionContainerForAnchor(
 	anchor: HTMLElement,
 	options: { scopeEl?: ParentNode | null } = {}
 ): HTMLElement | null {
-	if (typeof document === "undefined") {
+	if (typeof activeDocument === "undefined") {
 		return null;
 	}
 
 	const anchorRect = anchor.getBoundingClientRect();
-	const roots = options.scopeEl ? [options.scopeEl] : [document];
+	const roots = options.scopeEl ? [options.scopeEl] : [activeDocument];
 	const candidates: HTMLElement[] = [];
 
 	for (const root of roots) {
 		for (const node of root.querySelectorAll(".suggestion-container")) {
-			if (node instanceof HTMLElement && isVisibleSuggestionContainer(node)) {
+			if (domInstanceOf(node, HTMLElement) && isVisibleSuggestionContainer(node)) {
 				candidates.push(node);
 			}
 		}
@@ -67,14 +69,14 @@ export function markSuggestionContainer(
 	className: string,
 	options: { scopeEl?: ParentNode | null; anchorEl?: HTMLElement | null } = {}
 ): void {
-	if (typeof document === "undefined") {
+	if (typeof activeDocument === "undefined") {
 		return;
 	}
 
 	window.requestAnimationFrame(() => {
 		const scopedContainers = options.scopeEl
 			? Array.from(options.scopeEl.querySelectorAll(".suggestion-container")).filter(
-					(node): node is HTMLElement => node instanceof HTMLElement
+					(node): node is HTMLElement => domInstanceOf(node, HTMLElement)
 			  )
 			: [];
 
@@ -84,7 +86,8 @@ export function markSuggestionContainer(
 						scopeEl: options.scopeEl ?? undefined,
 				  })
 				: null) ??
-			(scopedContainers.at(-1) instanceof HTMLElement ? scopedContainers.at(-1)! : null);
+			scopedContainers.at(-1) ??
+			null;
 
 		if (!target) {
 			return;

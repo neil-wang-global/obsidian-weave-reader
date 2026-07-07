@@ -3,6 +3,7 @@
  * 为 Obsidian 内部对象提供类型安全的访问
  */
 
+import { domInstanceOf } from "../utils/dom-instance-of";
 import type {
 	App,
 	Editor,
@@ -399,7 +400,7 @@ export function getCanvasNodeRuntimeData(node: CanvasNodeRuntime): CanvasNodeRun
 
 export function getCanvasNodeElement(node: CanvasNodeRuntime): HTMLElement | null {
 	for (const candidate of [node.nodeEl, node.contentEl, node.containerEl, node.el]) {
-		if (candidate instanceof HTMLElement) {
+		if (domInstanceOf(candidate, HTMLElement)) {
 			return candidate;
 		}
 	}

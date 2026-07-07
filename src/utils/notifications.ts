@@ -2,12 +2,6 @@ export function showNotification(
 	message: string,
 	type: "success" | "error" | "info" | "warning" = "info"
 ) {
-	const n = activeDocument.createElement("div");
-	n.className = `weave-notification notification-${type}`;
-
-	const icon = activeDocument.createElement("span");
-	icon.className = "weave-notification-icon";
-
 	const iconMap = {
 		success: "\u2713",
 		error: "\u2715",
@@ -15,25 +9,29 @@ export function showNotification(
 		info: "\u2139",
 	};
 
-	icon.textContent = iconMap[type] || iconMap.info;
-	n.appendChild(icon);
+	const notification = activeWindow.createDiv({
+		cls: `weave-notification notification-${type}`,
+	});
+	notification.createSpan({
+		cls: "weave-notification-icon",
+		text: iconMap[type] || iconMap.info,
+	});
+	notification.createSpan({
+		cls: "weave-flex-1",
+		text: message,
+	});
 
-	const textSpan = activeDocument.createElement("span");
-	textSpan.textContent = message;
-	textSpan.className = "weave-flex-1";
-	n.appendChild(textSpan);
-
-	activeDocument.body.appendChild(n);
+	activeDocument.body.appendChild(notification);
 
 	window.setTimeout(() => {
-		n.classList.add("is-visible");
+		notification.classList.add("is-visible");
 	}, 10);
 
 	window.setTimeout(() => {
-		n.classList.remove("is-visible");
+		notification.classList.remove("is-visible");
 		window.setTimeout(() => {
-			if (n.parentNode) {
-				n.remove();
+			if (notification.parentNode) {
+				notification.remove();
 			}
 		}, 300);
 	}, 3000);

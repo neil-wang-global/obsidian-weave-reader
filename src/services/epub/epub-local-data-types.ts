@@ -10,11 +10,14 @@ import type {
 	EpubReadingReferencePoint,
 	EpubReaderSettings,
 } from "./types";
+import type { EpubTocChapterMarkMap } from "./epub-toc-chapter-mark";
+import type { EpubTocChapterMarkSettings } from "./epub-toc-chapter-mark-settings";
 export interface EpubPluginUiMemory {
 	lastSelectedIRDeckId: string;
 	selectionQuickCreateLastFolder: string;
 	epubMarkdownExportLastFolder: string;
 	bookshelfSearchQuery: string;
+	readerTutorialDismissed: boolean;
 }
 
 export interface EpubBookshelfIndexEntry {
@@ -58,6 +61,7 @@ export interface EpubReaderLocalBookRecord {
 	lastOpenBookmark?: EpubLastOpenBookmark | null;
 	readingReferencePoint?: EpubReadingReferencePoint | null;
 	concealedTexts?: ConcealedText[];
+	tocChapterMarks?: EpubTocChapterMarkMap;
 }
 
 export interface CanvasExcerptAnchorRecord {
@@ -81,4 +85,5 @@ export interface EpubReaderLocalDataFile {
 	canvasBindings?: Record<string, string>;
 	canvasExcerptAnchors?: Record<string, CanvasExcerptAnchorRecord>;
 	books?: Record<string, EpubReaderLocalBookRecord>;
+	tocChapterMarkSettings?: EpubTocChapterMarkSettings;
 }

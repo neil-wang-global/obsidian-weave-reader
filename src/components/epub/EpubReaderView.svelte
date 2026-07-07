@@ -1,7 +1,6 @@
 <script lang="ts">
  	import { onMount } from 'svelte';
 	import { Platform } from 'obsidian';
-	import type { App } from 'obsidian';
 	import {
 		DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_ENABLED,
 		DEFAULT_CONTINUOUS_READING_POSITION_AUTO_SAVE_PAGES,
@@ -21,7 +20,6 @@
 	import { logger } from '../../utils/logger';
 
 	interface Props {
-		app: App;
 		filePath: string;
 		book: EpubBook | null;
 		readerService: EpubReaderEngine;
@@ -46,7 +44,6 @@
 	}
 
 	let {
-		app,
 		filePath,
 		book,
 		readerService,
@@ -76,9 +73,9 @@
 	let currentLayoutMode: EpubLayoutMode = 'paginated';
 	let currentFlowMode: EpubFlowMode = 'paginated';
 	let currentWidthMode: EpubReaderSettings['widthMode'] = 'full';
-	let retryTimer: ReturnType<typeof setTimeout> | null = null;
-	let highlightReapplyTimer: ReturnType<typeof setTimeout> | null = null;
-	let mobileStabilizationTimer: ReturnType<typeof setTimeout> | null = null;
+	let retryTimer: ReturnType<typeof window.setTimeout> | null = null;
+	let highlightReapplyTimer: ReturnType<typeof window.setTimeout> | null = null;
+	let mobileStabilizationTimer: ReturnType<typeof window.setTimeout> | null = null;
 	let highlightsReady = false;
 	let detachRelocatedHandler: (() => void) | null = null;
 	let skipNextAppearanceSync = false;
@@ -255,6 +252,57 @@
 		return viewDisposed || renderToken !== renderSessionToken;
 	}
 
+	async function canonicalizeStoredCfiLocation<T extends { cfi: string }>(
+		saved: T | null,
+		options: {
+			bookId: string;
+			label: string;
+			persistCanonical: (value: T) => Promise<void>;
+		}
+	): Promise<T | null> {
+		if (!saved?.cfi) {
+			return saved;
+		}
+
+		if (typeof readerService.canonicalizeLocation !== 'function') {
+			return saved;
+		}
+
+		try {
+			const canonicalCfi = await readerService.canonicalizeLocation(saved.cfi);
+			if (!canonicalCfi) {
+				logger.warn(`[EpubReaderView] Skipping saved ${options.label} because it could not be canonicalized for the current engine.`, {
+					bookId: options.bookId,
+					cfi: saved.cfi,
+				});
+				return null;
+			}
+
+			if (canonicalCfi === saved.cfi) {
+				return saved;
+			}
+
+			const canonicalValue = {
+				...saved,
+				cfi: canonicalCfi,
+			};
+			await options.persistCanonical(canonicalValue);
+			logger.info(`[EpubReaderView] Canonicalized saved ${options.label} before restoring it into the current reader runtime.`, {
+				bookId: options.bookId,
+				from: saved.cfi,
+				to: canonicalCfi,
+			});
+			return canonicalValue;
+		} catch (error) {
+			logger.warn(`[EpubReaderView] Failed to canonicalize saved ${options.label} before restore:`, {
+				bookId: options.bookId,
+				cfi: saved.cfi,
+				error,
+			});
+			return null;
+		}
+	}
+
 	async function resolveRestorableProgress() {
 		if (!canUseReadingProgress) {
 			return null;
@@ -265,48 +313,14 @@
 		}
 
 		const savedProgress = await storageService.loadProgress(currentBook.id, currentBook);
-		if (!savedProgress?.cfi) {
-			return savedProgress;
-		}
-
-		if (typeof readerService.canonicalizeLocation !== 'function') {
-			return savedProgress;
-		}
-
-		try {
-			const canonicalCfi = await readerService.canonicalizeLocation(savedProgress.cfi);
-			if (!canonicalCfi) {
-				logger.warn('[EpubReaderView] Skipping saved EPUB progress because it could not be canonicalized for the current engine.', {
-					bookId: currentBook.id,
-					cfi: savedProgress.cfi,
-				});
-				return null;
-			}
-
-			if (canonicalCfi === savedProgress.cfi) {
-				return savedProgress;
-			}
-
-			const canonicalProgress = {
-				...savedProgress,
-				cfi: canonicalCfi,
-			};
-			currentBook.currentPosition = canonicalProgress;
-			await storageService.saveProgress(currentBook.id, canonicalProgress);
-			logger.info('[EpubReaderView] Canonicalized saved EPUB progress before restoring it into the current reader runtime.', {
-				bookId: currentBook.id,
-				from: savedProgress.cfi,
-				to: canonicalCfi,
-			});
-			return canonicalProgress;
-		} catch (error) {
-			logger.warn('[EpubReaderView] Failed to canonicalize saved EPUB progress before restore:', {
-				bookId: currentBook.id,
-				cfi: savedProgress.cfi,
-				error,
-			});
-			return null;
-		}
+		return canonicalizeStoredCfiLocation(savedProgress, {
+			bookId: currentBook.id,
+			label: 'EPUB progress',
+			persistCanonical: async (canonicalProgress) => {
+				currentBook.currentPosition = canonicalProgress;
+				await storageService.saveProgress(currentBook.id, canonicalProgress);
+			},
+		});
 	}
 
 	async function resolveLastOpenBookmark() {
@@ -319,47 +333,13 @@
 		}
 
 		const savedBookmark = await storageService.loadLastOpenBookmark(currentBook.id);
-		if (!savedBookmark?.cfi) {
-			return savedBookmark;
-		}
-
-		if (typeof readerService.canonicalizeLocation !== 'function') {
-			return savedBookmark;
-		}
-
-		try {
-			const canonicalCfi = await readerService.canonicalizeLocation(savedBookmark.cfi);
-			if (!canonicalCfi) {
-				logger.warn('[EpubReaderView] Skipping saved last-open EPUB bookmark because it could not be canonicalized for the current engine.', {
-					bookId: currentBook.id,
-					cfi: savedBookmark.cfi,
-				});
-				return null;
-			}
-
-			if (canonicalCfi === savedBookmark.cfi) {
-				return savedBookmark;
-			}
-
-			const canonicalBookmark = {
-				...savedBookmark,
-				cfi: canonicalCfi,
-			};
-			await storageService.saveLastOpenBookmark(currentBook.id, canonicalBookmark);
-			logger.info('[EpubReaderView] Canonicalized saved last-open EPUB bookmark before restoring it into the current reader runtime.', {
-				bookId: currentBook.id,
-				from: savedBookmark.cfi,
-				to: canonicalCfi,
-			});
-			return canonicalBookmark;
-		} catch (error) {
-			logger.warn('[EpubReaderView] Failed to canonicalize saved last-open EPUB bookmark before restore:', {
-				bookId: currentBook.id,
-				cfi: savedBookmark.cfi,
-				error,
-			});
-			return null;
-		}
+		return canonicalizeStoredCfiLocation(savedBookmark, {
+			bookId: currentBook.id,
+			label: 'last-open EPUB bookmark',
+			persistCanonical: async (canonicalBookmark) => {
+				await storageService.saveLastOpenBookmark(currentBook.id, canonicalBookmark);
+			},
+		});
 	}
 
 	async function resolvePreferredRestorePosition() {
@@ -403,7 +383,7 @@
 				resolve();
 				return;
 			}
-			mobileStabilizationTimer = setTimeout(() => {
+			mobileStabilizationTimer = window.setTimeout(() => {
 				mobileStabilizationTimer = null;
 				resolve();
 			}, delayMs);
@@ -584,7 +564,7 @@
 			registerRelocatedHandler();
 
 			// Let the reader layout settle after settings/resize before navigating
-			await new Promise(r => setTimeout(r, 50));
+			await new Promise(r => window.setTimeout(r, 50));
 			if (isStaleRender(renderToken)) {
 				return;
 			}
@@ -678,8 +658,8 @@
 
 	function scheduleHighlightReapply(delayMs = 300) {
 		if (!highlightsReady) return;
-		if (highlightReapplyTimer) clearTimeout(highlightReapplyTimer);
-		highlightReapplyTimer = setTimeout(async () => {
+		if (highlightReapplyTimer) window.clearTimeout(highlightReapplyTimer);
+		highlightReapplyTimer = window.setTimeout(async () => {
 			highlightReapplyTimer = null;
 			await refreshReaderHighlights();
 		}, delayMs);
@@ -689,8 +669,8 @@
 		if (!canUseExcerptNotes) {
 			return;
 		}
-		if (retryTimer) clearTimeout(retryTimer);
-		retryTimer = setTimeout(async () => {
+		if (retryTimer) window.clearTimeout(retryTimer);
+		retryTimer = window.setTimeout(async () => {
 			retryTimer = null;
 			const retried = await collectAllHighlights();
 			if (retried.length > 0) {
@@ -776,7 +756,7 @@
 			});
 			skipNextAppearanceSync = true;
 
-			await new Promise(r => setTimeout(r, 150));
+			await new Promise(r => window.setTimeout(r, 150));
 
 			await refreshReaderHighlights();
 			notifyReaderReady();
@@ -832,9 +812,9 @@
 				detachRelocatedHandler();
 				detachRelocatedHandler = null;
 			}
-			if (retryTimer) clearTimeout(retryTimer);
-			if (highlightReapplyTimer) clearTimeout(highlightReapplyTimer);
-			if (mobileStabilizationTimer) clearTimeout(mobileStabilizationTimer);
+			if (retryTimer) window.clearTimeout(retryTimer);
+			if (highlightReapplyTimer) window.clearTimeout(highlightReapplyTimer);
+			if (mobileStabilizationTimer) window.clearTimeout(mobileStabilizationTimer);
 			if (resizeObserver) {
 				resizeObserver.disconnect();
 			}

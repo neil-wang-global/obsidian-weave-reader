@@ -3,6 +3,7 @@ import {
 	prefetchBlobUrlsFromText,
 	readBlobUrlAsArrayBuffer,
 	readBlobUrlAsText,
+	readResourceUrlAsText,
 	shouldPreferFetchForResourceUrl,
 } from "../blob-url-text";
 import {
@@ -128,5 +129,41 @@ describe("blob-url-text", () => {
 		});
 		expect(xhr.open).toHaveBeenCalledWith("GET", "blob:weave-test-image.png");
 		expect(xhr.responseType).toBe("arraybuffer");
+	});
+
+	it("reads non-blob resource URLs via xhr", async () => {
+		const xhrInstances: Array<{
+			open: ReturnType<typeof vi.fn>;
+			send: ReturnType<typeof vi.fn>;
+			onload: (() => void) | null;
+			responseText: string;
+			status: number;
+		}> = [];
+
+		class MockXMLHttpRequest {
+			responseType = "";
+			responseText = "";
+			status = 0;
+			onload: (() => void) | null = null;
+			onerror: (() => void) | null = null;
+			open = vi.fn();
+			send = vi.fn();
+			getResponseHeader = vi.fn(() => "text/plain");
+
+			constructor() {
+				xhrInstances.push(this);
+			}
+		}
+
+		vi.stubGlobal("XMLHttpRequest", MockXMLHttpRequest);
+
+		const promise = readResourceUrlAsText("app://local/chapter.xhtml");
+		const xhr = xhrInstances[0];
+		xhr.status = 200;
+		xhr.responseText = "<html></html>";
+		xhr.onload?.();
+
+		await expect(promise).resolves.toBe("<html></html>");
+		expect(xhr.open).toHaveBeenCalledWith("GET", "app://local/chapter.xhtml", true);
 	});
 });

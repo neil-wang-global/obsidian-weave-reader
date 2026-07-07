@@ -20,6 +20,7 @@ describe("attachExternalHighlightSyncReload", () => {
 		cleanup = attachExternalHighlightSyncReload({
 			canReload: () => true,
 			onReload,
+			throttleMs: 10,
 		});
 
 		Object.defineProperty(document, "visibilityState", {
@@ -27,11 +28,12 @@ describe("attachExternalHighlightSyncReload", () => {
 			value: "visible",
 		});
 		document.dispatchEvent(new Event("visibilitychange"));
+		vi.advanceTimersByTime(10);
 
 		expect(onReload).toHaveBeenCalledWith(160);
 	});
 
-	it("reloads on window focus and pageshow with the expected delays", () => {
+	it("reloads on window focus and pageshow with trailing debounce", () => {
 		const onReload = vi.fn();
 		cleanup = attachExternalHighlightSyncReload({
 			canReload: () => true,
@@ -40,18 +42,20 @@ describe("attachExternalHighlightSyncReload", () => {
 		});
 
 		window.dispatchEvent(new Event("focus"));
-		expect(onReload).toHaveBeenNthCalledWith(1, 200);
+		vi.advanceTimersByTime(10);
+		expect(onReload).toHaveBeenCalledTimes(1);
+		expect(onReload).toHaveBeenCalledWith(200);
 
-		vi.advanceTimersByTime(11);
 		window.dispatchEvent(new Event("pageshow"));
-		expect(onReload).toHaveBeenNthCalledWith(2, 120);
+		vi.advanceTimersByTime(10);
+		expect(onReload).toHaveBeenCalledTimes(2);
+		expect(onReload).toHaveBeenLastCalledWith(120);
 	});
 
-	it("does not reload when re-entry is throttled or reloading is disabled", () => {
+	it("coalesces rapid re-entry events into one trailing reload", () => {
 		const onReload = vi.fn();
-		let canReload = true;
 		cleanup = attachExternalHighlightSyncReload({
-			canReload: () => canReload,
+			canReload: () => true,
 			onReload,
 			throttleMs: 1000,
 		});
@@ -59,9 +63,7 @@ describe("attachExternalHighlightSyncReload", () => {
 		window.dispatchEvent(new Event("focus"));
 		window.dispatchEvent(new Event("pageshow"));
 
-		canReload = false;
-		vi.advanceTimersByTime(1001);
-		window.dispatchEvent(new Event("focus"));
+		vi.advanceTimersByTime(1000);
 
 		expect(onReload).toHaveBeenCalledTimes(1);
 		expect(onReload).toHaveBeenCalledWith(200);

@@ -211,8 +211,9 @@ export class EpubExcerptOfficialApiService implements EpubWeaveOfficialAPI {
 		if (typeof result === "boolean") {
 			return result;
 		}
-		if (result && typeof result === "object" && "success" in (result as Record<string, unknown>)) {
-			return (result as { success?: boolean }).success !== false;
+		if (result && typeof result === "object" && "success" in result) {
+			const success = (result as { success?: boolean }).success;
+			return success !== false;
 		}
 		return true;
 	}

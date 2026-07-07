@@ -3,6 +3,7 @@ import { MarkdownPostProcessorContext, TFile, setIcon } from "obsidian";
 import { isSupportedBookLocatorHref, stripSupportedBookExtension } from "./book-format";
 import { maybeMigrateEpubLinksInMarkdownFile } from "./epub-link-content-migration";
 import { EpubLinkService } from "./EpubLinkService";
+import { resolveEpubSourceNavigationTextHint } from "./epub-source-navigation-text-hint";
 import { isSupportedEpubProtocolName } from "./epub-runtime";
 
 type BoundEpubLinkElement = HTMLAnchorElement & {
@@ -177,8 +178,10 @@ function bindEpubLocatorLink(
 		void (async () => {
 			const linkService = new EpubLinkService(app);
 			const sourceMarkdownPath = String(ctx?.sourcePath || "").trim() || undefined;
-			const quoteText =
-				String(parsed.text || "").trim() || extractCalloutQuoteText(boundLinkEl);
+			const calloutQuoteText = String(parsed.cfi || "").trim()
+				? ""
+				: extractCalloutQuoteText(boundLinkEl);
+			const quoteText = resolveEpubSourceNavigationTextHint(parsed, calloutQuoteText);
 			await linkService.navigateToEpubLocation(
 				filePath,
 				parsed.cfi,
@@ -226,7 +229,7 @@ export function createEpubLinkPostProcessor(app: App) {
 		const links = el.querySelectorAll("a");
 
 		links.forEach((linkEl) => {
-			if (!(linkEl instanceof HTMLAnchorElement)) {
+			if (!(linkEl.instanceOf(HTMLAnchorElement))) {
 				return;
 			}
 

@@ -7,6 +7,8 @@
  * 3. 当移动端导航切换为固定、悬浮、自动隐藏等状态时，自动刷新 CSS 变量。
  */
 
+import { domInstanceOf } from "./dom-instance-of";
+
 export interface WorkspaceBounds {
 	/** 顶部安全边界（距视口顶部的距离） */
 	top: number;
@@ -21,7 +23,7 @@ export interface WorkspaceBounds {
 type Edge = "top" | "bottom";
 
 type MobileBoundsWindow = Window &
-	typeof globalThis & {
+	typeof window & {
 		__weaveMobileBoundsInjected?: boolean;
 		__weaveMobileBoundsCleanup?: (() => void) | null;
 		__weaveMobileModalAdaptationCleanup?: (() => void) | null;
@@ -110,8 +112,7 @@ function measureSafeAreaInsets(): { top: number; bottom: number } {
 		return cachedSafeAreaInsets;
 	}
 
-	const probe = document.createElement("div");
-	probe.dataset.weaveSafeAreaProbe = "true";
+	const probe = activeWindow.createDiv({ attr: { "data-weave-safe-area-probe": "true" } });
 	probe.style.cssText = [
 		"position: fixed",
 		"inset: 0",
@@ -169,9 +170,14 @@ function shouldIgnoreMeasurementElement(element: HTMLElement): boolean {
 function collectUniqueElements(selectors: string[]): HTMLElement[] {
 	const elements = new Set<HTMLElement>();
 
+	if (typeof activeDocument === "undefined") {
+		return [];
+	}
+
+	const root: ParentNode = activeDocument;
 	for (const selector of selectors) {
-		for (const node of document.querySelectorAll(selector)) {
-			if (node instanceof HTMLElement) {
+		for (const node of root.querySelectorAll(selector)) {
+			if (domInstanceOf(node, HTMLElement)) {
 				elements.add(node);
 			}
 		}

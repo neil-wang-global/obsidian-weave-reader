@@ -7,6 +7,7 @@ import { logger } from "../../utils/logger";
 import { TagExtractor } from "../../utils/tag-extractor";
 import type { EpubBacklinkHighlightService } from "./EpubBacklinkHighlightService";
 import type { EpubAnnotationService } from "./EpubAnnotationService";
+import { shouldIncludeHighlightInSidebarSnapshot } from "./reader-annotation-model";
 import type { EpubReaderEngine, ReaderHighlight } from "./reader-engine-types";
 
 export type EpubHighlightColor = "yellow" | "green" | "blue" | "red" | "purple";
@@ -67,6 +68,8 @@ export interface EpubHighlightSnapshotRevalidateInput
 	backlinkService?: EpubBacklinkHighlightService;
 	readerService?: EpubReaderEngine | null;
 	highlightRevision?: number;
+	/** When provided, skips another vault-wide collectAllHighlights pass. */
+	preloadedHighlights?: ReaderHighlight[];
 }
 
 interface SnapshotCacheEntry {
@@ -245,8 +248,9 @@ export class EpubHighlightViewSnapshotService {
 		}
 
 		const revalidatePromise = (async () => {
-			const allHighlights =
-				input.annotationService && input.backlinkService && input.filePath
+			const allHighlights = Array.isArray(input.preloadedHighlights)
+				? input.preloadedHighlights
+				: input.annotationService && input.backlinkService && input.filePath
 					? await input.annotationService.collectAllHighlights(
 							input.bookId,
 							input.filePath,
@@ -398,7 +402,7 @@ export class EpubHighlightViewSnapshotService {
 		if (!this.app) {
 			return "";
 		}
-		return getPluginPathsById(this.app as unknown, CURRENT_PLUGIN_ID).cache.incrementalReading
+		return getPluginPathsById(this.app, CURRENT_PLUGIN_ID).cache.incrementalReading
 			.epubAnnotationViewSnapshotsCache;
 	}
 
@@ -544,10 +548,7 @@ export class EpubHighlightViewSnapshotService {
 		highlight: Pick<ReaderHighlight, "style" | "presentation">,
 		showStrikethroughHighlights: boolean
 	): boolean {
-		if (highlight.presentation === "conceal") {
-			return showStrikethroughHighlights;
-		}
-		return highlight.style !== "strikethrough" || showStrikethroughHighlights;
+		return shouldIncludeHighlightInSidebarSnapshot(highlight, showStrikethroughHighlights);
 	}
 
 	private mapDisplayHighlight(

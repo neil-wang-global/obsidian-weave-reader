@@ -1,10 +1,24 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { Menu, setIcon } from 'obsidian';
+	import { Menu, Platform, setIcon } from 'obsidian';
 	import { tr } from '../../utils/i18n';
+	import { domInstanceOf } from '../../utils/dom-instance-of';
+	import { showWeaveMenuAtMouseEvent } from '../../utils/weave-owned-menu';
 	import type { TocItem } from '../../services/epub';
-	import { flattenTocItems, isTocHrefActive } from '../../utils/epub-toc-reading-position';
+	import type { EpubTocChapterMark, EpubTocChapterMarkMap } from '../../services/epub/epub-toc-chapter-mark';
+	import type { EpubTocChapterMarkSettings } from '../../services/epub/epub-toc-chapter-mark-settings';
+	import {
+		EPUB_TOC_CHAPTER_MARK_ORDER,
+		getExplicitTocChapterMark,
+		resolveTocChapterMarkDisplay,
+	} from '../../services/epub/epub-toc-chapter-mark';
+	import {
+		buildTocChapterMarkDefaultLabels,
+		resolveTocChapterMarkDefinitionMap,
+	} from '../../services/epub/epub-toc-chapter-mark-settings';
+import { flattenTocItems, isTocHrefActive, type FlatTocItem } from '../../utils/epub-toc-reading-position';
 	import EpubLoadingState from './EpubLoadingState.svelte';
+	import EpubTocMarkSettingsPopover from './EpubTocMarkSettingsPopover.svelte';
 
 	interface Props {
 		items: TocItem[];
@@ -12,9 +26,18 @@
 		loadFailed?: boolean;
 		activeHref?: string | null;
 		lastReadHref?: string | null;
+		chapterMarks?: EpubTocChapterMarkMap;
+		tocChapterMarkSettings?: EpubTocChapterMarkSettings;
 		autoScrollToActive?: boolean;
 		onNavigate: (href: string) => void;
+		onSetChapterMark?: (item: TocItem, mark: EpubTocChapterMark | null) => void | Promise<void>;
+		onSaveTocChapterMarkSettings?: (settings: EpubTocChapterMarkSettings) => void | Promise<void>;
 		onAddToIncrementalReading?: (item: TocItem, event?: MouseEvent) => void | Promise<void>;
+		onExportChapterMarked?: (
+			item: FlatTocItem,
+			itemIndex: number,
+			flatItems: FlatTocItem[]
+		) => void | Promise<void>;
 	}
 
 	let {
@@ -23,16 +46,61 @@
 		loadFailed = false,
 		activeHref = null,
 		lastReadHref = null,
+		chapterMarks = {},
+		tocChapterMarkSettings = {},
 		autoScrollToActive = true,
 		onNavigate,
+		onSetChapterMark,
+		onSaveTocChapterMarkSettings,
 		onAddToIncrementalReading,
+		onExportChapterMarked,
 	}: Props = $props();
 	let t = $derived($tr);
 
-	type FlatTocItem = TocItem & { depth: number };
+	let defaultMarkLabels = $derived(buildTocChapterMarkDefaultLabels(t));
+
+	let markDefinitionMap = $derived.by(() => {
+		void tocChapterMarkSettings;
+		void defaultMarkLabels;
+		return resolveTocChapterMarkDefinitionMap(tocChapterMarkSettings, defaultMarkLabels);
+	});
 
 	let tocListEl: HTMLDivElement | undefined = $state(undefined);
 	let lastAutoScrolledActiveHref = '';
+	let markSettingsOpen = $state(false);
+	let markSettingsAnchor = $state<{ x: number; y: number } | null>(null);
+
+	function resolvePopoverAnchor(event: MouseEvent | KeyboardEvent): { x: number; y: number } {
+		if (Platform.isMobile) {
+			const viewport = window.visualViewport;
+			const width = viewport?.width ?? window.innerWidth;
+			const height = viewport?.height ?? window.innerHeight;
+			const offsetLeft = viewport?.offsetLeft ?? 0;
+			const offsetTop = viewport?.offsetTop ?? 0;
+			return {
+				x: offsetLeft + width / 2,
+				y: offsetTop + Math.min(height * 0.22, 120),
+			};
+		}
+
+		const x = 'clientX' in event && Number.isFinite(event.clientX)
+			? event.clientX
+			: Math.round(window.innerWidth / 2);
+		const y = 'clientY' in event && Number.isFinite(event.clientY)
+			? event.clientY
+			: Math.round(window.innerHeight / 2);
+		return { x, y };
+	}
+
+	function openMarkSettingsPopover(event: MouseEvent | KeyboardEvent) {
+		markSettingsAnchor = resolvePopoverAnchor(event);
+		markSettingsOpen = true;
+	}
+
+	function closeMarkSettingsPopover() {
+		markSettingsOpen = false;
+		markSettingsAnchor = null;
+	}
 
 	function handleClick(item: TocItem) {
 		onNavigate(item.href);
@@ -45,21 +113,81 @@
 		}
 	}
 
-	function showContextMenu(event: MouseEvent, item: TocItem) {
-		if (!onAddToIncrementalReading) {
+	function showContextMenu(event: MouseEvent, item: FlatTocItem, itemIndex: number) {
+		if (!onSetChapterMark && !onAddToIncrementalReading && !onExportChapterMarked) {
 			return;
 		}
 
 		event.preventDefault();
 		const menu = new Menu();
-		menu.addItem((menuItem) => {
-			menuItem.setTitle(t('epub.toc.addToIncrementalReading'));
-			menuItem.setIcon('book-plus');
-			menuItem.onClick(() => {
-				void onAddToIncrementalReading?.(item, event);
+		const explicitMark = getExplicitTocChapterMark(item.href, chapterMarks);
+		const displayMark = resolveTocChapterMarkDisplay(flatItems, itemIndex, chapterMarks);
+
+		if (onSetChapterMark) {
+			menu.addItem((menuItem) => {
+				menuItem.setTitle(t('epub.toc.markChapter'));
+				menuItem.setIcon('tag');
+				const markSubmenu = menuItem.setSubmenu();
+
+				for (const mark of EPUB_TOC_CHAPTER_MARK_ORDER) {
+					markSubmenu.addItem((subItem) => {
+						subItem.setTitle(markDefinitionMap.get(mark)?.label ?? mark);
+						subItem.setChecked(displayMark === mark);
+						subItem.onClick(() => {
+							void onSetChapterMark?.(item, mark);
+						});
+					});
+				}
+
+				markSubmenu.addItem((subItem) => {
+					subItem.setTitle(t('epub.toc.clearChapterMark'));
+					subItem.setIcon('x');
+					subItem.setDisabled(!explicitMark);
+					subItem.onClick(() => {
+						void onSetChapterMark?.(item, null);
+					});
+				});
+
+				markSubmenu.addSeparator();
+				if (onSaveTocChapterMarkSettings) {
+					markSubmenu.addItem((subItem) => {
+						subItem.setTitle(t('epub.toc.markSettingsAction'));
+						subItem.setIcon('settings-2');
+						subItem.onClick((evt) => {
+							openMarkSettingsPopover(evt);
+						});
+					});
+				}
 			});
-		});
-		menu.showAtMouseEvent(event);
+		}
+
+		if (onAddToIncrementalReading) {
+			if (onSetChapterMark) {
+				menu.addSeparator();
+			}
+			menu.addItem((menuItem) => {
+				menuItem.setTitle(t('epub.toc.addToIncrementalReading'));
+				menuItem.setIcon('book-plus');
+				menuItem.onClick(() => {
+					void onAddToIncrementalReading?.(item, event);
+				});
+			});
+		}
+
+		if (onExportChapterMarked) {
+			if (onSetChapterMark || onAddToIncrementalReading) {
+				menu.addSeparator();
+			}
+			menu.addItem((menuItem) => {
+				menuItem.setTitle(t('views.epubView.menu.exportCurrentChapterMarked'));
+				menuItem.setIcon('highlighter');
+				menuItem.onClick(() => {
+					void onExportChapterMarked?.(item, itemIndex, flatItems);
+				});
+			});
+		}
+
+		showWeaveMenuAtMouseEvent(menu, event);
 	}
 
 	function isLastReadItem(item: FlatTocItem): boolean {
@@ -98,6 +226,20 @@
 		return undefined;
 	}
 
+	function resolveMarkTitle(mark: EpubTocChapterMark | null): string | undefined {
+		if (!mark) {
+			return undefined;
+		}
+		return markDefinitionMap.get(mark)?.label;
+	}
+
+	function resolveMarkColor(mark: EpubTocChapterMark | null): string | undefined {
+		if (!mark) {
+			return undefined;
+		}
+		return markDefinitionMap.get(mark)?.color;
+	}
+
 	let flatItems = $derived(flattenTocItems(items));
 
 	$effect(() => {
@@ -116,7 +258,7 @@
 		}
 		void tick().then(() => {
 			const activeEl = tocListEl?.querySelector('.epub-toc-item.active');
-			const found = activeEl instanceof HTMLElement;
+			const found = domInstanceOf(activeEl, HTMLElement);
 			if (found) {
 				activeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 				lastAutoScrolledActiveHref = href;
@@ -138,16 +280,22 @@
 			bind:this={tocListEl}
 			aria-label={t('epub.toc.ariaLabel')}
 		>
-			{#each flatItems as item (item.id)}
+			{#each flatItems as item, itemIndex (item.id)}
 				{@const isActive = isActiveItem(item)}
 				{@const isLastRead = isLastReadItem(item)}
+				{@const chapterMark = resolveTocChapterMarkDisplay(flatItems, itemIndex, chapterMarks)}
+				{@const markColor = resolveMarkColor(chapterMark)}
 				<div
 					class="epub-toc-item"
 					class:active={isActive}
 					class:is-last-read={isLastRead}
+					class:toc-mark-important={chapterMark === 'important'}
+					class:toc-mark-question={chapterMark === 'question'}
+					class:toc-mark-mastered={chapterMark === 'mastered'}
+					class:toc-mark-incremental={chapterMark === 'incremental'}
 					style={`--toc-depth:${item.depth};`}
 					onclick={() => handleClick(item)}
-					oncontextmenu={(event) => showContextMenu(event, item)}
+					oncontextmenu={(event) => showContextMenu(event, item, itemIndex)}
 					onkeydown={(event) => handleKeydown(event, item)}
 					role="button"
 					tabindex="0"
@@ -156,7 +304,13 @@
 					data-last-read={isLastRead ? 'true' : undefined}
 					data-item-id={item.id}
 				>
-					<span class="toc-bullet" aria-hidden="true"></span>
+					<span
+						class="toc-bullet"
+						class:toc-mark-custom={Boolean(chapterMark && markColor)}
+						style={markColor ? `--toc-mark-color:${markColor};` : undefined}
+						title={resolveMarkTitle(chapterMark)}
+						aria-hidden="true"
+					></span>
 					<span class="toc-title">{item.label}</span>
 					<span class="toc-trailing">
 						{#if isActive}
@@ -187,6 +341,16 @@
 		</div>
 	{/if}
 </div>
+
+<EpubTocMarkSettingsPopover
+	open={markSettingsOpen}
+	anchor={markSettingsAnchor}
+	settings={tocChapterMarkSettings}
+	onClose={closeMarkSettingsPopover}
+	onSave={async (nextSettings) => {
+		await onSaveTocChapterMarkSettings?.(nextSettings);
+	}}
+/>
 
 <style>
 	.epub-toc-panel {
@@ -241,17 +405,21 @@
 
 	.toc-bullet {
 		flex: 0 0 auto;
-		width: 4px;
-		height: 4px;
+		width: 6px;
+		height: 6px;
 		border-radius: 999px;
 		background: color-mix(in srgb, var(--text-faint) 72%, transparent);
 	}
 
-	.epub-toc-item.active .toc-bullet {
+	.toc-bullet.toc-mark-custom {
+		background: var(--toc-mark-color);
+	}
+
+	.epub-toc-item.active:not(.toc-mark-important):not(.toc-mark-question):not(.toc-mark-mastered):not(.toc-mark-incremental) .toc-bullet {
 		background: var(--interactive-accent);
 	}
 
-	.epub-toc-item.is-last-read .toc-bullet {
+	.epub-toc-item.is-last-read:not(.toc-mark-important):not(.toc-mark-question):not(.toc-mark-mastered):not(.toc-mark-incremental) .toc-bullet {
 		background: var(--interactive-accent);
 	}
 

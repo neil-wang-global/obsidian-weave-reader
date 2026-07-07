@@ -8,6 +8,7 @@ import {
 	readBlobUrlAsText,
 } from "../../utils/blob-url-text";
 import "../../utils/blob-url-registry";
+import { createDivInDocument } from "../../utils/obsidian-document-dom";
 import { domInstanceOf } from "../../utils/dom-instance-of";
 import { logger } from "../../utils/logger";
 import { readVaultBinaryData } from "./EpubBinaryData";
@@ -23,8 +24,17 @@ import { inlineFoliateBlobMarkup, shouldRemoveHttpEquivMeta } from "./foliate-bl
 import * as EpubCfi from "./epub-cfi";
 import type { TocItem } from "./types";
 import type { EpubChapterLocationFormat } from "./epub-excerpt-settings";
-import { resolveChapterLocationLabel } from "../../utils/epub-chapter-location-label";
+import {
+	getSplitSectionParentBasename,
+	resolveChapterLocationLabel,
+} from "../../utils/epub-chapter-location-label";
+import { tocHrefBasename } from "../../utils/epub-toc-reading-position";
 import type { EpubBookFootnoteEntry, EpubBookFootnotesDraft } from "./reader-engine-types";
+import {
+	extractTocHrefFragment,
+	resolveTocExportEndBoundary,
+	type FlatTocExportItem,
+} from "./epub-toc-export-scope";
 
 const EPUB_OPS_NAMESPACE = "http://www.idpf.org/2007/ops";
 const POSITION_CHAR_BUCKET = 1800;
@@ -269,6 +279,7 @@ export class FoliateVaultPublicationParser {
 	private filePath = "";
 	private fileName = "";
 	private tocItems: TocItem[] = [];
+	private tocSpineIndexByHref = new Map<string, number>();
 	private sectionDescriptors: SectionDescriptor[] = [];
 	private sectionTitleByHref = new Map<string, string>();
 	private rawDocumentCache = new Map<string, Document>();
@@ -383,6 +394,9 @@ export class FoliateVaultPublicationParser {
 			};
 		}
 		await this.buildSectionDescriptors();
+		void this.hydrateTocSpineIndices().catch((error) => {
+			logger.warn("[FoliateVaultPublicationParser] Failed to hydrate TOC spine indices:", error);
+		});
 		// Accurate word counts / page positions are non-critical for first paint.
 		void this.hydrateSectionDescriptorMetrics().catch((error) => {
 			logger.warn("[FoliateVaultPublicationParser] Failed to hydrate section metrics:", error);
@@ -473,7 +487,11 @@ export class FoliateVaultPublicationParser {
 			this.tocItems,
 			href,
 			this.getSectionTitleByIndex(index),
-			format
+			format,
+			{
+				sectionIndex: index,
+				resolveSpineIndex: (tocHref) => this.resolveTocHrefSpineIndex(tocHref),
+			}
 		);
 	}
 
@@ -514,6 +532,60 @@ export class FoliateVaultPublicationParser {
 			cfi: resolved.cfi || this.getBaseSectionCfi(resolved.index),
 			chapterIndex: resolved.index,
 			chapterHref: resolved.href,
+			markdown: markdownExport.markdown || text,
+			assets: markdownExport.assets,
+		};
+	}
+
+	async getTocReadingPointDraft(
+		href: string,
+		titleHint: string | undefined,
+		flatTocItems: FlatTocExportItem[],
+		itemIndex: number
+	): Promise<FoliateSectionReadingPointDraft | null> {
+		const resolved = await this.resolveHrefTarget(href, titleHint);
+		if (!resolved?.doc) {
+			return null;
+		}
+
+		const title = this.normalizeReadingPointTitle(
+			titleHint ||
+				this.getSectionTitleByHref(resolved.href) ||
+				this.getSectionTitleByIndex(resolved.index) ||
+				`章节 ${resolved.index + 1}`
+		);
+		const startElement = this.resolveTocExportStartElement(
+			resolved.doc,
+			href,
+			titleHint,
+			resolved.range
+		);
+		if (!startElement) {
+			return null;
+		}
+
+		const endBoundary = resolveTocExportEndBoundary(flatTocItems, itemIndex);
+		const endElement = endBoundary
+			? this.resolveTocExportBoundaryElement(resolved.doc, endBoundary.href, endBoundary.label)
+			: null;
+		const scopedRoot = this.buildTocScopedExportRoot(resolved.doc, startElement, endElement);
+		if (!scopedRoot) {
+			return null;
+		}
+
+		const markdownExport = await this.buildSectionMarkdownExport(scopedRoot, resolved.href, title);
+		const extractedText = markdownExport.plainText || this.extractReadableSectionText(scopedRoot);
+		const text = this.stripLeadingSectionTitle(extractedText, title);
+		if (!text) {
+			return null;
+		}
+
+		return {
+			title,
+			text,
+			cfi: resolved.cfi || this.getBaseSectionCfi(resolved.index),
+			chapterIndex: resolved.index,
+			chapterHref: href,
 			markdown: markdownExport.markdown || text,
 			assets: markdownExport.assets,
 		};
@@ -956,6 +1028,7 @@ export class FoliateVaultPublicationParser {
 		this.filePath = "";
 		this.fileName = "";
 		this.tocItems = [];
+		this.tocSpineIndexByHref.clear();
 		this.sectionDescriptors = [];
 		this.sectionTitleByHref.clear();
 		this.rawDocumentCache.clear();
@@ -1562,6 +1635,90 @@ export class FoliateVaultPublicationParser {
 		return "";
 	}
 
+	private async hydrateTocSpineIndices(): Promise<void> {
+		for (const href of this.collectTocHrefs(this.tocItems)) {
+			const normalized = this.normalizeInternalHref(this.packageDocumentPath || href, href);
+			if (this.tocSpineIndexByHref.has(href) || this.tocSpineIndexByHref.has(normalized)) {
+				continue;
+			}
+			try {
+				const resolved = await Promise.resolve(this.getBook().resolveHref(normalized));
+				if (typeof resolved?.index === "number" && resolved.index >= 0) {
+					this.cacheTocSpineIndex(href, resolved.index);
+					this.cacheTocSpineIndex(normalized, resolved.index);
+				}
+			} catch {
+				/* ignore */
+			}
+		}
+	}
+
+	private cacheTocSpineIndex(href: string, index: number): void {
+		const trimmed = String(href || "").trim();
+		if (!trimmed) {
+			return;
+		}
+		this.tocSpineIndexByHref.set(trimmed, index);
+	}
+
+	private hrefBasenameWithoutExtension(href: string): string {
+		const basename = tocHrefBasename(href);
+		return basename.replace(/\.[^.]+$/, "");
+	}
+
+	private resolveTocHrefSpineIndex(href: string): number {
+		const trimmed = String(href || "").trim();
+		if (!trimmed) {
+			return -1;
+		}
+
+		const cached = this.tocSpineIndexByHref.get(trimmed);
+		if (cached !== undefined) {
+			return cached;
+		}
+
+		const normalized = this.normalizeInternalHref(this.packageDocumentPath || trimmed, trimmed);
+		const cachedNormalized = this.tocSpineIndexByHref.get(normalized);
+		if (cachedNormalized !== undefined) {
+			return cachedNormalized;
+		}
+
+		const exactIndex = this.getSectionIndexForHref(normalized);
+		if (exactIndex >= 0) {
+			this.cacheTocSpineIndex(trimmed, exactIndex);
+			this.cacheTocSpineIndex(normalized, exactIndex);
+			return exactIndex;
+		}
+
+		const tocParentBasename =
+			getSplitSectionParentBasename(normalized) || this.hrefBasenameWithoutExtension(normalized);
+		for (const section of this.sectionDescriptors) {
+			const sectionBasename = this.hrefBasenameWithoutExtension(section.href);
+			if (sectionBasename === tocParentBasename) {
+				this.cacheTocSpineIndex(trimmed, section.index);
+				this.cacheTocSpineIndex(normalized, section.index);
+				return section.index;
+			}
+			const splitParent = getSplitSectionParentBasename(section.href);
+			if (splitParent && splitParent === tocParentBasename) {
+				this.cacheTocSpineIndex(trimmed, section.index);
+				this.cacheTocSpineIndex(normalized, section.index);
+				return section.index;
+			}
+		}
+
+		const tocBasename = tocHrefBasename(normalized);
+		for (const section of this.sectionDescriptors) {
+			if (tocHrefBasename(section.href) === tocBasename) {
+				this.cacheTocSpineIndex(trimmed, section.index);
+				this.cacheTocSpineIndex(normalized, section.index);
+				return section.index;
+			}
+		}
+
+		return -1;
+	}
+
 	private collectTocHrefs(items: TocItem[]): string[] {
 		const results: string[] = [];
 		const visit = (entries: TocItem[]) => {
@@ -2144,6 +2301,115 @@ export class FoliateVaultPublicationParser {
 		const range = node.ownerDocument.createRange();
 		range.selectNode(node);
 		return range;
+	}
+
+	private resolveTocExportStartElement(
+		doc: Document,
+		href: string,
+		titleHint: string | undefined,
+		fallbackRange: Range | null | undefined
+	): Element | null {
+		const root = doc.body || doc.documentElement;
+		const fragment = extractTocHrefFragment(href) || this.extractHrefFragment(href);
+		if (fragment) {
+			const byFragment = this.findFragmentTargetElement(doc, fragment);
+			if (byFragment) {
+				return byFragment;
+			}
+		}
+
+		const byTitle = titleHint?.trim()
+			? this.findTocExportHeadingElement(root, titleHint)
+			: null;
+		if (byTitle) {
+			return byTitle;
+		}
+
+		return this.resolveRangeBlockElement(root, fallbackRange);
+	}
+
+	private resolveTocExportBoundaryElement(
+		doc: Document,
+		href: string,
+		label: string
+	): Element | null {
+		const fragment = extractTocHrefFragment(href) || this.extractHrefFragment(href);
+		if (fragment) {
+			const byFragment = this.findFragmentTargetElement(doc, fragment);
+			if (byFragment) {
+				return byFragment;
+			}
+		}
+		return this.findTocExportHeadingElement(doc.body || doc.documentElement, label);
+	}
+
+	private findTocExportHeadingElement(root: Element, label: string): Element | null {
+		const normalizedLabel = this.normalizeReadingPointTitle(label);
+		if (!normalizedLabel) {
+			return null;
+		}
+
+		const quoteRange = this.findRangeByTextQuote(root, { highlight: normalizedLabel });
+		if (quoteRange) {
+			return this.resolveRangeBlockElement(root, quoteRange);
+		}
+
+		for (const heading of Array.from(root.querySelectorAll("h1,h2,h3,h4,h5,h6"))) {
+			if (
+				this.normalizeReadingPointTitle(String(heading.textContent || "")) === normalizedLabel
+			) {
+				return heading;
+			}
+		}
+
+		return null;
+	}
+
+	private resolveRangeBlockElement(root: Element, range: Range | null | undefined): Element | null {
+		if (!range) {
+			return null;
+		}
+
+		let node: Node | null = range.startContainer;
+		if (node.nodeType === Node.TEXT_NODE) {
+			node = node.parentElement;
+		}
+		while (node && domInstanceOf(node, Element) && node !== root) {
+			const tag = node.tagName.toUpperCase();
+			if (/^H[1-6]$/.test(tag) || tag === "P" || tag === "DIV" || tag === "SECTION" || tag === "ARTICLE") {
+				return node;
+			}
+			node = node.parentElement;
+		}
+
+		return domInstanceOf(node, Element) ? node : root;
+	}
+
+	private buildTocScopedExportRoot(
+		doc: Document,
+		startElement: Element,
+		endElement: Element | null
+	): Element | null {
+		const root = doc.body || doc.documentElement;
+		const range = doc.createRange();
+		range.setStart(startElement, 0);
+		if (endElement && endElement !== startElement && root.contains(endElement)) {
+			const position = startElement.compareDocumentPosition(endElement);
+			if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+				range.setEndBefore(endElement);
+			} else {
+				range.setEnd(root, root.childNodes.length);
+			}
+		} else {
+			range.setEnd(root, root.childNodes.length);
+		}
+
+		const wrapper = createDivInDocument(doc);
+		wrapper.appendChild(range.cloneContents());
+		if (!String(wrapper.textContent || "").replace(/\s+/g, "").trim()) {
+			return null;
+		}
+		return wrapper;
 	}
 
 	private createDocumentStartRange(doc: Document): Range | null {
@@ -2813,7 +3079,7 @@ export class FoliateVaultPublicationParser {
 		try {
 			const fragment = range.cloneContents();
 			const ownerDocument = range.commonAncestorContainer.ownerDocument || activeDocument;
-			const container = ownerDocument.createElement("div");
+			const container = createDivInDocument(ownerDocument);
 			container.appendChild(fragment);
 			this.removeFootnoteBacklinks(container);
 			return this.normalizeFootnoteExportText(

@@ -1,9 +1,8 @@
 import { TFile } from "obsidian";
 import JSZip from "jszip";
+import * as blobUrlText from "../../../utils/blob-url-text";
 import { readVaultBinaryData } from "../EpubBinaryData";
 import { logger } from "../../../utils/logger";
-
-const originalFetch = globalThis.fetch;
 
 async function createRealZipArrayBuffer(name: string, content = "demo-epub-payload"): Promise<ArrayBuffer> {
   const zip = new JSZip();
@@ -28,24 +27,13 @@ function createMockFile(path: string, size: number) {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  if (typeof originalFetch === "function") {
-    globalThis.fetch = originalFetch;
-  } else {
-    Reflect.deleteProperty(globalThis, "fetch");
-  }
 });
 
 describe("readVaultBinaryData", () => {
   it("returns the primary vault.readBinary payload when its size matches the vault file stat", async () => {
     const exact = await createRealZipArrayBuffer("content.xhtml", "exact-zip");
     const file = createMockFile("Books/exact.epub", exact.byteLength);
-    const fetchSpy = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      arrayBuffer: async () => await createRealZipArrayBuffer("fallback.xhtml", "fallback-short"),
-    }));
-    (globalThis as typeof globalThis & { fetch?: typeof fetch }).fetch = fetchSpy as unknown as typeof fetch;
+    const resourceSpy = vi.spyOn(blobUrlText, "readResourceUrlAsArrayBuffer");
 
     const app = {
       vault: {
@@ -62,20 +50,16 @@ describe("readVaultBinaryData", () => {
     expect(result.byteLength).toBe(exact.byteLength);
     expect(app.vault.readBinary).toHaveBeenCalledTimes(1);
     expect(app.vault.adapter.readBinary).not.toHaveBeenCalled();
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(resourceSpy).not.toHaveBeenCalled();
   });
 
-  it("falls back to fetching the resource path when native binary reads return a truncated EPUB", async () => {
+  it("falls back to xhr resource read when native binary reads return a truncated EPUB", async () => {
     const exact = await createRealZipArrayBuffer("chapter.xhtml", "mobile-complete-zip");
     const truncated = exact.slice(0, Math.max(8, exact.byteLength - 12));
     const file = createMockFile("Books/mobile.epub", exact.byteLength);
-    const fetchSpy = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      arrayBuffer: async () => exact,
-    }));
-    (globalThis as typeof globalThis & { fetch?: typeof fetch }).fetch = fetchSpy as unknown as typeof fetch;
+    const resourceSpy = vi
+      .spyOn(blobUrlText, "readResourceUrlAsArrayBuffer")
+      .mockResolvedValue(exact);
 
     const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
 
@@ -94,7 +78,8 @@ describe("readVaultBinaryData", () => {
     expect(result.byteLength).toBe(exact.byteLength);
     expect(app.vault.readBinary).toHaveBeenCalledTimes(1);
     expect(app.vault.adapter.readBinary).toHaveBeenCalledTimes(1);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(resourceSpy).toHaveBeenCalledTimes(1);
+    expect(resourceSpy).toHaveBeenCalledWith("app://resource/mobile.epub");
     expect(warnSpy).toHaveBeenCalledWith(
       "[EpubBinaryData] Recovered EPUB binary through fallback read strategy",
       expect.objectContaining({
@@ -119,13 +104,9 @@ describe("readVaultBinaryData", () => {
     });
     new Uint8Array(corrupted)[4] = 0x63;
 
-    const fetchSpy = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      arrayBuffer: async () => recovered,
-    }));
-    (globalThis as typeof globalThis & { fetch?: typeof fetch }).fetch = fetchSpy as unknown as typeof fetch;
+    const resourceSpy = vi
+      .spyOn(blobUrlText, "readResourceUrlAsArrayBuffer")
+      .mockResolvedValue(recovered);
 
     const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
 
@@ -144,7 +125,8 @@ describe("readVaultBinaryData", () => {
     expect(result.byteLength).toBe(recovered.byteLength);
     expect(result[4]).not.toBe(0x63);
     expect(app.vault.adapter.readBinary).toHaveBeenCalledTimes(1);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(resourceSpy).toHaveBeenCalledTimes(1);
+    expect(resourceSpy).toHaveBeenCalledWith("app://resource/corrupted.epub");
     expect(warnSpy).toHaveBeenCalledWith(
       "[EpubBinaryData] Recovered EPUB binary through fallback read strategy",
       expect.objectContaining({

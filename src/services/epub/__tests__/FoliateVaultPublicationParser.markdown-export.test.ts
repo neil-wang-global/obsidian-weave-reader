@@ -79,6 +79,52 @@ async function createMarkdownExportEpubBuffer(): Promise<ArrayBuffer> {
 	return zip.generateAsync({ type: "arraybuffer" });
 }
 
+async function createHierarchicalTocExportEpubBuffer(): Promise<ArrayBuffer> {
+	const zip = new JSZip();
+	zip.file("mimetype", "application/epub+zip");
+	zip.file(
+		"META-INF/container.xml",
+		`<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+	<rootfiles>
+		<rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml" />
+	</rootfiles>
+</container>`
+	);
+	zip.file(
+		"OEBPS/content.opf",
+		`<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="2.0">
+	<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+		<dc:title>Hierarchical Export Book</dc:title>
+		<dc:language>zh-CN</dc:language>
+	</metadata>
+	<manifest>
+		<item id="chapter-1" href="Text/chapter1.xhtml" media-type="application/xhtml+xml" />
+	</manifest>
+	<spine>
+		<itemref idref="chapter-1" />
+	</spine>
+</package>`
+	);
+	zip.file(
+		"OEBPS/Text/chapter1.xhtml",
+		`<html xmlns="http://www.w3.org/1999/xhtml">
+<body>
+	<h1 id="id-a">Part A</h1>
+	<p>Alpha content.</p>
+	<h2 id="id-b">Section B</h2>
+	<p>Beta content.</p>
+	<h3 id="id-c">Section C</h3>
+	<p>Gamma only content.</p>
+	<h3 id="id-d">Section D</h3>
+	<p>Delta content.</p>
+</body>
+</html>`
+	);
+	return zip.generateAsync({ type: "arraybuffer" });
+}
+
 function createMockApp(binary: ArrayBuffer) {
 	const file = Object.assign(Object.create(TFile.prototype), {
 		path: "Books/markdown-export.epub",
@@ -123,6 +169,60 @@ describe("FoliateVaultPublicationParser markdown export", () => {
 			expect(draft?.assets?.[0]?.suggestedName).toBe("figure.png");
 			expect(draft?.assets?.[0]?.mimeType).toBe("image/png");
 			expect(draft?.assets?.[0]?.data.length).toBeGreaterThan(0);
+		} finally {
+			parser.dispose();
+		}
+	});
+
+	it("exports only the scoped toc node instead of parent and sibling sections", async () => {
+		const binary = await createHierarchicalTocExportEpubBuffer();
+		const parser = new FoliateVaultPublicationParser(createMockApp(binary) as any);
+		const flatTocItems = [
+			{
+				id: "a",
+				label: "Part A",
+				href: "Text/chapter1.xhtml#id-a",
+				level: 0,
+				depth: 0,
+			},
+			{
+				id: "b",
+				label: "Section B",
+				href: "Text/chapter1.xhtml#id-b",
+				level: 1,
+				depth: 1,
+			},
+			{
+				id: "c",
+				label: "Section C",
+				href: "Text/chapter1.xhtml#id-c",
+				level: 2,
+				depth: 2,
+			},
+			{
+				id: "d",
+				label: "Section D",
+				href: "Text/chapter1.xhtml#id-d",
+				level: 2,
+				depth: 2,
+			},
+		];
+
+		try {
+			await parser.load("Books/markdown-export.epub");
+			const draft = await parser.getTocReadingPointDraft(
+				"Text/chapter1.xhtml#id-c",
+				"Section C",
+				flatTocItems,
+				2
+			);
+
+			expect(draft).toBeTruthy();
+			expect(draft?.text).toContain("Gamma only content.");
+			expect(draft?.text).not.toContain("Beta content.");
+			expect(draft?.text).not.toContain("Delta content.");
+			expect(draft?.text).not.toContain("Alpha content.");
+			expect(draft?.chapterHref).toBe("Text/chapter1.xhtml#id-c");
 		} finally {
 			parser.dispose();
 		}

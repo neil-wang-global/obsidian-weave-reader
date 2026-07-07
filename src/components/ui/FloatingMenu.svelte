@@ -9,6 +9,7 @@
 -->
 <script lang="ts">
   import { logger } from '../../utils/logger';
+  import { domInstanceOf } from '../../utils/dom-instance-of';
 
   import { onMount, onDestroy, tick } from 'svelte';
   import { autoUpdate, computePosition, flip, shift, offset, type Placement } from '@floating-ui/dom';
@@ -84,9 +85,9 @@
   }
 
   function mountToBody() {
-    if (!menuElement || typeof document === 'undefined') return;
-    if (menuElement.parentNode === document.body) return;
-    document.body.appendChild(menuElement);
+    if (!menuElement || typeof activeDocument === 'undefined') return;
+    if (menuElement.parentNode === activeDocument.body) return;
+    activeDocument.body.appendChild(menuElement);
   }
 
   function stopAutoPositioning() {
@@ -96,8 +97,8 @@
   }
 
   function removeMenuElementFromBody() {
-    if (!menuElement || typeof document === 'undefined') return;
-    if (menuElement.parentNode === document.body) {
+    if (!menuElement || typeof activeDocument === 'undefined') return;
+    if (menuElement.parentNode === activeDocument.body) {
       menuElement.remove();
     }
   }
@@ -135,7 +136,7 @@
 
     // Obsidian 原生 Menu 的 DOM 在 body 下，不在 FloatingMenu 内部
     // 点击 Menu 菜单项时不应关闭 FloatingMenu
-    if (target instanceof Element && target.closest('.menu')) {
+    if (domInstanceOf(target, Element) && target.closest('.menu')) {
       return;
     }
 
@@ -179,16 +180,16 @@
   // 监听点击外部和键盘事件
   onMount(() => {
     // 添加全局事件监听
-    document.addEventListener('pointerdown', handlePointerDownOutside, true);
-    document.addEventListener('mousedown', handleClickOutside, true);
-    document.addEventListener('keydown', handleKeydown);
+    activeDocument.addEventListener('pointerdown', handlePointerDownOutside, true);
+    activeDocument.addEventListener('mousedown', handleClickOutside, true);
+    activeDocument.addEventListener('keydown', handleKeydown);
   });
 
   onDestroy(() => {
     // 清理事件监听
-    document.removeEventListener('pointerdown', handlePointerDownOutside, true);
-    document.removeEventListener('mousedown', handleClickOutside, true);
-    document.removeEventListener('keydown', handleKeydown);
+    activeDocument.removeEventListener('pointerdown', handlePointerDownOutside, true);
+    activeDocument.removeEventListener('mousedown', handleClickOutside, true);
+    activeDocument.removeEventListener('keydown', handleKeydown);
     stopAutoPositioning();
     removeMenuElementFromBody();
   });

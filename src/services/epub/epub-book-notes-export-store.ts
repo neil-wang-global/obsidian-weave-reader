@@ -98,11 +98,7 @@ export function normalizeBookNotesExportExcerptFields(
 	}
 	return {
 		bookNotesExportTemplatePath,
-		bookNotesExportTemplateFolder:
-			typeof settings.bookNotesExportTemplateFolder === "string" &&
-			settings.bookNotesExportTemplateFolder.trim()
-				? settings.bookNotesExportTemplateFolder.trim()
-				: DEFAULT_EPUB_EXCERPT_SETTINGS.bookNotesExportTemplateFolder,
+		bookNotesExportTemplateFolder: templateFolder,
 		bookNotesExportLegacyTemplate: resolvedLegacyTemplate,
 		bookNotesExportTargetMode:
 			settings.bookNotesExportTargetMode === "append"

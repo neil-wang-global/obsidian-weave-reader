@@ -5,13 +5,16 @@
 		type BookNotesExportTemplateListItem,
 	} from "../../services/epub/book-notes-export/template-catalog";
 	import { resolveBookNotesExportTemplateFolder } from "../../services/epub/book-notes-export/template-folder";
+	import { domInstanceOf } from "../../utils/dom-instance-of";
 	import { getVaultFileBasename } from "../../utils/VaultMarkdownFileSuggest";
 	import { tr } from "../../utils/i18n";
+	import { fromStore } from "svelte/store";
 
 	interface Props {
 		app: App;
 		templatePath?: string | null;
 		templateFolderSettings?: { bookNotesExportTemplateFolder?: string | null } | null;
+		settingsReady?: boolean;
 		active?: boolean;
 		onSelect?: (path: string) => void | Promise<void>;
 	}
@@ -20,16 +23,22 @@
 		app,
 		templatePath = null,
 		templateFolderSettings = null,
+		settingsReady = true,
 		active = true,
 		onSelect,
 	}: Props = $props();
 
-	let t = $derived($tr);
+	const trState = fromStore(tr);
+	let t = $derived(trState.current);
 	let templates = $state<BookNotesExportTemplateListItem[]>([]);
 	let isLoading = $state(false);
 
 	const selectedPath = $derived(String(templatePath || "").trim());
-	const templateFolder = $derived(resolveBookNotesExportTemplateFolder(templateFolderSettings));
+	const templateFolder = $derived(
+		resolveBookNotesExportTemplateFolder(templateFolderSettings, {
+			allowDefaultFallback: settingsReady,
+		})
+	);
 
 	const displayTemplates = $derived.by(() => {
 		const items = [...templates];
@@ -62,7 +71,8 @@
 
 	$effect(() => {
 		templateFolder;
-		if (!active) {
+		settingsReady;
+		if (!active || !settingsReady || !templateFolder) {
 			return;
 		}
 		void refreshTemplates();
@@ -70,7 +80,7 @@
 
 	function handleChange(event: Event): void {
 		const target = event.currentTarget;
-		if (!(target instanceof HTMLSelectElement)) {
+		if (!domInstanceOf(target, HTMLSelectElement)) {
 			return;
 		}
 		const nextPath = String(target.value || "").trim();

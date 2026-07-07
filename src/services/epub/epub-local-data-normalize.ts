@@ -1,4 +1,5 @@
 import { normalizePath } from "obsidian";
+import { normalizeChapterLocationFormat } from "../../utils/epub-chapter-location-label";
 import { unknownPlainText } from "../../utils/unknown-plain-text";
 import { normalizeCanvasExcerptAnchorsMap } from "./canvas-excerpt-anchor";
 import {
@@ -24,6 +25,8 @@ import type {
 	EpubSourceRegistryEntry,
 	EpubStoredBookDescriptor,
 } from "./epub-local-data-types";
+import { normalizeTocChapterMarkMap } from "./epub-toc-chapter-mark";
+import { normalizeTocChapterMarkSettings } from "./epub-toc-chapter-mark-settings";
 import {
 	DEFAULT_READER_SETTINGS,
 	getDefaultEpubReaderSettings,
@@ -88,6 +91,7 @@ export function normalizePluginUiMemory(value: unknown): EpubPluginUiMemory {
 		),
 		bookshelfSearchQuery:
 			typeof record.bookshelfSearchQuery === "string" ? record.bookshelfSearchQuery : "",
+		readerTutorialDismissed: record.readerTutorialDismissed === true,
 	};
 }
 
@@ -351,6 +355,9 @@ export function normalizeLocalBookRecord(value: unknown): EpubReaderLocalBookRec
 	if (Object.prototype.hasOwnProperty.call(record, "concealedTexts")) {
 		normalized.concealedTexts = normalizeConcealedTexts(record.concealedTexts);
 	}
+	if (Object.prototype.hasOwnProperty.call(record, "tocChapterMarks")) {
+		normalized.tocChapterMarks = normalizeTocChapterMarkMap(record.tocChapterMarks);
+	}
 	return normalized;
 }
 
@@ -378,12 +385,7 @@ export function normalizeExcerptSettings(value: unknown): EpubExcerptSettings {
 			typeof settings.addCreationTime === "boolean"
 				? settings.addCreationTime
 				: DEFAULT_EPUB_EXCERPT_SETTINGS.addCreationTime,
-		chapterLocationFormat:
-			settings.chapterLocationFormat === "root" ||
-			settings.chapterLocationFormat === "leaf" ||
-			settings.chapterLocationFormat === "full"
-				? settings.chapterLocationFormat
-				: DEFAULT_EPUB_EXCERPT_SETTINGS.chapterLocationFormat,
+		chapterLocationFormat: normalizeChapterLocationFormat(settings.chapterLocationFormat),
 		strikethroughDisplayMode:
 			settings.strikethroughDisplayMode === "conceal"
 				? "conceal"
@@ -496,6 +498,9 @@ export function normalizeLocalReaderData(value: unknown): EpubReaderLocalDataFil
 	if (Object.prototype.hasOwnProperty.call(record, "canvasExcerptAnchors")) {
 		normalized.canvasExcerptAnchors = normalizeCanvasExcerptAnchorsMap(record.canvasExcerptAnchors);
 	}
+	if (Object.prototype.hasOwnProperty.call(record, "tocChapterMarkSettings")) {
+		normalized.tocChapterMarkSettings = normalizeTocChapterMarkSettings(record.tocChapterMarkSettings);
+	}
 
 	return normalized;
 }
@@ -505,7 +510,8 @@ export function hasRetainedLocalBookData(record: EpubReaderLocalBookRecord): boo
 		record.state ||
 			Object.prototype.hasOwnProperty.call(record, "lastOpenBookmark") ||
 			Object.prototype.hasOwnProperty.call(record, "readingReferencePoint") ||
-			Object.prototype.hasOwnProperty.call(record, "concealedTexts")
+			Object.prototype.hasOwnProperty.call(record, "concealedTexts") ||
+			(record.tocChapterMarks && Object.keys(record.tocChapterMarks).length > 0)
 	);
 }
 

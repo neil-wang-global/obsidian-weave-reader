@@ -62,6 +62,12 @@
                 shouldUseBookshelfGridPaintOptimization,
                 shouldUseBookshelfListVirtualScroll,
         } from '../../services/epub/bookshelf-display-performance';
+        import {
+                dispatchEpubBookshelfDataChanged,
+                dispatchEpubBookshelfRefreshRequest,
+                readBookshelfDataChangedDetail,
+                readBookshelfRefreshRequestDetail,
+        } from '../../services/epub/bookshelf-data-events';
         import VirtualScroll from '../ui/VirtualScroll.svelte';
         import { isVaultImageFile, resolveVaultImageResourceUrl } from '../../utils/vault-image-cover';
 
@@ -155,7 +161,7 @@
         let searchQuery = $state('');
         let searching = $state(false);
         let bookshelfSearchReady = false;
-        let bookshelfSearchPersistTimer: ReturnType<typeof setTimeout> | null = null;
+        let bookshelfSearchPersistTimer: ReturnType<typeof window.setTimeout> | null = null;
         let bookshelfDisplayMode = $state<BookshelfDisplayMode>('adaptive');
         let bookshelfPremiumUiRevision = $state(0);
         let canShowBookshelfProgress = $derived.by(() => {
@@ -172,11 +178,11 @@
         let pendingBookshelfRefresh = false;
         let pendingBookshelfRefreshNotice = false;
         let suppressBookshelfDataChangedReload = false;
-        let coverLoadTimer: ReturnType<typeof setTimeout> | null = null;
-        let metadataRetryTimer: ReturnType<typeof setTimeout> | null = null;
+        let coverLoadTimer: ReturnType<typeof window.setTimeout> | null = null;
+        let metadataRetryTimer: ReturnType<typeof window.setTimeout> | null = null;
         const storageService = untrack(() => getEpubStorageService(app));
         const coverCache = new Map<string, string | null>();
-        let coverPersistTimer: ReturnType<typeof setTimeout> | null = null;
+        let coverPersistTimer: ReturnType<typeof window.setTimeout> | null = null;
         const coverPersistPending = new Map<string, string | null>();
         const BOOKSHELF_DATA_CHANGED_EVENT = EPUB_RUNTIME.events.bookshelfDataChanged;
         const BOOKSHELF_REFRESH_REQUEST_EVENT = EPUB_RUNTIME.events.bookshelfRefreshRequest;
@@ -283,9 +289,9 @@
                         return;
                 }
                 if (bookshelfSearchPersistTimer) {
-                        clearTimeout(bookshelfSearchPersistTimer);
+                        window.clearTimeout(bookshelfSearchPersistTimer);
                 }
-                bookshelfSearchPersistTimer = setTimeout(() => {
+                bookshelfSearchPersistTimer = window.setTimeout(() => {
                         bookshelfSearchPersistTimer = null;
                         void storageService.saveBookshelfSearchQuery(query);
                 }, 300);
@@ -296,7 +302,7 @@
                         return;
                 }
                 if (bookshelfSearchPersistTimer) {
-                        clearTimeout(bookshelfSearchPersistTimer);
+                        window.clearTimeout(bookshelfSearchPersistTimer);
                         bookshelfSearchPersistTimer = null;
                 }
                 void storageService.saveBookshelfSearchQuery(searchQuery);
@@ -407,9 +413,9 @@
         function scheduleCoverPersist(filePath: string, coverUrl: string | null) {
                 coverPersistPending.set(filePath, coverUrl);
                 if (coverPersistTimer) {
-                        clearTimeout(coverPersistTimer);
+                        window.clearTimeout(coverPersistTimer);
                 }
-                coverPersistTimer = setTimeout(() => {
+                coverPersistTimer = window.setTimeout(() => {
                         coverPersistTimer = null;
                         const pending = Array.from(coverPersistPending.entries());
                         coverPersistPending.clear();
@@ -597,14 +603,54 @@
                                 bookMetaByPath = new Map();
                                 if (allowRetry) {
                                         if (metadataRetryTimer) {
-                                                clearTimeout(metadataRetryTimer);
+                                                window.clearTimeout(metadataRetryTimer);
                                         }
-                                        metadataRetryTimer = setTimeout(() => {
+                                        metadataRetryTimer = window.setTimeout(() => {
                                                 metadataRetryTimer = null;
                                                 void loadBookMetadata(files, runId, false);
                                         }, 180);
                                 }
                         }
+                }
+        }
+
+        async function refreshBookshelfMetadataForPaths(bookPaths: string[]): Promise<void> {
+                const normalizedPaths = new Set(
+                        bookPaths.map((path) => normalizePath(path || '')).filter(Boolean)
+                );
+                if (normalizedPaths.size === 0) {
+                        void loadBookshelfFromCache();
+                        return;
+                }
+
+                const targetFiles = epubFiles.filter((file) => normalizedPaths.has(file.path));
+                if (targetFiles.length === 0) {
+                        void loadBookshelfFromCache();
+                        return;
+                }
+
+                const currentRunId = refreshRunId;
+                try {
+                        const books = await storageService.loadBooks({ hydrateStates: true });
+                        if (currentRunId !== refreshRunId) {
+                                return;
+                        }
+
+                        const nextMeta = new Map(bookMetaByPath);
+                        for (const file of targetFiles) {
+                                const book = Object.values(books).find((entry) => entry.filePath === file.path);
+                                if (!book) {
+                                        continue;
+                                }
+                                const meta = buildBookMeta(book);
+                                nextMeta.set(file.path, meta);
+                                if (meta.coverImage) {
+                                        cacheResolvedCover(file.path, meta.coverImage);
+                                }
+                        }
+                        bookMetaByPath = nextMeta;
+                } catch (error) {
+                        logger.error('Failed to refresh EPUB bookshelf metadata for paths:', error);
                 }
         }
 
@@ -629,7 +675,7 @@
 
         function cancelScheduledCoverLoading() {
                 if (coverLoadTimer) {
-                        clearTimeout(coverLoadTimer);
+                        window.clearTimeout(coverLoadTimer);
                         coverLoadTimer = null;
                 }
         }
@@ -697,11 +743,11 @@
                                         coverLoadTimer = null;
                                         return;
                                 }
-                                coverLoadTimer = setTimeout(step, 0);
+                                coverLoadTimer = window.setTimeout(step, 0);
                         });
                 };
 
-                coverLoadTimer = setTimeout(step, 16);
+                coverLoadTimer = window.setTimeout(step, 16);
         }
 
         function mergeParsedBookshelfMetadata(
@@ -1941,15 +1987,21 @@
                 return t('epub.bookshelf.playlist.empty');
         });
 
-        function handleBookshelfSettingsChanged() {
+        function handleBookshelfSettingsChanged(event: Event) {
                 if (suppressBookshelfDataChangedReload) {
+                        return;
+                }
+                const { bookPaths } = readBookshelfDataChangedDetail(event);
+                if (bookPaths?.length) {
+                        void refreshBookshelfMetadataForPaths(bookPaths);
                         return;
                 }
                 void loadBookshelfFromCache();
         }
 
-        function handleBookshelfRefreshRequest() {
-                void refreshBookshelf(true);
+        function handleBookshelfRefreshRequest(event: Event) {
+                const { showNotice } = readBookshelfRefreshRequestDetail(event);
+                void refreshBookshelf(showNotice);
         }
 
         function handleBookshelfDisplaySettingsChanged() {
@@ -1985,16 +2037,18 @@
 
         function dispatchBookshelfDataChanged(): void {
                 suppressBookshelfDataChangedReload = true;
-                window.dispatchEvent(new CustomEvent(BOOKSHELF_DATA_CHANGED_EVENT));
+                dispatchEpubBookshelfDataChanged();
                 queueMicrotask(() => {
                         suppressBookshelfDataChangedReload = false;
                 });
         }
 
-        function notifyBookshelfChanged(includeRefreshRequest = false) {
+        function notifyBookshelfChanged(includeRefreshRequest = false, showRefreshNotice = false) {
                 dispatchBookshelfDataChanged();
                 if (includeRefreshRequest) {
-                        window.dispatchEvent(new CustomEvent(BOOKSHELF_REFRESH_REQUEST_EVENT));
+                        dispatchEpubBookshelfRefreshRequest(undefined, {
+                                showNotice: showRefreshNotice,
+                        });
                 }
         }
 
@@ -2181,11 +2235,11 @@
                         surfaceContextObserver = null;
                         flushBookshelfSearchPersist();
                         if (coverPersistTimer) {
-                                clearTimeout(coverPersistTimer);
+                                window.clearTimeout(coverPersistTimer);
                                 coverPersistTimer = null;
                         }
                         if (metadataRetryTimer) {
-                                clearTimeout(metadataRetryTimer);
+                                window.clearTimeout(metadataRetryTimer);
                                 metadataRetryTimer = null;
                         }
                         for (const [path, cover] of coverPersistPending.entries()) {

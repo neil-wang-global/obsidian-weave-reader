@@ -1,7 +1,9 @@
+import { DEFAULT_BOOK_NOTES_EXPORT_TEMPLATE_FOLDER } from "../../../config/epub-user-vault-folders";
+
 export const BOOK_NOTES_EXPORT_MARKER_START = "<!-- weave-epub-excerpts:start -->";
 export const BOOK_NOTES_EXPORT_MARKER_END = "<!-- weave-epub-excerpts:end -->";
 
-export const DEFAULT_BOOK_NOTES_EXPORT_TEMPLATE_FOLDER = "Weave EPUB/Export templates";
+export { DEFAULT_BOOK_NOTES_EXPORT_TEMPLATE_FOLDER };
 
 export const DEFAULT_CLASSIC_TEMPLATE_FILE = "excerpt-classic.md";
 export const DEFAULT_CALLOUT_TEMPLATE_FILE = "excerpt-callout.md";

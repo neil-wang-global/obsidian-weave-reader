@@ -151,11 +151,11 @@
 	}
 
 	onMount(() => {
-		document.addEventListener('mousedown', handlePointerDownOutside);
-		document.addEventListener('touchstart', handlePointerDownOutside);
+		activeDocument.addEventListener('mousedown', handlePointerDownOutside);
+		activeDocument.addEventListener('touchstart', handlePointerDownOutside);
 		return () => {
-			document.removeEventListener('mousedown', handlePointerDownOutside);
-			document.removeEventListener('touchstart', handlePointerDownOutside);
+			activeDocument.removeEventListener('mousedown', handlePointerDownOutside);
+			activeDocument.removeEventListener('touchstart', handlePointerDownOutside);
 		};
 	});
 </script>

@@ -604,8 +604,7 @@ export const normalizePath = vi.fn((path: string) => path.replace(/\\/g, '/'));
 export const parseYaml = (source: string): Record<string, unknown> => {
   const normalized = String(source || '').trim();
   const content = normalized.startsWith('---') ? normalized : `---\n${normalized}\n---\n`;
-  const { metadata } = parseYAMLFromContent(content);
-  return metadata as Record<string, unknown>;
+  return parseYAMLFromContent(content) as Record<string, unknown>;
 };
 export const moment = vi.fn(() => ({
   format: vi.fn().mockReturnValue('2025-01-02'),

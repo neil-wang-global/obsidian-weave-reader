@@ -31,5 +31,5 @@ export function asSearchableCard(value: unknown): SearchableCard | null {
 	if (typeof value !== "object" || value === null) {
 		return null;
 	}
-	return value as SearchableCard;
+	return value;
 }

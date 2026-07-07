@@ -77,4 +77,16 @@ export default defineConfig([
 			],
 		},
 	},
+	{
+		files: [
+			"src/utils/obsidian-document-dom.ts",
+			"src/services/epub/FoliateReaderService.ts",
+			"src/services/epub/foliate-blob-markup-normalizer.ts",
+		],
+		rules: {
+			// EPUB foliate section/XML documents use doc.createElement fallbacks where doc.win
+			// is unavailable; createEl("style") is separately blocked by no-forbidden-elements.
+			"obsidianmd/prefer-create-el": "off",
+		},
+	},
 ]);

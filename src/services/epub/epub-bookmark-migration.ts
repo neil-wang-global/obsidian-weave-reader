@@ -1,23 +1,22 @@
 import type { App, TFile } from "obsidian";
-import { Notice, normalizePath, parseYaml } from "obsidian";
+import { Notice, normalizePath } from "obsidian";
 import { getPluginPaths } from "../../config/paths";
 import { DirectoryUtils } from "../../utils/directory-utils";
 import { i18n } from "../../utils/i18n";
 import { logger } from "../../utils/logger";
 import { showObsidianConfirm } from "../../utils/obsidian-confirm";
-import { getCompatiblePlugin } from "../../utils/plugin-access";
 import { ensureEpubBookmarkCoverPath } from "./epub-bookmark-cover";
 import { deriveEpubBookmarkDisplayTitle } from "./epub-bookmark-display-title";
-import type { EpubBookmarkAnalytics } from "./epub-bookmark-page-types";
+import { readEpubBookmarkAnalyticsFromFrontmatter } from "./epub-bookmark-analytics";
 import { EPUB_BOOKMARK_FILE_FORMAT_V3 } from "./epub-bookmark-page-types";
 import { renderEpubBookmarkFileContent } from "./epub-bookmark-page-render";
+import { EPUB_BOOKMARK_DATA_FILE_PREFIX } from "./epub-bookmark-folder-path";
 import {
-	DEFAULT_EPUB_BOOKMARK_FOLDER,
-	EPUB_BOOKMARK_DATA_FILE_PREFIX,
-	normalizeEpubBookmarkFolderPath,
-} from "./EpubBookmarkService";
+	isEpubBookmarkVaultFrontmatter,
+	parseEpubBookmarkVaultYamlBlock,
+} from "./epub-bookmark-vault-parse";
+import { resolveEpubBookmarkFolderForApp } from "./epub-bookmark-vault-path";
 import { EpubLinkService } from "./EpubLinkService";
-import { getEpubRuntime } from "./epub-runtime";
 
 const BACKUP_ROOT_SEGMENT = "epub-bookmarks";
 const MIGRATION_STATE_FILE = "epub-bookmark-v3-state.json";
@@ -85,22 +84,6 @@ function readFrontmatterString(value: unknown, fallback = ""): string {
 	return fallback;
 }
 
-function resolveBookmarkFolder(app: App): string {
-	const runtimePluginId = getEpubRuntime().pluginId;
-	const pluginLookup = app as App & {
-		plugins?: {
-			getPlugin?: (id: string) => { settings?: { bookmarkFolder?: string } } | null;
-		};
-	};
-	const plugin =
-		pluginLookup.plugins?.getPlugin?.(runtimePluginId) ??
-		(getCompatiblePlugin(pluginLookup as unknown) as { settings?: { bookmarkFolder?: string } } | null);
-	return (
-		normalizeEpubBookmarkFolderPath(plugin?.settings?.bookmarkFolder) ||
-		DEFAULT_EPUB_BOOKMARK_FOLDER
-	);
-}
-
 function isBookmarkDataFile(file: TFile, bookmarkFolder: string): boolean {
 	if (file.extension !== "md") {
 		return false;
@@ -112,96 +95,26 @@ function isBookmarkDataFile(file: TFile, bookmarkFolder: string): boolean {
 	);
 }
 
+function resolveBookmarkFolder(app: App): string {
+	return resolveEpubBookmarkFolderForApp(app);
+}
+
 function parseBookmarkMigrationFile(path: string, rawContent: string): ParsedBookmarkMigrationFile | null {
-	const match = String(rawContent || "").match(/^---\s*\r?\n([\s\S]*?)\r?\n---/);
-	if (!match) {
+	const frontmatter = parseEpubBookmarkVaultYamlBlock(rawContent);
+	if (!frontmatter || !isEpubBookmarkVaultFrontmatter(frontmatter)) {
 		return null;
 	}
 
-	try {
-		const yaml: unknown = parseYaml(match[1]);
-		if (!yaml || typeof yaml !== "object" || Array.isArray(yaml)) {
-			return null;
-		}
-		const frontmatter = yaml as Record<string, unknown>;
-		if (frontmatter.weave_epub_bookmark_file !== true) {
-			return null;
-		}
-		return {
-			path,
-			rawContent,
-			format: readFrontmatterString(frontmatter.format),
-			frontmatter,
-		};
-	} catch {
-		return null;
-	}
+	return {
+		path,
+		rawContent,
+		format: readFrontmatterString(frontmatter.format),
+		frontmatter,
+	};
 }
 
 function needsV3Migration(parsed: ParsedBookmarkMigrationFile): boolean {
 	return parsed.format !== EPUB_BOOKMARK_FILE_FORMAT_V3;
-}
-
-function rebuildAnalyticsForRender(
-	frontmatter: Record<string, unknown>,
-	existing?: EpubBookmarkAnalytics
-): EpubBookmarkAnalytics | undefined {
-	const analyticsRaw =
-		frontmatter.analytics && typeof frontmatter.analytics === "object"
-			? (frontmatter.analytics as Record<string, unknown>)
-			: null;
-	if (!analyticsRaw && !existing) {
-		return undefined;
-	}
-
-	const highlightCount =
-		typeof frontmatter["highlight-count"] === "number"
-			? frontmatter["highlight-count"]
-			: typeof analyticsRaw?.highlightCount === "number"
-				? analyticsRaw.highlightCount
-				: existing?.highlightCount ?? 0;
-	const excerptNoteCount =
-		typeof frontmatter["excerpt-note-count"] === "number"
-			? frontmatter["excerpt-note-count"]
-			: typeof analyticsRaw?.excerptNoteCount === "number"
-				? analyticsRaw.excerptNoteCount
-				: existing?.excerptNoteCount ?? 0;
-
-	return {
-		updatedAt:
-			typeof analyticsRaw?.updatedAt === "number"
-				? analyticsRaw.updatedAt
-				: typeof frontmatter.updatedAt === "number"
-					? frontmatter.updatedAt
-					: Date.now(),
-		highlightCount,
-		highlightsByColor:
-			(analyticsRaw?.highlightsByColor as EpubBookmarkAnalytics["highlightsByColor"]) ||
-			existing?.highlightsByColor ||
-			{},
-		excerptNoteCount,
-		commentCount:
-			typeof analyticsRaw?.commentCount === "number"
-				? analyticsRaw.commentCount
-				: existing?.commentCount ?? 0,
-		concealedCount:
-			typeof analyticsRaw?.concealedCount === "number"
-				? analyticsRaw.concealedCount
-				: existing?.concealedCount ?? 0,
-		referenceHeatMax:
-			typeof analyticsRaw?.referenceHeatMax === "number"
-				? analyticsRaw.referenceHeatMax
-				: existing?.referenceHeatMax,
-		topChaptersByHighlights: Array.isArray(analyticsRaw?.topChaptersByHighlights)
-			? (analyticsRaw.topChaptersByHighlights as EpubBookmarkAnalytics["topChaptersByHighlights"])
-			: existing?.topChaptersByHighlights || [],
-		linkedNotePaths: Array.isArray(analyticsRaw?.linkedNotePaths)
-			? analyticsRaw.linkedNotePaths.map((item) => String(item || "").trim()).filter(Boolean)
-			: existing?.linkedNotePaths || [],
-		recentExcerpts: Array.isArray(analyticsRaw?.recentExcerpts)
-			? (analyticsRaw.recentExcerpts as EpubBookmarkAnalytics["recentExcerpts"])
-			: existing?.recentExcerpts,
-	};
 }
 
 async function readMigrationState(app: App): Promise<EpubBookmarkMigrationState> {
@@ -355,7 +268,7 @@ async function migrateSingleBookmarkFile(
 		})) ||
 		(typeof frontmatter.coverPath === "string" ? frontmatter.coverPath : undefined);
 
-	const analytics = rebuildAnalyticsForRender(frontmatter);
+	const analytics = readEpubBookmarkAnalyticsFromFrontmatter(frontmatter);
 	const user =
 		frontmatter.user && typeof frontmatter.user === "object"
 			? (frontmatter.user as Record<string, unknown>)

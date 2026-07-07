@@ -116,7 +116,7 @@ export class EpubView extends ItemView {
 		getReaderSettings?: () => EpubReaderSettings;
 		updateReaderSettings?: (patch: Partial<EpubReaderSettings>) => Promise<void>;
 		setScreenshotSaveMode?: (saveAsImage: boolean) => void;
-		navigateToCfi?: (cfi: string, text: string) => void;
+		navigateToCfi?: (cfi: string, linkTextHint?: string) => void;
 		toggleTutorial?: () => void;
 		addBookmark?: () => Promise<void>;
 		canUseReadingProgress?: () => boolean;
@@ -136,6 +136,7 @@ export class EpubView extends ItemView {
 		unbindCanvas?: () => void;
 		getCanvasService?: () => EpubCanvasService;
 		exportCurrentChapterToMarkdown?: () => Promise<void>;
+		exportCurrentChapterMarkedToMarkdown?: () => Promise<void>;
 		exportCurrentChapterHighlightsToMarkdown?: () => Promise<void>;
 		exportBookHighlightsToMarkdown?: (event?: MouseEvent) => Promise<void>;
 		getExcerptSettings?: () => EpubExcerptSettings;
@@ -991,6 +992,7 @@ export class EpubView extends ItemView {
 		const hasExport =
 			Boolean(this.actionHandlers.exportBookHighlightsToMarkdown) ||
 			Boolean(this.actionHandlers.exportCurrentChapterToMarkdown) ||
+			Boolean(this.actionHandlers.exportCurrentChapterMarkedToMarkdown) ||
 			Boolean(this.actionHandlers.exportCurrentChapterHighlightsToMarkdown);
 		if (!hasExport) {
 			return;
@@ -1016,6 +1018,16 @@ export class EpubView extends ItemView {
 					item.setIcon("file-text");
 					item.onClick(() => {
 						void this.actionHandlers.exportCurrentChapterToMarkdown?.();
+					});
+				});
+			}
+
+			if (this.actionHandlers.exportCurrentChapterMarkedToMarkdown) {
+				subMenu.addItem((item) => {
+					item.setTitle(this.t("views.epubView.menu.exportCurrentChapterMarked"));
+					item.setIcon("highlighter");
+					item.onClick(() => {
+						void this.actionHandlers.exportCurrentChapterMarkedToMarkdown?.();
 					});
 				});
 			}
@@ -1320,7 +1332,7 @@ export class EpubView extends ItemView {
 		label: string,
 		onClick: (evt: MouseEvent) => void
 	): HTMLButtonElement {
-		const button = activeDocument.createElement("button");
+		const button = activeWindow.createEl("button");
 		button.type = "button";
 		button.className = "epub-left-inline-toolbar-btn clickable-icon";
 		setIcon(button, icon);

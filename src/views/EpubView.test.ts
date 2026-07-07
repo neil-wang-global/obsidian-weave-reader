@@ -155,7 +155,7 @@ describe('EpubView', () => {
 			pendingLocate?: { cfi?: string; text?: string };
 			pendingCfi?: string;
 			pendingText?: string;
-			onActionsReady?: (actions: { navigateToCfi?: (cfi: string, text: string) => void }) => void;
+			onActionsReady?: (actions: { navigateToCfi?: (cfi: string, linkTextHint?: string) => void }) => void;
 		};
 
 		expect(props.pendingLocate?.cfi).toBe('epubcfi(/6/2!/4/2,/1:0,/1:9)');

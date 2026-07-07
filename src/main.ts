@@ -4,9 +4,13 @@ import { Menu, Notice, Plugin, TAbstractFile, TFile, normalizePath } from "obsid
 import { domInstanceOf } from "./utils/dom-instance-of";
 
 import { EpubDataManagementModalObsidian } from "./components/epub/EpubDataManagementModalObsidian";
+import { DEFAULT_EPUB_BOOKMARK_FOLDER } from "./config/epub-user-vault-folders";
 import { isSupportedBookFile, isSupportedBookPath } from "./services/epub/book-format";
 import {
-	DEFAULT_EPUB_BOOKMARK_FOLDER,
+	dispatchEpubBookshelfDataChanged,
+	dispatchEpubBookshelfFullRefresh,
+} from "./services/epub/bookshelf-data-events";
+import {
 	EPUB_RUNTIME,
 	EpubStorageService,
 	exportBookNotesToMarkdown,
@@ -164,7 +168,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			return [];
 		}
 
-		return getInheritedLicensesFromLegacyWeave(this.app as unknown);
+		return getInheritedLicensesFromLegacyWeave(this.app);
 	}
 
 	getEffectiveLicenseState(): EffectiveLicenseState {
@@ -326,19 +330,18 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		if (!value || typeof value !== "object") {
 			return false;
 		}
-		const record = value as Record<string, unknown>;
 		return [
 			"lastSelectedIRDeckId",
 			"selectionQuickCreateLastFolder",
 			"epubMarkdownExportLastFolder",
-		].some((key) => Object.prototype.hasOwnProperty.call(record, key));
+		].some((key) => key in value);
 	}
 
 	private normalizeLoadedSettings(raw: unknown): Partial<PersistedStandaloneEpubPluginSettings> {
 		if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
 			return {};
 		}
-		return raw as Partial<PersistedStandaloneEpubPluginSettings>;
+		return raw;
 	}
 
 	private async persistSettingsData(): Promise<void> {
@@ -462,7 +465,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		await this.persistSettingsData();
 	}
 
-	private queueBookshelfRefreshEvent(): void {
+	private queueBookshelfRefreshEvent(fullRefresh = true): void {
 		if (typeof window === "undefined") {
 			return;
 		}
@@ -471,8 +474,11 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		}
 		this.pendingBookshelfRefreshTimer = window.setTimeout(() => {
 			this.pendingBookshelfRefreshTimer = null;
-			window.dispatchEvent(new CustomEvent(EPUB_RUNTIME.events.bookshelfDataChanged));
-			window.dispatchEvent(new CustomEvent(EPUB_RUNTIME.events.bookshelfRefreshRequest));
+			if (fullRefresh) {
+				dispatchEpubBookshelfFullRefresh();
+				return;
+			}
+			dispatchEpubBookshelfDataChanged();
 		}, 120);
 	}
 
@@ -480,28 +486,28 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		this.registerEvent(
 			this.app.vault.on("create", (file: TAbstractFile) => {
 				if (isSupportedBookFile(file)) {
-					this.queueBookshelfRefreshEvent();
+					this.queueBookshelfRefreshEvent(true);
 				}
 			})
 		);
 		this.registerEvent(
 			this.app.vault.on("modify", (file: TAbstractFile) => {
 				if (isSupportedBookFile(file)) {
-					this.queueBookshelfRefreshEvent();
+					this.queueBookshelfRefreshEvent(false);
 				}
 			})
 		);
 		this.registerEvent(
 			this.app.vault.on("delete", (file: TAbstractFile) => {
 				if (isSupportedBookPath(file.path)) {
-					this.queueBookshelfRefreshEvent();
+					this.queueBookshelfRefreshEvent(true);
 				}
 			})
 		);
 		this.registerEvent(
 			this.app.vault.on("rename", (file: TAbstractFile, oldPath: string) => {
 				if (isSupportedBookPath(oldPath) || isSupportedBookFile(file)) {
-					this.queueBookshelfRefreshEvent();
+					this.queueBookshelfRefreshEvent(true);
 				}
 			})
 		);
@@ -535,7 +541,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 		}
 
 		const actions = getVisibleSplitActionsFromHost(
-			getCompatibleAISelectedTextPanelHost(this.app as unknown) ?? this
+			getCompatibleAISelectedTextPanelHost(this.app) ?? this
 		);
 		const menu = new Menu();
 		if (actions.length > 0) {
@@ -633,7 +639,7 @@ export default class StandaloneEpubPlugin extends Plugin implements EpubHostCapa
 			cardSyncDedupeMs: 600,
 			getEnableDebugMode: () => this.settings.enableDebugMode === true,
 		});
-		aiConfigStore.initialize(this as WeavePlugin);
+		aiConfigStore.initialize(this);
 		const { EpubSettingsTab } = await import("./components/settings/EpubSettingsTab");
 		this.addSettingTab(new EpubSettingsTab(this.app, this));
 		await PremiumFeatureGuard.getInstance().initializeForProduct({

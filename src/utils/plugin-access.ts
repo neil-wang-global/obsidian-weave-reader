@@ -94,7 +94,7 @@ function normalizeOptionalString(value: unknown): string | undefined {
 
 function getPluginById(app: PluginLookupApp | undefined, pluginId: string): CompatiblePlugin | null {
 	const plugin = app?.plugins?.getPlugin?.(pluginId);
-	return plugin && typeof plugin === "object" ? (plugin as CompatiblePlugin) : null;
+	return plugin && typeof plugin === "object" ? plugin : null;
 }
 
 export function getStandalonePlugin(app: PluginLookupApp | undefined): CompatiblePlugin | null {

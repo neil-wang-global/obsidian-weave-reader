@@ -57,14 +57,14 @@ export class EpubAnnotationIndexService {
 	}
 
 	getReadiness(input: EpubHighlightSnapshotContextInput): EpubAnnotationIndexReadiness {
+		const snapshotService = getEpubHighlightViewSnapshotService(this.app);
+		if (snapshotService.getCachedSnapshot(input)) {
+			return "ready";
+		}
 		const contextKey = this.buildContextKey(input);
 		const tracked = this.readinessByContextKey.get(contextKey);
 		if (tracked === "preparing") {
 			return "preparing";
-		}
-		const snapshotService = getEpubHighlightViewSnapshotService(this.app);
-		if (snapshotService.getCachedSnapshot(input)) {
-			return "ready";
 		}
 		return tracked || "unknown";
 	}
@@ -217,9 +217,13 @@ export class EpubAnnotationIndexService {
 			const storage = getEpubStorageService(this.app);
 			const backlink = input.backlinkService || getEpubBacklinkHighlightService(this.app);
 			const canvasPath = await storage.getCanvasBinding(input.bookId);
-			await backlink.collectHighlights(input.filePath, canvasPath);
 
 			if (input.annotationService && input.filePath) {
+				const preloadedHighlights = await input.annotationService.collectAllHighlights(
+					input.bookId,
+					input.filePath,
+					backlink
+				);
 				await snapshotService.revalidateSnapshot({
 					bookId: input.bookId,
 					filePath: input.filePath,
@@ -228,11 +232,18 @@ export class EpubAnnotationIndexService {
 					backlinkService: backlink,
 					readerService: input.readerService,
 					highlightRevision: input.highlightRevision,
+					preloadedHighlights,
 				});
+			} else {
+				await backlink.collectHighlights(input.filePath, canvasPath);
 			}
 
-			this.readinessByContextKey.set(contextKey, "ready");
-			this.warmedBookPaths.add(input.filePath);
+			if (snapshotService.getCachedSnapshot(input)) {
+				this.readinessByContextKey.set(contextKey, "ready");
+				this.warmedBookPaths.add(input.filePath);
+			} else {
+				this.readinessByContextKey.set(contextKey, "unknown");
+			}
 		} catch (error) {
 			logger.debug("[EpubAnnotationIndex] Prefetch failed:", {
 				bookId: input.bookId,

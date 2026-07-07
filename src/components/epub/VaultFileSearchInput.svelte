@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type { App, TFile } from 'obsidian';
 	import { onDestroy, onMount } from 'svelte';
+	import { fromStore } from 'svelte/store';
+	import { domInstanceOf } from '../../utils/dom-instance-of';
 	import { tr } from '../../utils/i18n';
 	import {
 		getVaultFileBasename,
@@ -24,7 +26,8 @@
 		onSelect,
 	}: Props = $props();
 
-	let t = $derived($tr);
+	const trState = fromStore(tr);
+	let t = $derived(trState.current);
 
 	let inputEl = $state<HTMLInputElement | null>(null);
 	let inputValue = $state('');
@@ -63,7 +66,7 @@
 
 	function handleInput(event: Event): void {
 		const target = event.currentTarget;
-		if (!(target instanceof HTMLInputElement)) {
+		if (!domInstanceOf(target, HTMLInputElement)) {
 			return;
 		}
 		inputValue = target.value;

@@ -11,8 +11,19 @@ export class EpubSettingsTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
+	getSettingDefinitions() {
+		return [
+			{
+				type: "render" as const,
+				render: (containerEl: HTMLElement) => {
+					void this.renderPanelInto(containerEl);
+				},
+			},
+		];
+	}
+
 	display(): void {
-		void this.renderPanel();
+		void this.renderPanelInto(this.containerEl);
 	}
 
 	hide(): void {
@@ -28,10 +39,9 @@ export class EpubSettingsTab extends PluginSettingTab {
 		this.svelteRoot = null;
 	}
 
-	private async renderPanel(): Promise<void> {
+	private async renderPanelInto(containerEl: HTMLElement): Promise<void> {
 		this.unmountPanel();
 
-		const { containerEl } = this;
 		containerEl.empty();
 
 		const { default: Component } = await import("./EpubSettingsPanel.svelte");

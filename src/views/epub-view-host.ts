@@ -24,10 +24,10 @@ export function resolveAISelectedTextPanelHost(host: EpubViewHost): AISelectedTe
 		return host;
 	}
 
-	const compatibleHost = getCompatibleAISelectedTextPanelHost(host?.app as unknown);
+	const compatibleHost = getCompatibleAISelectedTextPanelHost(host?.app);
 	if (!compatibleHost) {
 		return null;
 	}
 
-	return compatibleHost as unknown as AISelectedTextPanelHost;
+	return compatibleHost as AISelectedTextPanelHost;
 }

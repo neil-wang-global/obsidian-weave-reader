@@ -1,6 +1,8 @@
 import type { BookLocateIntent, PendingLocateState } from "../../services/navigation/navigation-intent";
 import { bookLocateFromPending } from "../../services/navigation/navigation-intent";
 import type { EpubReaderEngine } from "../../services/epub";
+import { normalizeBookLocateText } from "../../services/epub/epub-source-navigation-text-hint";
+import { READER_SOURCE_LOCATE_OVERLAY_TIMING } from "../../services/ui/source-locate-overlay-timing";
 
 export interface EpubNavigationControllerOptions {
 	getReaderReady: () => boolean;
@@ -17,44 +19,118 @@ export interface EpubNavigationControllerOptions {
 
 export function createEpubNavigationController(options: EpubNavigationControllerOptions) {
 	let pendingBookLocate: BookLocateIntent | null = null;
+	let locateOverlaySession = 0;
+	const {
+		initialDelayMs: locateOverlayInitialDelayMs,
+		retryDelayMs: locateOverlayRetryDelayMs,
+		maxAttempts: locateOverlayMaxAttempts,
+	} = READER_SOURCE_LOCATE_OVERLAY_TIMING;
+
+	function beginLocateOverlaySession(): number {
+		locateOverlaySession += 1;
+		return locateOverlaySession;
+	}
+
+	function isLocateOverlaySessionActive(session: number): boolean {
+		return session === locateOverlaySession;
+	}
 
 	function notifyPendingChange(): void {
 		options.onPendingChange?.(Boolean(pendingBookLocate));
 	}
 
+	function sanitizeBookLocateIntent(nav: BookLocateIntent): BookLocateIntent {
+		return {
+			...nav,
+			text: normalizeBookLocateText(nav),
+		};
+	}
+
+	function buildOverlayLocateIntent(
+		nav: BookLocateIntent,
+		resolvedCfi: string
+	): BookLocateIntent {
+		return sanitizeBookLocateIntent({
+			...nav,
+			cfi: resolvedCfi || nav.cfi,
+		});
+	}
+
+	function resolveBookLocateOverlayRect(nav: BookLocateIntent): DOMRect | null {
+		return options.getReaderService().getSourceLocateOverlayRect({
+			cfi: nav.cfi,
+			href: nav.href,
+			text: nav.text,
+		});
+	}
+
+	function waitForReaderLayoutFrames(): Promise<void> {
+		return new Promise((resolve) => {
+			window.requestAnimationFrame(() => {
+				window.requestAnimationFrame(() => resolve());
+			});
+		});
+	}
+
+	function showBookLocateOverlay(
+		nav: BookLocateIntent,
+		attempt = 0,
+		session = locateOverlaySession
+	): void {
+		const delay = attempt === 0 ? locateOverlayInitialDelayMs : locateOverlayRetryDelayMs;
+		window.setTimeout(() => {
+			if (!isLocateOverlaySessionActive(session)) {
+				return;
+			}
+			const rect = resolveBookLocateOverlayRect(nav);
+			if (rect) {
+				if (!isLocateOverlaySessionActive(session)) {
+					return;
+				}
+				options.getSourceLocateOverlay().showAtRect(rect, {
+					label: options.getLocateOverlayLabel(),
+					icon: "map-pinned",
+					durationMs: 2200,
+				});
+				return;
+			}
+			if (attempt + 1 < locateOverlayMaxAttempts) {
+				showBookLocateOverlay(nav, attempt + 1, session);
+			}
+		}, delay);
+	}
+
 	async function applyBookLocate(nav: BookLocateIntent): Promise<void> {
+		const overlaySession = beginLocateOverlaySession();
 		const readerService = options.getReaderService();
+		const locateIntent = sanitizeBookLocateIntent(nav);
 		try {
-			if (nav.flashStyle && nav.flashStyle !== "none") {
+			if (locateIntent.flashStyle && locateIntent.flashStyle !== "none") {
 				await readerService.navigateAndHighlight({
-					cfi: nav.cfi,
-					href: nav.href,
-					text: nav.text,
-					flashStyle: nav.flashStyle,
-					flashColor: nav.flashColor,
+					cfi: locateIntent.cfi,
+					href: locateIntent.href,
+					text: locateIntent.text,
+					flashStyle: locateIntent.flashStyle,
+					flashColor: locateIntent.flashColor,
 				});
 			} else {
 				await readerService.navigateTo({
-					cfi: nav.cfi,
-					href: nav.href,
-					text: nav.text,
+					cfi: locateIntent.cfi,
+					href: locateIntent.href,
+					text: locateIntent.text,
 				});
 			}
-			if (nav.showLocateOverlay) {
-				window.setTimeout(() => {
-					const rect = readerService.getNavigationTargetRect({
-						cfi: nav.cfi,
-						href: nav.href,
-						text: nav.text,
-					});
-					if (rect) {
-						options.getSourceLocateOverlay().showAtRect(rect, {
-							label: options.getLocateOverlayLabel(),
-							icon: "map-pinned",
-							durationMs: 2200,
-						});
-					}
-				}, 80);
+			if (locateIntent.showLocateOverlay && isLocateOverlaySessionActive(overlaySession)) {
+				const resolvedCfi = String(readerService.getCurrentPosition()?.cfi || locateIntent.cfi || "").trim();
+				await waitForReaderLayoutFrames();
+				if (!isLocateOverlaySessionActive(overlaySession)) {
+					return;
+				}
+				showBookLocateOverlay(
+					buildOverlayLocateIntent(locateIntent, resolvedCfi),
+					0,
+					overlaySession
+				);
 			}
 		} catch {
 			/* caller logs */
@@ -62,15 +138,16 @@ export function createEpubNavigationController(options: EpubNavigationController
 	}
 
 	function requestBookLocate(nav: BookLocateIntent): void {
-		if (!nav.cfi && !nav.href) {
+		const locateIntent = sanitizeBookLocateIntent(nav);
+		if (!locateIntent.cfi && !locateIntent.href) {
 			return;
 		}
 		if (!options.getReaderReady()) {
-			pendingBookLocate = nav;
+			pendingBookLocate = locateIntent;
 			notifyPendingChange();
 			return;
 		}
-		void applyBookLocate(nav);
+		void applyBookLocate(locateIntent);
 	}
 
 	function flushPendingBookLocate(): void {
@@ -116,7 +193,7 @@ export function createEpubNavigationController(options: EpubNavigationController
 			nav.href = detail.href;
 		}
 		if (typeof detail.text === "string" && detail.text.trim()) {
-			nav.text = detail.text;
+			nav.text = detail.text.trim();
 		}
 		if (detail.flashStyle === "pulse" || detail.flashStyle === "highlight" || detail.flashStyle === "none") {
 			nav.flashStyle = detail.flashStyle;
@@ -130,12 +207,11 @@ export function createEpubNavigationController(options: EpubNavigationController
 		if (!nav.cfi && !nav.href) {
 			return null;
 		}
-		return nav;
+		return sanitizeBookLocateIntent(nav);
 	}
 
 	return {
 		requestBookLocate,
-		requestIRNavigation: requestBookLocate,
 		applyBookLocate,
 		flushPendingBookLocate,
 		flushPendingLocateFromProps,

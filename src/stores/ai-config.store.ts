@@ -40,7 +40,7 @@ function createDefaultPersistedAIConfig(): PersistedAIConfig {
 		defaultProvider: "zhipu",
 		customFormatActions: [],
 		customSplitActions: [],
-	} as PersistedAIConfig;
+	};
 }
 
 // ============================================================================
@@ -243,7 +243,7 @@ class AIConfigStore {
 				enabled: action.enabled,
 				createdAt: action.createdAt,
 				updatedAt: action.updatedAt,
-			} as AIAction;
+			};
 		}
 	}
 

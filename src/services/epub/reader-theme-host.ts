@@ -4,6 +4,10 @@ import {
 	readObsidianCssVar,
 	type ReaderColorScheme,
 } from "./reader-theme-tokens";
+import {
+	applyReaderHostSurfaceTokens,
+	READER_THEME_HOST_CLASS,
+} from "./reader-host-surface-css";
 
 export interface ReaderThemeHostSurfaceInput {
 	styleSource: HTMLElement;
@@ -25,13 +29,15 @@ export function applyReaderThemeHostSurfaces(input: ReaderThemeHostSurfaceInput)
 		if (!domInstanceOf(target, HTMLElement) || !target.style) {
 			continue;
 		}
-		target.style.backgroundColor = background;
-		target.style.color = textColor;
-		target.style.colorScheme = colorScheme;
+		applyReaderHostSurfaceTokens(target, background, textColor, colorScheme);
 	}
 
 	for (const iframe of Array.from(input.renderContainer?.querySelectorAll("iframe") || [])) {
-		iframe.style.backgroundColor = background;
-		iframe.style.colorScheme = colorScheme;
+		if (!domInstanceOf(iframe, HTMLIFrameElement)) {
+			continue;
+		}
+		applyReaderHostSurfaceTokens(iframe, background, textColor, colorScheme);
 	}
 }
+
+export { READER_THEME_HOST_CLASS };

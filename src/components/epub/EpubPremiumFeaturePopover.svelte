@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { getEpubPremiumFeaturePreviewContent } from '../../services/epub';
 	import { currentLanguage, tr } from '../../utils/i18n';
+	import { domInstanceOf } from '../../utils/dom-instance-of';
 
 	interface Props {
 		open: boolean;
@@ -40,7 +41,7 @@
 			return;
 		}
 		const target = event.target;
-		if (!(target instanceof Node) || !popoverEl.contains(target)) {
+		if (!domInstanceOf(target, Node) || !popoverEl.contains(target)) {
 			return;
 		}
 		if (event.key === 'Escape') {
@@ -72,9 +73,9 @@
 	});
 
 	onMount(() => {
-		document.addEventListener('mousedown', handlePointerDownOutside);
+		activeDocument.addEventListener('mousedown', handlePointerDownOutside);
 		return () => {
-			document.removeEventListener('mousedown', handlePointerDownOutside);
+			activeDocument.removeEventListener('mousedown', handlePointerDownOutside);
 		};
 	});
 </script>

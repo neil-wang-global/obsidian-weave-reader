@@ -64,8 +64,10 @@ export class DirectoryUtils {
 			throw new Error("目录路径不能为空");
 		}
 
-		const normalizedPath = path.trim();
-		const parts = normalizedPath.split("/").filter((p) => p && p.trim() !== "");
+		const normalizedPath = normalizePath(path.trim());
+		const parts = normalizedPath
+			.split("/")
+			.filter((p) => p && p.trim() !== "" && !/^[A-Za-z]:$/.test(p));
 
 		if (parts.length === 0) {
 			throw new Error("无效的目录路径");
@@ -113,7 +115,7 @@ export class DirectoryUtils {
 			throw new Error("文件路径不能为空");
 		}
 
-		const normalizedPath = filePath.trim();
+		const normalizedPath = normalizePath(filePath.trim());
 		const lastSlash = normalizedPath.lastIndexOf("/");
 
 		if (lastSlash === -1) {

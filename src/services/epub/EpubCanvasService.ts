@@ -3,9 +3,9 @@ import { i18n } from "../../utils/i18n";
 import { logger } from "../../utils/logger";
 import { generateCardUUID } from "../identifier/WeaveIDGenerator";
 import {
-	avoidNodeOverlap,
 	buildCanvasSelectionSnapshotKey,
-	calculateLockedHubNodePosition,
+	calculateChainNodePosition,
+	calculateMindMapHubNodePosition,
 	filterPlacementObstacleNodes,
 	getCanvasExcerptAnchorState,
 	getCanvasExcerptLayoutDirection,
@@ -16,6 +16,7 @@ import {
 	setCanvasExcerptLayoutDirection,
 	type CanvasExcerptAnchorMode,
 } from "./canvas-excerpt-anchor";
+import { estimateCanvasTextNodeSize } from "./canvas-text-node-size";
 import { EpubLinkService } from "./EpubLinkService";
 import type {
 	CanvasAnchor,
@@ -27,8 +28,6 @@ import type {
 } from "./canvas-types";
 import type { EpubHighlightStyle } from "./types";
 import {
-	DEFAULT_NODE_HEIGHT,
-	DEFAULT_NODE_WIDTH,
 	HIGHLIGHT_TO_CANVAS_COLOR,
 	NODE_GAP_X,
 	NODE_GAP_Y,
@@ -41,6 +40,7 @@ export class EpubCanvasService {
 	private anchor: CanvasAnchor | null = null;
 	private layoutDirection: CanvasLayoutDirection = "down";
 	private lastInsertAnchorMode: CanvasExcerptAnchorMode | null = null;
+	private insertHubNodeId: string | null = null;
 	private insertSelectionSnapshotByCanvas = new Map<string, string>();
 
 	constructor(app: App) {
@@ -197,84 +197,52 @@ export class EpubCanvasService {
 	): Promise<CanvasNode | null> {
 		if (!this.canvasPath) return null;
 
-		try {
-			const data = await this.readCanvas();
-			await this.prepareInsertAnchor(data);
+		const noteContent = this.linkService.buildQuoteBlock(
+			filePath,
+			cfiRange,
+			text,
+			chapterIndex,
+			color,
+			chapterTitle,
+			timestamp,
+			this.canvasPath || undefined,
+			sourceId,
+			undefined,
+			style,
+			chapterLabelMaxLength
+		);
 
-			const noteContent = this.linkService.buildQuoteBlock(
-				filePath,
-				cfiRange,
-				text,
-				chapterIndex,
-				color,
-				chapterTitle,
-				timestamp,
-				this.canvasPath || undefined,
-				sourceId,
-				undefined,
-				style,
-				chapterLabelMaxLength
-			);
-
-			const nodeId = this.generateNodeId();
-			const canvasColor = color ? HIGHLIGHT_TO_CANVAS_COLOR[color] : undefined;
-			const position = this.calculateNodePosition(data);
-
-			const node: CanvasNode = {
-				id: nodeId,
-				type: "text",
-				text: noteContent,
-				x: position.x,
-				y: position.y,
-				width: DEFAULT_NODE_WIDTH,
-				height: DEFAULT_NODE_HEIGHT,
-				...(canvasColor && { color: canvasColor }),
-			};
-
-			data.nodes.push(node);
-
-			const parentId = this.resolveParentNodeId(data);
-			if (parentId) {
-				const sides = this.getEdgeSides();
-				const edge: CanvasEdge = {
-					id: this.generateNodeId(),
-					fromNode: parentId,
-					toNode: nodeId,
-					fromSide: sides.fromSide,
-					toSide: sides.toSide,
-				};
-				data.edges.push(edge);
-			}
-
-			await this.writeCanvas(data);
-			await this.finalizeInsertAnchor(nodeId, parentId);
-
-			return node;
-		} catch (e) {
-			logger.error("[EpubCanvasService] Failed to add excerpt node:", e);
-			new Notice(i18n.t("views.epubView.notice.canvasAddNodeFailed"));
-			return null;
-		}
+		return this.insertCanvasTextNode(noteContent, color, "add excerpt node");
 	}
 
 	async addRawTextNode(content: string, color?: string): Promise<CanvasNode | null> {
+		return this.insertCanvasTextNode(content, color, "add raw text node");
+	}
+
+	private async insertCanvasTextNode(
+		text: string,
+		color: string | undefined,
+		logLabel: string
+	): Promise<CanvasNode | null> {
 		if (!this.canvasPath) return null;
 
 		try {
 			const data = await this.readCanvas();
 			await this.prepareInsertAnchor(data);
+
 			const nodeId = this.generateNodeId();
 			const canvasColor = color ? HIGHLIGHT_TO_CANVAS_COLOR[color] : undefined;
-			const position = this.calculateNodePosition(data);
+			const nodeSize = estimateCanvasTextNodeSize(text);
+			const position = this.calculateNodePosition(data, nodeSize);
 
 			const node: CanvasNode = {
 				id: nodeId,
 				type: "text",
-				text: content,
+				text,
 				x: position.x,
 				y: position.y,
-				width: DEFAULT_NODE_WIDTH,
-				height: DEFAULT_NODE_HEIGHT,
+				width: nodeSize.width,
+				height: nodeSize.height,
 				...(canvasColor && { color: canvasColor }),
 			};
 
@@ -298,14 +266,22 @@ export class EpubCanvasService {
 
 			return node;
 		} catch (e) {
-			logger.error("[EpubCanvasService] Failed to add raw text node:", e);
+			logger.error(`[EpubCanvasService] Failed to ${logLabel}:`, e);
 			new Notice(i18n.t("views.epubView.notice.canvasAddNodeFailed"));
 			return null;
 		}
 	}
 
 	private resolveParentNodeId(data: CanvasData): string | null {
-		return this.resolveAnchorNode(data)?.id || null;
+		return this.resolveInsertHubNode(data)?.id || null;
+	}
+
+	private resolveInsertHubNode(data: CanvasData): CanvasNode | null {
+		const hubNodeId = String(this.insertHubNodeId || this.anchor?.nodeId || "").trim();
+		if (!hubNodeId) {
+			return null;
+		}
+		return data.nodes.find((node) => node.id === hubNodeId) || null;
 	}
 
 	private getEdgeSides(): { fromSide: CanvasSide; toSide: CanvasSide } {
@@ -321,29 +297,25 @@ export class EpubCanvasService {
 		}
 	}
 
-	private calculateNodePosition(data: CanvasData): { x: number; y: number } {
-		const anchorNode = this.resolveAnchorNode(data);
+	private calculateNodePosition(
+		data: CanvasData,
+		nodeSize: { width: number; height: number }
+	): { x: number; y: number } {
+		const anchorNode = this.resolveInsertHubNode(data);
 		if (!anchorNode) {
-			return this.calculateRootPosition(data);
+			return this.calculateRootPosition(data, nodeSize);
 		}
 
-		let position: { x: number; y: number };
-		if (this.lastInsertAnchorMode === "locked") {
-			const existingChildren = getDirectChildNodes(data, anchorNode.id);
-			position = calculateLockedHubNodePosition(
-				anchorNode,
-				existingChildren,
-				this.layoutDirection
-			);
-		} else {
-			position = this.calculateDirectionalPosition(anchorNode);
+		if (this.lastInsertAnchorMode === "chain") {
+			return calculateChainNodePosition(anchorNode, this.layoutDirection, nodeSize);
 		}
 
-		return avoidNodeOverlap(
-			position,
-			{ width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT },
-			data.nodes,
-			this.layoutDirection
+		const existingChildren = getDirectChildNodes(data, anchorNode.id);
+		return calculateMindMapHubNodePosition(
+			anchorNode,
+			existingChildren,
+			this.layoutDirection,
+			nodeSize
 		);
 	}
 
@@ -364,14 +336,10 @@ export class EpubCanvasService {
 		);
 	}
 
-	private resolveAnchorNode(data: CanvasData): CanvasNode | null {
-		if (!this.anchor?.nodeId) {
-			return null;
-		}
-		return data.nodes.find((node) => node.id === this.anchor?.nodeId) || null;
-	}
-
-	private calculateRootPosition(data: CanvasData): { x: number; y: number } {
+	private calculateRootPosition(
+		data: CanvasData,
+		nodeSize: { width: number; height: number }
+	): { x: number; y: number } {
 		const placementNodes = filterPlacementObstacleNodes(data.nodes);
 		if (placementNodes.length === 0) {
 			return { x: 0, y: 0 };
@@ -391,7 +359,7 @@ export class EpubCanvasService {
 				for (const node of placementNodes) {
 					if (node.y < minY) minY = node.y;
 				}
-				return { x: 0, y: minY - DEFAULT_NODE_HEIGHT - NODE_GAP_Y };
+				return { x: 0, y: minY - nodeSize.height - NODE_GAP_Y };
 			}
 			case "right": {
 				let maxX = -Infinity;
@@ -406,26 +374,9 @@ export class EpubCanvasService {
 				for (const node of placementNodes) {
 					if (node.x < minX) minX = node.x;
 				}
-				return { x: minX - DEFAULT_NODE_WIDTH - NODE_GAP_X, y: 0 };
+				return { x: minX - nodeSize.width - NODE_GAP_X, y: 0 };
 			}
 		}
-	}
-
-	private calculateDirectionalPosition(anchor: CanvasNode): { x: number; y: number } {
-		switch (this.layoutDirection) {
-			case "down":
-				return { x: anchor.x, y: anchor.y + anchor.height + NODE_GAP_Y };
-			case "up":
-				return { x: anchor.x, y: anchor.y - DEFAULT_NODE_HEIGHT - NODE_GAP_Y };
-			case "right":
-				return { x: anchor.x + anchor.width + NODE_GAP_X, y: anchor.y };
-			case "left":
-				return { x: anchor.x - DEFAULT_NODE_WIDTH - NODE_GAP_X, y: anchor.y };
-		}
-	}
-
-	updateAnchorFromCanvasSelection(app: App): void {
-		void this.prepareInsertAnchorFromOpenCanvas(app);
 	}
 
 	private async syncLayoutDirectionFromStorage(canvasPath: string): Promise<void> {
@@ -439,6 +390,7 @@ export class EpubCanvasService {
 	private async prepareInsertAnchor(data: CanvasData): Promise<void> {
 		if (!this.canvasPath) {
 			this.anchor = null;
+			this.insertHubNodeId = null;
 			this.lastInsertAnchorMode = null;
 			return;
 		}
@@ -467,11 +419,13 @@ export class EpubCanvasService {
 			anchorState,
 			selection?.nodeIds ?? [],
 			validNodeIds,
-			this.getInsertSelectionSnapshot()
+			this.getInsertSelectionSnapshot(),
+			data.edges
 		);
 		this.lastInsertAnchorMode = resolution.mode;
 		if (!resolution.nodeId) {
 			this.anchor = null;
+			this.insertHubNodeId = null;
 			return;
 		}
 
@@ -485,26 +439,27 @@ export class EpubCanvasService {
 			}
 		}
 
+		this.insertHubNodeId = resolution.mode === "locked" ? resolution.nodeId : null;
 		this.anchor = {
 			nodeId: resolution.nodeId,
 			parentNodeId,
 		};
 	}
 
-	private async prepareInsertAnchorFromOpenCanvas(app: App): Promise<void> {
-		try {
-			const data = await this.readCanvas();
-			await this.prepareInsertAnchor(data);
-		} catch (error) {
-			logger.warn("[EpubCanvasService] Failed to prepare canvas insert anchor:", error);
-		}
-	}
-
 	private async finalizeInsertAnchor(nodeId: string, parentId: string | null): Promise<void> {
-		this.anchor = {
-			nodeId,
-			parentNodeId: parentId,
-		};
+		const hubNodeId = String(this.insertHubNodeId || "").trim();
+		if (hubNodeId && this.lastInsertAnchorMode === "locked") {
+			this.anchor = {
+				nodeId: hubNodeId,
+				parentNodeId: hubNodeId,
+			};
+		} else {
+			this.anchor = {
+				nodeId,
+				parentNodeId: parentId,
+			};
+			this.insertHubNodeId = null;
+		}
 		if (!this.canvasPath) {
 			return;
 		}

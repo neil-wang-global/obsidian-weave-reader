@@ -16,7 +16,7 @@ export function resetEpubStorageServiceCache(app: App): void {
 }
 
 export function getEpubStorageService(app: App): EpubStorageService {
-	const host = resolveEpubHost(app) as { getEpubStorageService?: () => EpubStorageService } | null;
+	const host = resolveEpubHost(app);
 	if (typeof host?.getEpubStorageService === "function") {
 		const hostedService = host.getEpubStorageService();
 		if (hostedService) {

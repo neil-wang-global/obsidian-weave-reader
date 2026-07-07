@@ -4,6 +4,7 @@ import {
 	formatChapterLocationLabel,
 	normalizeChapterLocationFormat,
 	resolveChapterLocationLabel,
+	resolveTocLabelPathBySpineIndex,
 	resolveTocLabelPathForSectionHref,
 	tocHrefMatchesSectionHref,
 } from "../../../utils/epub-chapter-location-label";
@@ -59,6 +60,76 @@ describe("epub-chapter-location-label", () => {
 		expect(
 			resolveChapterLocationLabel([], "missing.xhtml", "3.1 告别", "full")
 		).toBe("3.1 告别");
+	});
+
+	it("resolves split spine sections to parent toc chapter labels", () => {
+		const splitToc: TocItem[] = [
+			{
+				id: "1",
+				label: "第三章 复杂系统",
+				href: "Text/part0011.xhtml",
+				level: 1,
+				subitems: [
+					{
+						id: "2",
+						label: "3.1 小节",
+						href: "Text/part0011.xhtml#section-1",
+						level: 2,
+					},
+				],
+			},
+		];
+		expect(
+			resolveTocLabelPathForSectionHref(splitToc, "Text/part0011_split_009.xhtml")
+		).toEqual(["第三章 复杂系统"]);
+		expect(
+			resolveChapterLocationLabel(
+				splitToc,
+				"Text/part0011_split_009.xhtml",
+				"part0011 split 009",
+				"leaf"
+			)
+		).toBe("第三章 复杂系统");
+	});
+
+	it("resolves later split sections via spine index when toc points at the first split", () => {
+		const splitToc: TocItem[] = [
+			{
+				id: "1",
+				label: "第二章 早期",
+				href: "Text/part0010_split_000.xhtml",
+				level: 1,
+			},
+			{
+				id: "2",
+				label: "在巨人的肩膀上",
+				href: "Text/part0011_split_000.xhtml",
+				level: 1,
+			},
+		];
+		const resolveSpineIndex = (href: string): number => {
+			const map: Record<string, number> = {
+				"Text/part0010_split_000.xhtml": 50,
+				"Text/part0011_split_000.xhtml": 60,
+			};
+			return map[href] ?? -1;
+		};
+
+		expect(
+			resolveTocLabelPathBySpineIndex(splitToc, 72, resolveSpineIndex)
+		).toEqual(["在巨人的肩膀上"]);
+		expect(
+			resolveChapterLocationLabel(
+				splitToc,
+				"Text/part0011_split_009.xhtml",
+				"part0011 split 009",
+				"leaf",
+				{
+					sectionIndex: 72,
+					resolveSpineIndex,
+				}
+			)
+		).toBe("在巨人的肩膀上");
 	});
 
 	it("normalizes unknown chapter location formats to leaf", () => {

@@ -12,6 +12,7 @@ import type {
 	TocItem,
 } from "./types";
 import type { EpubChapterLocationFormat } from "./epub-excerpt-settings";
+import type { FlatTocExportItem } from "./epub-toc-export-scope";
 
 export type EpubReaderEngineType = "foliate";
 
@@ -250,6 +251,7 @@ export interface EpubReaderEngine {
 	navigateTo(options: ReaderNavigateOptions): Promise<void>;
 	navigateAndHighlight(options: NavigateAndHighlightOptions): Promise<void>;
 	getNavigationTargetRect(options: ReaderNavigationRectOptions): DOMRect | null;
+	getSourceLocateOverlayRect(options: ReaderNavigationRectOptions): DOMRect | null;
 	getCurrentPosition(): ReadingPosition;
 	getCurrentChapterTitle(): string;
 	getChapterLocationLabel?(format?: EpubChapterLocationFormat): string;
@@ -286,9 +288,21 @@ export interface EpubReaderEngine {
 		href: string,
 		titleHint?: string
 	): Promise<EpubChapterReadingPointDraft | null>;
+	getTocChapterReadingPointDraft?(
+		href: string,
+		titleHint: string | undefined,
+		flatTocItems: FlatTocExportItem[],
+		itemIndex: number
+	): Promise<EpubChapterReadingPointDraft | null>;
 	getBookFootnotesDraft?(): Promise<EpubBookFootnotesDraft | null>;
 	getSectionHrefForCfi?(cfi: string): string | null;
 	getSectionHrefByChapterIndex?(chapterIndex: number): string | null;
+	getSectionIndexForCfi?(cfi: string): number | null;
+	resolveChapterHighlightRangeText?(
+		highlight: ReaderHighlight,
+		sectionHref: string,
+		sectionIndex: number
+	): Promise<string | null>;
 	getCurrentCFI(): string;
 	prevPage(): Promise<void>;
 	nextPage(): Promise<void>;
@@ -323,5 +337,6 @@ export interface EpubReaderEngine {
 	addTemporaryHighlight(highlight: ReaderHighlightInput, durationMs?: number): void;
 	temporarilyRevealConcealedText?(cfiRange: string, durationMs?: number): void;
 	removeHighlight(cfiRange: string): void;
+	removeHighlightByIdentityKey(identityKey: string): void;
 	destroy(): void;
 }

@@ -15,6 +15,7 @@
   "views.epubView.menu.clearReadingReferencePoint": "Clear reading reference point",
   "views.epubView.menu.exportBookHighlights": "Export this book's highlights to Markdown",
   "views.epubView.menu.exportCurrentChapter": "Export current chapter to Markdown",
+  "views.epubView.menu.exportCurrentChapterMarked": "Export current chapter to Markdown (with excerpt marks)",
   "views.epubView.menu.exportCurrentChapterHighlights": "Export current chapter excerpt notes to Markdown",
   "views.epubView.menu.goToReadingReferencePoint": "Go to reading reference point",
   "views.epubView.menu.saveReadingReferencePoint": "Save reading reference point",

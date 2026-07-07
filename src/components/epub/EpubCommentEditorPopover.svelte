@@ -11,6 +11,7 @@
 		mapBoundsRelativeToFixed,
 	} from '../../utils/mobile-floating-viewport';
 	import { applyReadingViewportLock } from '../../utils/mobile-reading-viewport-lock';
+	import { domInstanceOf } from '../../utils/dom-instance-of';
 
 	interface Props {
 		open: boolean;
@@ -61,12 +62,12 @@
 			return false;
 		}
 		const layout = getVisualViewportLayout();
-		return layout.keyboardVisible || document.activeElement === textareaEl;
+		return layout.keyboardVisible || activeDocument.activeElement === textareaEl;
 	}
 
 	function syncReadingSurfaceLock() {
 		const shouldLock = shouldLockReadingSurface();
-		document.body.classList.toggle(KEYBOARD_ACTIVE_BODY_CLASS, shouldLock);
+		activeDocument.body.classList.toggle(KEYBOARD_ACTIVE_BODY_CLASS, shouldLock);
 
 		if (!readingLockEl) {
 			releaseReadingSurfaceLock();
@@ -84,17 +85,17 @@
 	}
 
 	function releaseReadingSurfaceLock() {
-		document.body.classList.remove(KEYBOARD_ACTIVE_BODY_CLASS);
+		activeDocument.body.classList.remove(KEYBOARD_ACTIVE_BODY_CLASS);
 		readingLockCleanup?.();
 		readingLockCleanup = null;
 	}
 
 	function portalToBody(node: HTMLElement) {
-		if (typeof document === 'undefined' || !document.body) {
+		if (!activeDocument.body) {
 			return;
 		}
 
-		document.body.appendChild(node);
+		activeDocument.body.appendChild(node);
 
 		return {
 			destroy() {
@@ -161,7 +162,7 @@
 		if (!textareaEl || saving) {
 			return;
 		}
-		if (document.activeElement === textareaEl) {
+		if (activeDocument.activeElement === textareaEl) {
 			hasFocusedCurrentSession = true;
 			return;
 		}
@@ -308,7 +309,7 @@
 			return;
 		}
 		const target = event.target;
-		if (!(target instanceof Node) || !popoverEl.contains(target)) {
+		if (!domInstanceOf(target, Node) || !popoverEl.contains(target)) {
 			return;
 		}
 		if (event.key === 'Escape') {
@@ -319,7 +320,7 @@
 			(event.metaKey || event.ctrlKey)
 			&& event.key === 'Enter'
 			&& textareaEl
-			&& document.activeElement === textareaEl
+			&& activeDocument.activeElement === textareaEl
 		) {
 			event.preventDefault();
 			onSave();
@@ -372,15 +373,15 @@
 	}
 
 	onMount(() => {
-		document.addEventListener('mousedown', handlePointerDownOutside);
-		document.addEventListener('touchstart', handlePointerDownOutside as unknown as EventListener);
+		activeDocument.addEventListener('mousedown', handlePointerDownOutside);
+		activeDocument.addEventListener('touchstart', handlePointerDownOutside as unknown as EventListener);
 		window.addEventListener('resize', handleWindowLayoutChange);
 		window.addEventListener('scroll', handleWindowLayoutChange, true);
 		return () => {
 			clearPendingFocus();
 			stopViewportTracking();
-			document.removeEventListener('mousedown', handlePointerDownOutside);
-			document.removeEventListener('touchstart', handlePointerDownOutside as unknown as EventListener);
+			activeDocument.removeEventListener('mousedown', handlePointerDownOutside);
+			activeDocument.removeEventListener('touchstart', handlePointerDownOutside as unknown as EventListener);
 			window.removeEventListener('resize', handleWindowLayoutChange);
 			window.removeEventListener('scroll', handleWindowLayoutChange, true);
 		};

@@ -643,6 +643,31 @@
 	padding: 16px 20px 24px;
 }
 
+.epub-tutorial-footer {
+	flex-shrink: 0;
+	display: flex;
+	justify-content: flex-end;
+	padding: 10px 20px 14px;
+	border-top: 1px solid var(--epub-border);
+}
+
+.epub-tutorial-dismiss {
+	padding: 6px 10px;
+	font-size: 12px;
+	color: var(--text-muted);
+	border-radius: 6px;
+}
+
+.epub-tutorial-dismiss:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.epub-tutorial-dismiss:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
 /* Tutorial Section */
 
 .epub-tut-section {

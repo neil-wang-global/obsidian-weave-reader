@@ -7,7 +7,6 @@
   } from "../../config/reading-position-auto-save";
   import { normalizeSelectionTranslationSettings } from "../../config/selection-translation-settings";
   import { EPUB_RUNTIME, normalizeEpubBookmarkFolderPath } from "../../services/epub";
-  import { resolveBookNotesExportTemplateFolder } from "../../services/epub/book-notes-export/template-folder";
   import type { CustomWebTranslationProvider } from "../../config/selection-translation-settings";
   import { normalizeInterfaceLanguagePreference, tr } from "../../utils/i18n";
   import type StandaloneEpubPlugin from "../../main";
@@ -31,8 +30,9 @@
 
   let bookmarkFolderInput = $state("");
   let bookNotesExportTemplateFolderInput = $state("");
-  let bookNotesExportTemplateFolderValue = $state(resolveBookNotesExportTemplateFolder(null));
+  let bookNotesExportTemplateFolderValue = $state("");
   let bookNotesExportDefaultTemplatePath = $state("");
+  let excerptFolderSettingsLoaded = $state(false);
   let continuousReadingPositionAutoSavePagesInput = $state("");
   let customTranslationProviderDrafts = $state<CustomWebTranslationProvider[]>([]);
   let autoSavePagesTextControl = $state<TextComponent | null>(null);
@@ -153,7 +153,10 @@
   });
 
   onMount(() => {
-    void actions.refreshBookNotesExportTemplateFolder();
+    void (async () => {
+      await actions.refreshBookNotesExportTemplateFolder();
+      excerptFolderSettingsLoaded = true;
+    })();
     const handleExcerptSettingsChanged = () => {
       void actions.refreshBookNotesExportTemplateFolder();
     };
@@ -175,7 +178,8 @@
 
   $effect(() => {
     if (
-      !interfaceSettingsHost
+      !excerptFolderSettingsLoaded
+      || !interfaceSettingsHost
       || !premiumPreviewSettingsHost
       || !readingSettingsHost
       || !selectionTranslationSettingsHost

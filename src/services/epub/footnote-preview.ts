@@ -3,6 +3,7 @@ import type {
 	FoliateResolvedTarget,
 	FoliateVaultPublicationParser,
 } from "./FoliateVaultPublicationParser";
+import { createDivInDocument } from "../../utils/obsidian-document-dom";
 import { domInstanceOf } from "../../utils/dom-instance-of";
 import { logger } from "../../utils/logger";
 
@@ -538,7 +539,7 @@ export class FootnotePreviewResolver {
 		try {
 			const fragment = range.cloneContents();
 			const ownerDocument = range.commonAncestorContainer.ownerDocument || activeDocument;
-			const container = ownerDocument.createElement("div");
+			const container = createDivInDocument(ownerDocument);
 			container.appendChild(fragment);
 			container.querySelectorAll(FOOTNOTE_BACKREF_SELECTOR).forEach((element) => element.remove());
 			return this.normalizeFootnotePreviewText(container.textContent);

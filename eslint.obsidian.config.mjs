@@ -44,6 +44,8 @@ export default defineConfig([
       "src/utils/card-export-utils.ts",
       "src/utils/blob-url-text.ts",
       "src/utils/dom-instance-of.ts",
+      "src/utils/obsidian-document-dom.ts",
+      "src/utils/mobile-modal-bounds.ts",
       "src/utils/obsidian-workspace-utils.ts",
       "src/utils/electron-screenshot-access.ts",
       "src/utils/directory-utils.ts",
@@ -123,10 +125,14 @@ export default defineConfig([
       "@typescript-eslint/no-deprecated": "error",
     },
   },
-  {
-    files: ["src/services/epub/foliate-runtime-patches.ts"],
+    {
+    files: [
+      "src/utils/obsidian-document-dom.ts",
+      "src/services/epub/FoliateReaderService.ts",
+      "src/services/epub/foliate-blob-markup-normalizer.ts",
+    ],
     rules: {
-      "@typescript-eslint/unbound-method": "off",
+      "obsidianmd/prefer-create-el": "off",
     },
   },
   {

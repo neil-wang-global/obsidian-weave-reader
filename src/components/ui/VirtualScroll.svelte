@@ -71,11 +71,11 @@
     
     // 清除之前的超时
     if (scrollTimeout) {
-      clearTimeout(scrollTimeout);
+      window.clearTimeout(scrollTimeout);
     }
     
     // 设置滚动结束检测
-    scrollTimeout = setTimeout(() => {
+    scrollTimeout = window.setTimeout(() => {
       isScrolling = false;
     }, 150);
 
@@ -149,7 +149,7 @@
   $effect(() => {
     return () => {
       if (scrollTimeout) {
-        clearTimeout(scrollTimeout);
+        window.clearTimeout(scrollTimeout);
       }
     };
   });

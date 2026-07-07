@@ -5,7 +5,7 @@ import jaJPTutorial from "../tutorial-locales/ja-JP.json";
 import koKRTutorial from "../tutorial-locales/ko-KR.json";
 import ruRUTutorial from "../tutorial-locales/ru-RU.json";
 
-const TAB_IDS = ["basics", "highlight", "workflow", "tools", "credits"] as const;
+const TAB_IDS = ["basics", "highlight", "workflow", "tools", "family", "credits"] as const;
 const LOCALIZED_LANGS = ["ja-JP", "ko-KR", "ru-RU"] as const;
 
 function sectionCount(lang: (typeof LOCALIZED_LANGS)[number] | "en-US"): number {
@@ -61,9 +61,9 @@ describe("EPUB tutorial locales", () => {
 	});
 
 	it("preserves technical tutorial fields across localized bodies", () => {
-		const englishWorkflow = enUSTutorial.workflow[1];
+		const englishWorkflow = enUSTutorial.workflow[2];
 		for (const lang of LOCALIZED_LANGS) {
-			const localizedWorkflow = EPUB_TUTORIAL_CONTENT_BY_LANG[lang].workflow[1];
+			const localizedWorkflow = EPUB_TUTORIAL_CONTENT_BY_LANG[lang].workflow[2];
 			expect(localizedWorkflow?.code).toBe(englishWorkflow?.code);
 		}
 	});

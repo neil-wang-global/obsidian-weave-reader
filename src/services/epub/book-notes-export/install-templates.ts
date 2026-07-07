@@ -15,8 +15,23 @@ import {
 	type BookNotesExportBuiltinTemplateId,
 	type BookNotesExportLegacyTemplate,
 } from "./constants";
-import { resolveBookNotesExportTemplateFolder } from "./template-folder";
+import {
+	resolveBookNotesExportTemplateFolder,
+	type ResolveBookNotesExportTemplateFolderOptions,
+} from "./template-folder";
 import { isFileWithinVaultFolder } from "../../../utils/vault-folder-markdown-filter";
+
+function buildEmptyEnsureDefaultBookNotesExportTemplatesResult(): EnsureDefaultBookNotesExportTemplatesResult {
+	return {
+		classicTemplatePath: "",
+		calloutTemplatePath: "",
+		digestATemplatePath: "",
+		digestBTemplatePath: "",
+		citationGTemplatePath: "",
+		defaultTemplatePath: "",
+		createdPaths: [],
+	};
+}
 
 async function ensureFolderExists(app: App, folderPath: string): Promise<void> {
 	const normalizedFolder = normalizePath(String(folderPath || "").trim());
@@ -62,12 +77,19 @@ export interface EnsureDefaultBookNotesExportTemplatesResult {
 
 export async function ensureDefaultBookNotesExportTemplates(
 	app: App,
-	templateFolder?: string | null
+	templateFolder?: string | null,
+	options: ResolveBookNotesExportTemplateFolderOptions = {}
 ): Promise<EnsureDefaultBookNotesExportTemplatesResult> {
 	const createdPaths: string[] = [];
-	const folderPath = resolveBookNotesExportTemplateFolder({
-		bookNotesExportTemplateFolder: templateFolder,
-	});
+	const folderPath = resolveBookNotesExportTemplateFolder(
+		{
+			bookNotesExportTemplateFolder: templateFolder,
+		},
+		options
+	);
+	if (!folderPath) {
+		return buildEmptyEnsureDefaultBookNotesExportTemplatesResult();
+	}
 
 	for (const templateId of BOOK_NOTES_EXPORT_BUILTIN_TEMPLATE_IDS) {
 		const template = {
@@ -145,7 +167,10 @@ export async function loadBookNotesExportTemplateSource(
 	}
 
 	if (options.builtinTemplateId) {
-		const builtinPath = resolveBuiltinTemplatePath(options.builtinTemplateId);
+		const builtinPath = resolveBuiltinTemplatePath(
+			options.builtinTemplateId,
+			options.templateFolder
+		);
 		const builtinFile = app.vault.getAbstractFileByPath(builtinPath);
 		if (builtinFile instanceof TFile) {
 			return {
@@ -160,7 +185,7 @@ export async function loadBookNotesExportTemplateSource(
 	}
 
 	const legacyTemplate = options.legacyTemplate || "classic";
-	const legacyPath = resolveLegacyTemplatePath(legacyTemplate);
+	const legacyPath = resolveLegacyTemplatePath(legacyTemplate, options.templateFolder);
 	const legacyFile = app.vault.getAbstractFileByPath(legacyPath);
 	if (legacyFile instanceof TFile) {
 		return {

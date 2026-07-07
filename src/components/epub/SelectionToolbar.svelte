@@ -24,10 +24,12 @@
 	} from '../../services/obsidian/obsidian-web-translate';
 	import { extractSelectionContext } from '../../services/obsidian/selection-lookup-routing';
 	import { showNotification } from '../../utils/notifications';
+	import { domInstanceOf } from '../../utils/dom-instance-of';
 	import {
 		computeToolbarPosition,
 		createEventBinder,
-		isEventInsideObsidianFloatingUi,
+		getEventTargetNode,
+		shouldDismissToolbarOnPointerDown,
 		resolveMobileFloatingInsetBottom,
 	} from './toolbar-positioning';
 
@@ -107,7 +109,7 @@
 	let pendingExternalSelectionHideFrame: number | null = null;
 	let activeToolbarMenu: Menu | null = null;
 
-	const isMobileToolbar = Platform.isMobile || document.body.classList.contains('is-mobile');
+	const isMobileToolbar = Platform.isMobile || activeDocument.body.classList.contains('is-mobile');
 
 	function icon(node: HTMLElement, name: string) {
 		setIcon(node, name);
@@ -128,14 +130,14 @@
 	function closestAcrossShadowHosts(node: Node | null | undefined, selector: string): HTMLElement | null {
 		let current: Node | null | undefined = node;
 		while (current) {
-			if (current instanceof HTMLElement) {
+			if (domInstanceOf(current, HTMLElement)) {
 				const matched = current.closest(selector) as HTMLElement | null;
 				if (matched) {
 					return matched;
 				}
 			}
 			const rootNode = current.getRootNode?.();
-			if (!(rootNode instanceof ShadowRoot) || !(rootNode.host instanceof HTMLElement)) {
+			if (!domInstanceOf(rootNode, ShadowRoot) || !domInstanceOf(rootNode.host, HTMLElement)) {
 				break;
 			}
 			current = rootNode.host;
@@ -147,13 +149,13 @@
 		const iframe = getFrameElement(frame);
 		return closestAcrossShadowHosts(iframe, '.epub-reader-viewport')
 			|| boundsEl
-			|| (document.querySelector('.epub-reader-viewport') as HTMLElement | null);
+			|| (activeDocument.querySelector('.epub-reader-viewport') as HTMLElement | null);
 	}
 
 	function getScrollTrackingHost(frame: ReaderFrame | null | undefined): HTMLElement | null {
 		const iframe = getFrameElement(frame);
 		return closestAcrossShadowHosts(iframe, '.epub-content-wrapper')
-			|| (document.querySelector('.epub-content-wrapper') as HTMLElement | null);
+			|| (activeDocument.querySelector('.epub-content-wrapper') as HTMLElement | null);
 	}
 
 	function viewportRectToDOMRect(rect: ReaderViewportRect): DOMRect {
@@ -525,18 +527,11 @@
 	}
 
 	function handlePointerDownOutside(event: Event) {
-		const target = event.target;
-		if (!(target instanceof Node)) {
-			return;
-		}
-
-		if (isEventInsideObsidianFloatingUi(event)) {
-			return;
-		}
-
-		const insideToolbar = Boolean(toolbarEl?.contains(target));
-		if (insideToolbar) {
-			dismissActiveToolbarMenu();
+		if (!shouldDismissToolbarOnPointerDown(toolbarEl, event)) {
+			const target = getEventTargetNode(event.target);
+			if (target && toolbarEl?.contains(target)) {
+				dismissActiveToolbarMenu();
+			}
 			return;
 		}
 
@@ -658,10 +653,10 @@
 		binder.bind(scrollHost, 'scroll', scheduleActiveSync, { passive: true });
 		binder.bind(iframeWindow, 'scroll', scheduleActiveSync, { passive: true });
 		binder.bind(iframeWindow, 'resize', scheduleActiveSync);
-		binder.bind(iframeDocument, 'mousedown', handlePointerDownOutside);
-		binder.bind(iframeDocument, 'touchstart', handlePointerDownOutside, { passive: true });
-		binder.bind(document, 'mousedown', handlePointerDownOutside, { capture: true });
-		binder.bind(document, 'touchstart', handlePointerDownOutside, { capture: true, passive: true });
+		binder.bind(iframeDocument, 'mousedown', handlePointerDownOutside, { capture: true });
+		binder.bind(iframeDocument, 'touchstart', handlePointerDownOutside, { capture: true, passive: true });
+		binder.bind(activeDocument, 'mousedown', handlePointerDownOutside, { capture: true });
+		binder.bind(activeDocument, 'touchstart', handlePointerDownOutside, { capture: true, passive: true });
 		binder.bind(window, 'resize', scheduleActiveSync);
 		binder.bind(window, 'orientationchange', scheduleActiveSync);
 		binder.bind(visualViewport, 'resize', scheduleActiveSync);
@@ -686,9 +681,7 @@
 			iframeDoc = iframeWindow.document;
 			const selection = iframeWindow.getSelection();
 			if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-				if (!repositionOnly) {
-					hideToolbar();
-				}
+				hideToolbar();
 				return;
 			}
 
@@ -798,7 +791,7 @@
 		}
 		clearPendingExternalSelectionHide();
 
-		const viewportEl = boundsEl || (document.querySelector('.epub-reader-viewport') as HTMLElement | null);
+		const viewportEl = boundsEl || (activeDocument.querySelector('.epub-reader-viewport') as HTMLElement | null);
 		if (!viewportEl) {
 			untrack(() => {
 				hideToolbar();
@@ -816,11 +809,11 @@
 	});
 
 	onMount(() => {
-		document.addEventListener('mousedown', handlePointerDownOutside, { capture: true });
-		document.addEventListener('touchstart', handlePointerDownOutside, { capture: true, passive: true });
+		activeDocument.addEventListener('mousedown', handlePointerDownOutside, { capture: true });
+		activeDocument.addEventListener('touchstart', handlePointerDownOutside, { capture: true, passive: true });
 		return () => {
-			document.removeEventListener('mousedown', handlePointerDownOutside, { capture: true });
-			document.removeEventListener('touchstart', handlePointerDownOutside, { capture: true });
+			activeDocument.removeEventListener('mousedown', handlePointerDownOutside, { capture: true });
+			activeDocument.removeEventListener('touchstart', handlePointerDownOutside, { capture: true });
 			teardownReaderTracking?.();
 			teardownReaderTracking = null;
 			stopPositionTracking();

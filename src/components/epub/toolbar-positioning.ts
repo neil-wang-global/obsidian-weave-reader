@@ -1,3 +1,5 @@
+import { domInstanceOf } from "../../utils/dom-instance-of";
+
 export type ToolbarMode = "floating" | "docked";
 
 export type FloatingSidePreference = "top" | "bottom" | "auto";
@@ -118,10 +120,6 @@ function chooseFloatingSide(
 
 	if (preferredSide === "bottom") {
 		return availableBelow >= toolbarHeight || availableBelow >= availableAbove ? "bottom" : "top";
-	}
-
-	if (preferredSide === "auto") {
-		return availableAbove >= toolbarHeight || availableAbove >= availableBelow ? "top" : "bottom";
 	}
 
 	return availableAbove >= toolbarHeight || availableAbove >= availableBelow ? "top" : "bottom";
@@ -470,19 +468,39 @@ export function createEventBinder() {
 	};
 }
 
+/** Cross-realm safe (EPUB iframe / popout) event target resolution. */
+export function getEventTargetNode(target: unknown): Node | null {
+	if (target == null || typeof target !== "object") {
+		return null;
+	}
+	const node = target as Node;
+	return typeof node.nodeType === "number" ? node : null;
+}
+
+function getEventTargetElement(target: unknown): Element | null {
+	const node = getEventTargetNode(target);
+	if (!node) {
+		return null;
+	}
+	if (domInstanceOf(node, Element)) {
+		return node;
+	}
+	if (domInstanceOf(node, Text)) {
+		return node.parentElement;
+	}
+	return null;
+}
+
 export function isEventOutsideToolbar(toolbarEl: HTMLElement | undefined, event: Event): boolean {
-	return Boolean(toolbarEl && !toolbarEl.contains(event.target as Node));
+	const target = getEventTargetNode(event.target);
+	return Boolean(toolbarEl && target && !toolbarEl.contains(target));
 }
 
 const OBSIDIAN_FLOATING_UI_SELECTOR =
 	".menu, .modal-container, .modal, .popover, .suggestion-container, .dropdown-menu";
 
 export function isEventInsideObsidianFloatingUi(event: Event): boolean {
-	const target = event.target;
-	if (!(target instanceof Node)) {
-		return false;
-	}
-	const element = target instanceof Element ? target : target.parentElement;
+	const element = getEventTargetElement(event.target);
 	return Boolean(element?.closest(OBSIDIAN_FLOATING_UI_SELECTOR));
 }
 
@@ -491,8 +509,8 @@ export function shouldDismissToolbarOnPointerDown(
 	toolbarEl: HTMLElement | undefined,
 	event: Event
 ): boolean {
-	const target = event.target;
-	if (!(target instanceof Node)) {
+	const target = getEventTargetNode(event.target);
+	if (!target) {
 		return false;
 	}
 	if (toolbarEl?.contains(target)) {

@@ -54,6 +54,7 @@ export interface EpubHostExportChapterInput {
 	sourceLink?: string;
 	bookTitle?: string;
 	author?: string;
+	footnotesMarkdown?: string;
 }
 
 export interface EpubHostExportBookNotesInput {
@@ -220,7 +221,7 @@ function getRuntimePluginHost(app: App): EpubHostCapabilities | null {
 }
 
 function getLegacyHost(app: App): EpubHostCapabilities | null {
-	const legacyPlugin = getLegacyWeavePlugin(app as unknown) as Record<string, unknown> | null;
+	const legacyPlugin = getLegacyWeavePlugin(app);
 	if (!legacyPlugin) {
 		return null;
 	}
@@ -228,7 +229,7 @@ function getLegacyHost(app: App): EpubHostCapabilities | null {
 	const host = Object.create(legacyPlugin) as EpubHostCapabilities;
 
 	for (const methodName of LEGACY_AI_SPLIT_CONFIG_MODAL_METHODS) {
-		const candidate = legacyPlugin[methodName];
+		const candidate: unknown = Reflect.get(legacyPlugin, methodName);
 		if (typeof candidate !== "function") {
 			continue;
 		}

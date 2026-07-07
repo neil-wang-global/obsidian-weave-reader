@@ -136,8 +136,51 @@ describe('EpubLinkPostProcessor', () => {
 		expect(navigateSpy).toHaveBeenCalledWith(
 			'附件/demo.mobi',
 			'epubcfi(/6/62!/4/12,/1:0,/1:136)',
-			'七月，李·克劳接到史蒂夫·乔布斯的电话。',
+			'',
 			undefined,
+			undefined
+		);
+	});
+
+	it('ignores edited callout quote text for weave-loc links and navigates by CFI only', async () => {
+		const navigateSpy = vi
+			.spyOn(EpubLinkService.prototype, 'navigateToEpubLocation')
+			.mockResolvedValue(undefined);
+
+		const container = document.createElement('div');
+		container.innerHTML = [
+			'<div class="callout" data-callout="epub" data-callout-metadata="blue">',
+			'  <div class="callout-title">',
+			'    <a class="internal-link" href="附件/demo.epub#weave-loc=compact-locator&eid=excerpt-fixed&sid=epubsrc-demo">Demo</a>',
+			'  </div>',
+			'  <div class="callout-content">',
+			'    <blockquote><p>User edited excerpt body that no longer matches the book.</p></blockquote>',
+			'  </div>',
+			'</div>',
+		].join('');
+
+		vi.spyOn(EpubLinkService, 'parseEpubLink').mockReturnValue({
+			filePath: '',
+			cfi: 'epubcfi(/6/2!/4/2,/1:0,/1:9)',
+			text: '',
+			sourceId: 'epubsrc-demo',
+			excerptId: 'excerpt-fixed',
+		});
+
+		const processor = createEpubLinkPostProcessor({} as any);
+		processor(container, {} as any);
+
+		const link = container.querySelector('a');
+		expect(link).not.toBeNull();
+
+		link!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+		expect(navigateSpy).toHaveBeenCalledTimes(1);
+		expect(navigateSpy).toHaveBeenCalledWith(
+			'附件/demo.epub',
+			'epubcfi(/6/2!/4/2,/1:0,/1:9)',
+			'',
+			'epubsrc-demo',
 			undefined
 		);
 	});

@@ -211,7 +211,7 @@ export class UIManager {
 
 		// 添加闪烁效果
 		component.container.setCssProps({ animation: "pulse 0.5s ease-in-out" });
-		setTimeout(() => {
+		window.setTimeout(() => {
 			if (component.container) {
 				component.container.setCssProps({ animation: "" });
 			}

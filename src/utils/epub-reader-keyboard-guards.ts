@@ -46,7 +46,7 @@ export function isEventWithinElement(event: Event, element: HTMLElement | null |
 		return false;
 	}
 	const target = event.target;
-	if (!(target instanceof Node)) {
+	if (!domInstanceOf(target, Node)) {
 		return false;
 	}
 	return element === target || element.contains(target);

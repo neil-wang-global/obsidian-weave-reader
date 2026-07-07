@@ -1,6 +1,6 @@
 import { getReaderHighlightIdentityKey } from "./highlight/highlight-identity";
 import type { ReaderColorScheme } from "./reader-theme-tokens";
-import type { ReaderHighlight } from "./reader-engine-types";
+import type { ReaderHighlight, ReaderHighlightInput } from "./reader-engine-types";
 import type { EpubStrikethroughDisplayMode } from "./types";
 
 export type ReaderFoliateAnnotation = ReaderHighlight & {
@@ -55,6 +55,30 @@ export function shouldRenderAnnotationAsConceal(
 	return (
 		annotation.style === "strikethrough" && currentStrikethroughPresentation === "conceal"
 	);
+}
+
+/** Highlights treated as concealed for bookmark analytics and concealedCount. */
+export function isHighlightCountedAsConcealed(
+	highlight: Pick<ReaderHighlightInput, "presentation" | "color" | "style">,
+	strikethroughDisplayMode: EpubStrikethroughDisplayMode
+): boolean {
+	if (highlight.presentation === "conceal" || highlight.color === "mask") {
+		return true;
+	}
+	return (
+		highlight.style === "strikethrough" && strikethroughDisplayMode === "conceal"
+	);
+}
+
+/** Sidebar snapshot visibility — matches notes panel strikethrough toggle. */
+export function shouldIncludeHighlightInSidebarSnapshot(
+	highlight: Pick<ReaderHighlight, "style" | "presentation">,
+	showStrikethroughHighlights: boolean
+): boolean {
+	if (highlight.presentation === "conceal") {
+		return showStrikethroughHighlights;
+	}
+	return highlight.style !== "strikethrough" || showStrikethroughHighlights;
 }
 
 export function isSameFoliateAnnotation(

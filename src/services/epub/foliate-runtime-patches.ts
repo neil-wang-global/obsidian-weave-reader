@@ -2,56 +2,16 @@ import { Platform } from "obsidian";
 import {
 	isBlobResourceUrl,
 	readBlobUrlAsText,
-	shouldPreferFetchForResourceUrl,
+	readResourceUrlAsText,
 } from "../../utils/blob-url-text";
+import { domInstanceOf } from "../../utils/dom-instance-of";
 import { inlineFoliateBlobMarkup } from "./foliate-blob-markup-normalizer";
 
 function readTextFromResourceUrl(resourceUrl: string): Promise<string> {
 	if (isBlobResourceUrl(resourceUrl)) {
 		return readBlobUrlAsText(resourceUrl);
 	}
-	if (shouldPreferFetchForResourceUrl(resourceUrl) && typeof window.fetch === "function") {
-		return window.fetch(resourceUrl).then(async (response) => {
-			if (!response.ok) {
-				throw new Error(`HTTP ${response.status} ${response.statusText}`);
-			}
-			return response.text();
-		});
-	}
-
-	return new Promise((resolve, reject) => {
-		const request = new XMLHttpRequest();
-		request.open("GET", resourceUrl, true);
-		request.responseType = "text";
-		request.onload = () => {
-			if (request.status === 0 || (request.status >= 200 && request.status < 300)) {
-				resolve(request.responseText || "");
-				return;
-			}
-			reject(new Error(`HTTP ${request.status} ${request.statusText || "Unknown error"}`));
-		};
-		request.onerror = async () => {
-			if (isBlobResourceUrl(resourceUrl)) {
-				reject(new Error(`Failed to load resource: ${resourceUrl}`));
-				return;
-			}
-			const fetchFn = window.fetch;
-			if (typeof fetchFn === "function") {
-				try {
-					const response = await fetchFn(resourceUrl);
-					if (!response.ok) {
-						throw new Error(`HTTP ${response.status} ${response.statusText}`);
-					}
-					resolve(await response.text());
-					return;
-				} catch {
-					// Fall through to the shared rejection below.
-				}
-			}
-			reject(new Error(`Failed to load resource: ${resourceUrl}`));
-		};
-		request.send();
-	});
+	return readResourceUrlAsText(resourceUrl);
 }
 
 export function normalizeDesktopFoliateSandboxValue(
@@ -69,10 +29,9 @@ export function normalizeDesktopFoliateSandboxValue(
 	}
 	const normalizedStack = String(stack || "").toLowerCase();
 	const iframePart = String(iframeElement?.getAttribute("part") || "").toLowerCase();
+	const shadowRoot = iframeElement?.getRootNode();
 	const shadowHostTagName = String(
-		iframeElement?.getRootNode() instanceof ShadowRoot
-			? (iframeElement.getRootNode() as ShadowRoot).host?.tagName
-			: ""
+		domInstanceOf(shadowRoot, ShadowRoot) ? shadowRoot.host?.tagName : ""
 	).toLowerCase();
 	const isFoliateDesktopFrame =
 		normalizedStack.includes("node_modules/foliate-js/paginator.js") ||

@@ -23,7 +23,7 @@ export function normalizeTocHref(href: string): string {
 	return (hashIndex >= 0 ? normalized.slice(0, hashIndex) : normalized).trim();
 }
 
-function tocHrefBasename(href: string): string {
+export function tocHrefBasename(href: string): string {
 	const path = normalizeTocHref(href);
 	const segments = path.split("/").filter(Boolean);
 	return (segments[segments.length - 1] || path).toLowerCase();
@@ -33,6 +33,26 @@ function tocHrefFragment(href: string): string {
 	const trimmed = String(href || "").trim();
 	const hashIndex = trimmed.indexOf("#");
 	return hashIndex >= 0 ? trimmed.slice(hashIndex) : "";
+}
+
+const SPLIT_SECTION_BASENAME_PATTERN = /^(.+)_split_\d+$/i;
+
+function hrefBasenameWithoutExtension(href: string): string {
+	const basename = tocHrefBasename(href);
+	return basename.replace(/\.[^.]+$/, "");
+}
+
+function isSplitSectionHref(href: string): boolean {
+	return SPLIT_SECTION_BASENAME_PATTERN.test(hrefBasenameWithoutExtension(href));
+}
+
+function splitSectionMatchesTocParent(tocHref: string, sectionHref: string): boolean {
+	const match = hrefBasenameWithoutExtension(sectionHref).match(SPLIT_SECTION_BASENAME_PATTERN);
+	const splitParent = match?.[1];
+	if (!splitParent) {
+		return false;
+	}
+	return splitParent === hrefBasenameWithoutExtension(tocHref);
 }
 
 function tocHrefPathsMatch(normalizedTarget: string, normalizedItemHref: string): boolean {
@@ -113,6 +133,21 @@ export function findTocHrefForSectionHref(
 	for (const item of flatItems) {
 		if (normalizeTocHref(item.href) === normalizedTarget) {
 			return item.href;
+		}
+	}
+
+	if (isSplitSectionHref(trimmedTarget)) {
+		let splitMatch: FlatTocItem | null = null;
+		for (const item of flatItems) {
+			if (!splitSectionMatchesTocParent(item.href, trimmedTarget) || tocHrefFragment(item.href)) {
+				continue;
+			}
+			if (!splitMatch || item.depth < splitMatch.depth) {
+				splitMatch = item;
+			}
+		}
+		if (splitMatch) {
+			return splitMatch.href;
 		}
 	}
 
