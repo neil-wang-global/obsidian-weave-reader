@@ -4,9 +4,15 @@
 
 <div align="center">
 
-![Weave EPUB Reader](https://img.shields.io/badge/Obsidian-EPUB%20Reader-8a5cf6?style=for-the-badge)
-![Min Obsidian](https://img.shields.io/badge/Obsidian-1.8.7+-purple?style=for-the-badge)
-![License](https://img.shields.io/badge/license-GPL--3.0-orange?style=for-the-badge)
+
+
+![QQ_1784327250240](https://github.com/user-attachments/assets/dc88b393-76ec-413c-b226-31ab01a7e82a)
+
+![QQ_1784327656530](https://github.com/user-attachments/assets/0f23ecc2-e60a-4fab-ad57-6e43a5a4441d)
+
+![QQ20260718-063709-HD](https://github.com/user-attachments/assets/9f365282-5269-4f6d-840f-c8d4950b9c03)
+
+![QQ_1784328028569](https://github.com/user-attachments/assets/1185b662-3f91-4dee-b552-e53e3ebcb25d)
 
 </div>
 
