@@ -46,9 +46,6 @@
 
 下方图示概括整体结构（GitHub / Obsidian 均可渲染 Mermaid）。
 
-![阅读器与书架界面](https://github.com/user-attachments/assets/f7d9af9a-8c4e-4c93-90e8-3662662fa985)
-
-![摘录与笔记工作流](https://github.com/user-attachments/assets/6bec4ba2-2b14-4c74-9cbd-f116a56438dc)
 
 ### 图 1 · 五条工作流怎么选（按目标分流）
 
@@ -285,9 +282,7 @@ Minimum Obsidian version: **1.8.7**
 
 The diagrams below summarize the structure (Mermaid renders on **GitHub** and in **Obsidian**).
 
-![Reader and bookshelf](https://github.com/user-attachments/assets/f7d9af9a-8c4e-4c93-90e8-3662662fa985)
 
-![Excerpt and note workflow](https://github.com/user-attachments/assets/6bec4ba2-2b14-4c74-9cbd-f116a56438dc)
 
 ### Diagram 1 · Pick a workflow (goal-based map)
 
