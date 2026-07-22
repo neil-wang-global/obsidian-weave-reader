@@ -47,8 +47,6 @@ import type { SupportedLanguage } from "../../utils/i18n";
 import zhCNTutorial from "./tutorial-locales/zh-CN.json";
 import zhTWTutorial from "./tutorial-locales/zh-TW.json";
 import enUSTutorial from "./tutorial-locales/en-US.json";
-import jaJPTutorial from "./tutorial-locales/ja-JP.json";
-import koKRTutorial from "./tutorial-locales/ko-KR.json";
 import ruRUTutorial from "./tutorial-locales/ru-RU.json";
 
 export type TutorialLanguage = "zh-CN" | "zh-TW" | "en-US" | "ja-JP" | "ko-KR" | "ru-RU";
@@ -127,7 +125,10 @@ export const EPUB_TUTORIAL_CONTENT_BY_LANG: Record<TutorialLanguage, TutorialCon
 	"zh-CN": zhCNTutorial as TutorialContentByTab,
 	"zh-TW": zhTWTutorial as TutorialContentByTab,
 	"en-US": enUSTutorial as TutorialContentByTab,
-	"ja-JP": jaJPTutorial as TutorialContentByTab,
-	"ko-KR": koKRTutorial as TutorialContentByTab,
+	// The public repository does not ship generated ja-JP/ko-KR tutorial JSON.
+	// Keep those locales buildable and usable by falling back to English content;
+	// their tab labels above remain localized.
+	"ja-JP": enUSTutorial as TutorialContentByTab,
+	"ko-KR": enUSTutorial as TutorialContentByTab,
 	"ru-RU": ruRUTutorial as TutorialContentByTab,
 };

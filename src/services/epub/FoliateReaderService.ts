@@ -549,7 +549,15 @@ export class FoliateReaderService implements EpubReaderEngine {
 				return;
 			}
 			this.attachThemeChangeListener();
-			this.applyRendererLayout();
+			// Setting Foliate's `flow` attribute invokes render synchronously. During the
+			// first scrolled render the chapter iframe has not been loaded yet, so Foliate
+			// can try to lay out a document without documentElement/body and abort opening
+			// the book. Keep its default paginated layout for the bootstrap navigation and
+			// apply the requested scrolled flow once the first chapter is mounted.
+			const deferInitialScrolledLayout = this.currentFlowMode === "scrolled";
+			if (!deferInitialScrolledLayout) {
+				this.applyRendererLayout();
+			}
 			this.applyRendererAppearance();
 			this.renderedAnnotations.clear();
 			const positionOperationToken = this.sessionGuard.startPositionOperation();
@@ -571,6 +579,13 @@ export class FoliateReaderService implements EpubReaderEngine {
 					positionOperationToken,
 					viewSessionToken
 				);
+			}
+			if (deferInitialScrolledLayout) {
+				this.applyRendererLayout();
+				await this.waitForAnimationFrame();
+				if (!this.sessionGuard.isActiveViewSession(viewSessionToken, this.foliateView, view)) {
+					return;
+				}
 			}
 			await this.syncCurrentPositionFromTarget(
 				initialTarget || this.parser.getSectionHrefByIndex(0),
