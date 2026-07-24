@@ -787,6 +787,37 @@ describe("FoliateReaderService", () => {
 		}
 	});
 
+	it("defers the initial scrolled layout until the first chapter navigation has mounted", async () => {
+		const service = new FoliateReaderService(
+			createMockApp(await createSampleEpubBuffer()) as any
+		) as any;
+		try {
+			await service.loadEpub("Books/foliate-sample.epub", "foliate-book");
+			const order: string[] = [];
+			const originalNavigate = service.navigateViewWithFallback.bind(service);
+			vi.spyOn(service, "applyRendererLayout").mockImplementation(() => {
+				order.push("layout");
+			});
+			vi.spyOn(service, "navigateViewWithFallback").mockImplementation(
+				async (...args: unknown[]) => {
+					order.push("navigate");
+					return originalNavigate(...args);
+				}
+			);
+
+			await service.renderTo(document.createElement("div"), {
+				flow: "scrolled",
+				spread: "none",
+			});
+
+			expect(order).toContain("navigate");
+			expect(order).toContain("layout");
+			expect(order.indexOf("layout")).toBeGreaterThan(order.indexOf("navigate"));
+		} finally {
+			service.destroy();
+		}
+	});
+
 	it("switches strikethrough excerpt rendering between concealment and visible strike mode", async () => {
 		const service = new FoliateReaderService(createMockApp(await createSampleEpubBuffer()) as any) as any;
 		try {
