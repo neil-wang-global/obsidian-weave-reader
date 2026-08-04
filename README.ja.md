@@ -1,6 +1,6 @@
 # Weave EPUB Reader
 
-[中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md) | [English](./README.md#english-documentation) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Русский](./README.ru.md)
+[中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md) | [English](./README.md#english-documentation) | [Español](./README.es.md) | [Français](./README.fr.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Русский](./README.ru.md) | [العربية](./README.ar.md)
 
 <div align="center">
 
@@ -277,6 +277,7 @@ flowchart LR
 
 - [プラグイン紹介（简体中文）](./README.md#中文文档)
 - [プラグイン紹介（繁體中文）](./README.zh-TW.md)
+- [Español](./README.es.md) · [Français](./README.fr.md) · [العربية](./README.ar.md)
 - [プライバシー](./PRIVACY.md) · [プレミアムサポート条項](./PREMIUM_TERMS.md) · [サポート](./SUPPORT.md) · [セキュリティ](./SECURITY.md)
 
 ## ライセンスと作者

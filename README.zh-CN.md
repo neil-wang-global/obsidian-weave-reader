@@ -8,10 +8,13 @@
 
 - **繁體中文:** [README.zh-TW.md](./README.zh-TW.md)
 - **English:** [README.md](./README.md#english-documentation)
+- **Español:** [README.es.md](./README.es.md)
+- **Français:** [README.fr.md](./README.fr.md)
 - **日本語:** [README.ja.md](./README.ja.md)
 - **한국어:** [README.ko.md](./README.ko.md)
 - **Русский:** [README.ru.md](./README.ru.md)
+- **العربية:** [README.ar.md](./README.ar.md)
 
 ## 界面语言（插件内）
 
-阅读器界面现已支持：简体中文、繁體中文、English、日本語、한국어、Русский、**Deutsch**、**Español**、**العربية**（默认跟随 Obsidian，可在阅读器设置中固定）。
+阅读器界面现已支持：简体中文、繁體中文、English、日本語、한국어、Русский、**Deutsch**、**Español**、**العربية**（默认跟随 Obsidian，可在阅读器设置中固定）。GitHub 另提供 **Français** 说明文档（`README.fr.md`）。

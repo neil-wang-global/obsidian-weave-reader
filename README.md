@@ -1,6 +1,6 @@
 # Weave EPUB Reader
 
-[中文](#中文文档) | [繁體中文](./README.zh-TW.md) | [English](#english-documentation) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Русский](./README.ru.md)
+[中文](#中文文档) | [繁體中文](./README.zh-TW.md) | [English](#english-documentation) | [Español](./README.es.md) | [Français](./README.fr.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Русский](./README.ru.md) | [العربية](./README.ar.md)
 
 <div align="center">
 
@@ -279,6 +279,7 @@ flowchart LR
 
 - [插件介绍（简体中文）](#中文文档)
 - [插件介绍（繁體中文）](./README.zh-TW.md)
+- [Español](./README.es.md) · [Français](./README.fr.md) · [العربية](./README.ar.md)
 - [隐私说明](./PRIVACY.md) · [高级支持条款](./PREMIUM_TERMS.md) · [支持](./SUPPORT.md) · [安全](./SECURITY.md)
 
 ## 许可证与作者
@@ -551,6 +552,7 @@ Plugin ID: `weave-epub-reader` → `.obsidian/plugins/weave-epub-reader/`
 
 - [Introduction (Simplified Chinese)](#中文文档)
 - [Introduction (Traditional Chinese)](./README.zh-TW.md)
+- [Español](./README.es.md) · [Français](./README.fr.md) · [العربية](./README.ar.md)
 - [Privacy](./PRIVACY.md) · [Premium support terms](./PREMIUM_TERMS.md) · [Support](./SUPPORT.md) · [Security](./SECURITY.md)
 
 ## License and author

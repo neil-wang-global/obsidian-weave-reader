@@ -1,6 +1,6 @@
 # Weave EPUB Reader
 
-[中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md) | [English](./README.md#english-documentation) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Русский](./README.ru.md)
+[中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md) | [English](./README.md#english-documentation) | [Español](./README.es.md) | [Français](./README.fr.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Русский](./README.ru.md) | [العربية](./README.ar.md)
 
 <div align="center">
 
@@ -277,6 +277,7 @@ ID плагина: `weave-epub-reader` → `.obsidian/plugins/weave-epub-reader/
 
 - [Введение (упрощённый китайский)](./README.md#中文文档)
 - [Введение (традиционный китайский)](./README.zh-TW.md)
+- [Español](./README.es.md) · [Français](./README.fr.md) · [العربية](./README.ar.md)
 - [Конфиденциальность](./PRIVACY.md) · [Условия Premium support](./PREMIUM_TERMS.md) · [Поддержка](./SUPPORT.md) · [Безопасность](./SECURITY.md)
 
 ## Лицензия и автор
