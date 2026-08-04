@@ -4,8 +4,6 @@
 
 <div align="center">
 
-
-
 ![QQ_1784327250240](https://github.com/user-attachments/assets/dc88b393-76ec-413c-b226-31ab01a7e82a)
 
 ![QQ20260718-070731-HD](https://github.com/user-attachments/assets/c1850008-aa57-48e1-b63f-d34a01326a53)
@@ -13,6 +11,8 @@
 ![QQ20260718-064929-HD](https://github.com/user-attachments/assets/5fc7ff83-b8e3-498f-8233-90fbcc94198b)
 
 ![QQ_1784328028569](https://github.com/user-attachments/assets/1185b662-3f91-4dee-b552-e53e3ebcb25d)
+
+![QQ_1785812351950](https://github.com/user-attachments/assets/5c33039e-7ca4-461b-b258-972561f9789d)
 
 </div>
 
@@ -28,15 +28,47 @@
 
 上手很轻：把 EPUB 放进 Vault，从书架打开，选中文字即可摘录。摘录会带着回到原书的位置信息；你改笔记、删摘录或换颜色，书里的高亮也会跟着变。更完整的五条工作流（自动摘录、Canvas、制卡、回链、增量阅读）见下方 [摘录笔记工作流](#摘录笔记工作流) 图示——按自己的习惯选一条路走即可。
 
-## 核心能力
+## 核心功能特性清单
 
-- **支持平台**：桌面端（Windows、macOS、Linux）与移动端（iOS、Android）
-- **界面语言**：简体中文、繁體中文、English、日本語、한국어、Русский（默认跟随 Obsidian，可在阅读器设置中固定）
-- **阅读格式**：Vault 内 EPUB、MOBI、AZW3、FB2、FBZ（`fb2.zip`）、CBZ、TXT 等（名称含 EPUB，但不仅限于 EPUB）
-- **摘录笔记**：五种高亮颜色，以及下划线、删除线、波浪线等样式标注；想法；自动或手动写入 Markdown / Canvas / Weave 牌组；正文回显；笔记删改、改色后书中高亮同步更新
-- **双向溯源与定位**：书籍深链接锚点；笔记跳回原文段落；阅读器内点击高亮反查来源笔记 / Canvas / 牌组
-- **段落阅读模式**：单段沉浸阅读、段内翻页与跨段导航
-- **其它**：书架与目录、分页/连续滚动、版式主题；阅读进度与剩余时间估算；增量阅读月历排期；脚注浮窗；书签、章节导出、截图、Canvas 绑定；AI 入口
+### 阅读与书架
+
+- 桌面 / 移动端全平台阅读
+- EPUB、TXT、FB2/FBZ 阅读（MOBI、AZW3、CBZ 为高级）
+- 我的书架：导入、封面、进度、搜索筛选、阅读状态
+- 翻页 / 连续滚动、单页 / 双栏、宽度与排版调节
+- 阅读进度持久化、书签、剩余阅读时间估算
+- 段落阅读模式、沉浸式全屏、参考阅读点（高级）
+- 书架书单（高级）
+
+### 摘录与标注
+
+- 五色高亮 + 下划线 / 删除线 / 波浪线
+- 想法气泡（`---div---`）
+- 自动模式：插入笔记 / 复制剪贴板
+- Markdown / Canvas / Weave 牌组正文回显与同步
+- 截图摘录（可翻页续截）
+
+### 摘录汇总
+
+- 摘录笔记汇总卡片列表（筛选、排序、定位原文）
+- 摘录笔记汇总时间线视图（按日期回顾、跳转原文）
+- 批量选择：导出 / 删除
+- 目录侧栏全书地图密度条
+
+### 溯源与联动
+
+- 书籍深链接写入摘录
+- 双向溯源精确定位：笔记 ↔ 原书（高级）
+- Canvas 绑定、自动写入节点、回显
+- 制卡 / 增量阅读 / AI（需 Weave，不占阅读器高级许可）
+
+### 导出与辅助
+
+- 导出当前章为 Markdown（基础）
+- 导出全书 / 本章摘录、带标记章节（高级）
+- 导出模板工作室与内置预设
+- 脚注浮窗预览（高级）
+- 多语言界面（简体中文、繁體中文、English、日本語、한국어、Русский、Deutsch、Español、العربية）+ 应用内使用教程
 
 各能力在 [基础体验与高级支持](#基础体验与高级支持) 中的划分见下表。
 
@@ -45,7 +77,6 @@
 ## 摘录笔记工作流
 
 下方图示概括整体结构（GitHub / Obsidian 均可渲染 Mermaid）。
-
 
 ### 图 1 · 五条工作流怎么选（按目标分流）
 
@@ -143,7 +174,7 @@ flowchart LR
 - **多端一致**：书与笔记都在 Vault 里，随 Obsidian 同步策略走；手机读、桌面整理可以同一条链路。
 - **长书与多书有节奏**：章节可进入增量阅读月历，按调度交错阅读，而不是靠意志力硬啃单本。
 
-更完整的操作说明见上文 [摘录笔记工作流](#摘录笔记工作流) 与 [核心能力](#核心能力)。
+更完整的操作说明见上文 [摘录笔记工作流](#摘录笔记工作流) 与 [核心功能特性清单](#核心功能特性清单)。
 
 ## 基础体验与高级支持
 
@@ -152,15 +183,20 @@ flowchart LR
 | **全平台**阅读（桌面端与移动端） | ✅ | ✅ |
 | 阅读 **EPUB**，目录跳转、翻页/滚动、版式与主题 | ✅ | ✅ |
 | 阅读 **TXT** 纯文本书籍 | ✅ | ✅ |
-| 阅读 **MOBI / AZW3 / FB2 / FBZ / CBZ** | 🔒 | ✅ |
+| 阅读 **FB2 / FBZ** | ✅ | ✅ |
+| 阅读 **MOBI / AZW3 / CBZ** | 🔒 | ✅ |
 | **五种高亮色**、想法、摘录与**正文回显** | ✅ | ✅ |
-| **下划线 / 删除线 / 波浪线**等样式标注 | 🔒 | ✅ |
+| **下划线 / 删除线 / 波浪线**等样式标注 | ✅ | ✅ |
+| 摘录笔记**汇总卡片列表**与**时间线**视图 | ✅ | ✅ |
+| 目录侧栏**全书地图密度条** | ✅ | ✅ |
+| 书架**书单** | 🔒 | ✅ |
 | **双向溯源**（锚点跳转、笔记 ↔ 原书定位显示） | 🔒 | ✅ |
-| **段落阅读模式**、参考阅读点 | 🔒 | ✅ |
+| **段落阅读模式**、参考阅读点、沉浸式全屏 | 🔒 | ✅ |
 | **阅读进度**持久化、书架进度、最后阅读点、剩余阅读时间 | ✅ | ✅ |
 | **当前页书签**、书签目录与书签列表跳转 | ✅ | ✅ |
-| **Canvas** 绑定与自动写入节点 | 🔒 | ✅ |
-| 脚注浮窗预览、导出当前章节为 Markdown | 🔒 | ✅ |
+| **Canvas** 绑定与自动写入节点 | ✅ | ✅ |
+| 脚注浮窗预览 | 🔒 | ✅ |
+| 导出当前章节为 Markdown | ✅ | ✅ |
 
 > 图例：✅ 已包含 · 🔒 需启用高级支持
 
@@ -188,13 +224,13 @@ flowchart LR
 ## 快速开始
 
 1. 启用插件后，通过功能区图标或命令面板打开**书架**，从 Vault 导入或打开图书。
-2. 在阅读器中选中文本，创建高亮、摘录或书签。
-3. 使用工具栏进行章节跳转、显示设置与导出。
+2. 新建或打开一个 Markdown 文件，把光标放在需要插入摘录的位置；启用阅读器的**自动摘录**。选中文本，创建高亮、摘录或书签，内容会自动写入该位置。
+3. 点击正文中的高亮，在工具条中跳转到来源笔记；在保存摘录的 Markdown / Canvas 中点击摘录旁的书籍图标，即可回到书中对应位置。
 4. 阅读器菜单 → **帮助** → **使用教程** 可查看插件内精简教程。工作流细节见上文 [摘录笔记工作流](#摘录笔记工作流)。
 
 ## 数据与同步
 
-**建议同步（位于 Vault）**：图书文件、Markdown 摘录、Canvas、Weave 牌组数据，以及每本书的进度与书签专有笔记（默认 `weave/epub-bookmarks/data_*.md`）。
+**建议同步（位于 Vault）**：图书文件、Markdown 摘录、Canvas、Weave 牌组数据，以及每本书的进度与书签专有笔记（默认 `Weave EPUB Reader/data_*.md`）。
 
 **通常不需跨设备同步（位于插件目录）**：阅读缓存、索引、Canvas 绑定与参考阅读点等本地状态。多设备使用时优先同步 Vault 内容，而非直接同步 `.obsidian/plugins/weave-epub-reader/` 下的缓存文件。
 
@@ -207,9 +243,9 @@ flowchart LR
 
 ## 常见问题
 
-### 正文没有显示摘录高亮？
+### 如何正确的做阅读摘录笔记？
 
-确认摘录由本插件生成、位于 Markdown / Canvas / Weave 牌组文件中，且打开的是**同一本书**。来源文件刚修改时，稍等片刻会自动刷新。
+阅读摘录笔记保存在你选择的 Markdown、Canvas，以及 Weave 牌组文件中的具体位置；阅读器通过汇总这些摘录中的溯源链接，在正文中回显高亮。若不满足上述保存条件，选中摘录只会短暂高亮，不会留下可同步的实质数据。阅读器顶部的教程浮窗有更详细的说明。
 
 ### 与 Weave 的关系？
 
@@ -233,7 +269,7 @@ flowchart LR
 
 ### 非 EPUB 格式打不开？
 
-**EPUB 与 TXT** 在基础体验中即可阅读；**MOBI、AZW3、FB2、FBZ、CBZ** 等需启用高级支持。详见上文 [基础体验与高级支持](#基础体验与高级支持)。
+**EPUB、TXT、FB2/FBZ** 在基础体验中即可阅读；**MOBI、AZW3、CBZ** 等需启用高级支持。详见上文 [基础体验与高级支持](#基础体验与高级支持)。
 
 ### 插件文件夹名称？
 
@@ -264,15 +300,47 @@ It fits readers who capture sentences into Markdown as they go; researchers who 
 
 Getting started is light: put an EPUB in your vault, open it from the bookshelf, select text, and excerpt. Each capture keeps a link back to the same passage in the book; when you edit, delete, or recolor notes, highlights in the text update to match. Five fuller paths—auto excerpts, Canvas, cards, backlinks, incremental reading—are diagrammed in [Excerpt and note workflows](#excerpt-and-note-workflows) below; follow the one that matches your habit.
 
-## Core capabilities
+## Core feature checklist
 
-- **Platforms**: Desktop (Windows, macOS, Linux) and mobile (iOS, Android)
-- **Interface languages**: Simplified Chinese, Traditional Chinese, English, Japanese, Korean, Russian (follow Obsidian by default; can be fixed in reader settings)
-- **Formats**: EPUB, MOBI, AZW3, FB2, FBZ (`fb2.zip`), CBZ, TXT, and more in the vault (despite the name, the plugin is not EPUB-only)
-- **Excerpts and notes**: Five highlight colors plus underline, strikethrough, and wavy underline; annotations; auto or manual capture to Markdown, Canvas, or Weave decks; in-body rendering; highlights refresh when notes change
-- **Two-way tracing and anchors**: Book deep links; jump from notes to the original passage; open the source note, Canvas, or deck from a highlight in the reader
-- **Paragraph reading mode**: Immersive single-paragraph view with in-paragraph paging and cross-paragraph navigation
-- **More**: Bookshelf and TOC, paginated or continuous scrolling, typography and themes; reading progress and remaining-time estimates; incremental reading calendar; footnote hover preview; bookmarks, chapter export, screenshots, Canvas binding; AI entry points
+### Reading and bookshelf
+
+- Full-platform reading on desktop and mobile
+- EPUB, TXT, and FB2/FBZ reading (MOBI, AZW3, and CBZ are Premium)
+- My bookshelf: import, covers, progress, search/filter, reading status
+- Paginated / continuous scroll, single / dual column, width and typography controls
+- Persistent reading progress, bookmarks, remaining-time estimates
+- Paragraph reading mode, immersive fullscreen, reference reading points (Premium)
+- Bookshelf playlists (Premium)
+
+### Excerpts and annotations
+
+- Five highlight colors plus underline / strikethrough / wavy underline
+- Thought bubbles (`---div---`)
+- Auto mode: insert into notes / copy to clipboard
+- In-body rendering and sync for Markdown / Canvas / Weave decks
+- Screenshot excerpts (can continue across pages)
+
+### Excerpt summaries
+
+- Excerpt card list (filter, sort, jump to source)
+- Excerpt timeline view (review by date, jump to source)
+- Batch select: export / delete
+- TOC sidebar book-map density bar
+
+### Tracing and integrations
+
+- Book deep links written into excerpts
+- Precise two-way tracing: notes ↔ book (Premium)
+- Canvas binding, auto node creation, and rendering
+- Card making / incremental reading / AI (requires Weave; does not consume reader Premium license)
+
+### Export and helpers
+
+- Export current chapter to Markdown (Essential)
+- Export whole-book / chapter excerpts and marked chapters (Premium)
+- Export template studio with built-in presets
+- Footnote hover preview (Premium)
+- Multilingual UI (Simplified Chinese, Traditional Chinese, English, Japanese, Korean, Russian, German, Spanish, Arabic) + in-app tutorial
 
 See [Essential experience and Premium support](#essential-experience-and-premium-support) for how capabilities are grouped.
 
@@ -281,8 +349,6 @@ Minimum Obsidian version: **1.8.7**
 ## Excerpt and note workflows
 
 The diagrams below summarize the structure (Mermaid renders on **GitHub** and in **Obsidian**).
-
-
 
 ### Diagram 1 · Pick a workflow (goal-based map)
 
@@ -380,7 +446,7 @@ This complements workflow A: **A is where captures go; E is when each chapter ge
 - **Same workflow across devices**—books and notes live in the vault and follow your Obsidian sync setup.
 - **Rhythm for long or multiple books**—chapters enter the incremental reading calendar for scheduled, interleaved progress.
 
-More detail: [Excerpt and note workflows](#excerpt-and-note-workflows) and [Core capabilities](#core-capabilities) above.
+More detail: [Excerpt and note workflows](#excerpt-and-note-workflows) and [Core feature checklist](#core-feature-checklist) above.
 
 ## Essential experience and Premium support
 
@@ -389,15 +455,20 @@ More detail: [Excerpt and note workflows](#excerpt-and-note-workflows) and [Core
 | **All platforms** (desktop and mobile) | ✅ | ✅ |
 | Read **EPUB**, TOC, paginated/scroll modes, typography and themes | ✅ | ✅ |
 | Read **TXT** plain-text books | ✅ | ✅ |
-| Read **MOBI / AZW3 / FB2 / FBZ / CBZ** | 🔒 | ✅ |
+| Read **FB2 / FBZ** | ✅ | ✅ |
+| Read **MOBI / AZW3 / CBZ** | 🔒 | ✅ |
 | **Five highlight colors**, annotations, excerpts, and **in-body rendering** | ✅ | ✅ |
-| **Underline / strikethrough / wavy underline** styling | 🔒 | ✅ |
+| **Underline / strikethrough / wavy underline** styling | ✅ | ✅ |
+| Excerpt **card list** and **timeline** views | ✅ | ✅ |
+| TOC sidebar **book map density bar** | ✅ | ✅ |
+| Bookshelf **playlists** | 🔒 | ✅ |
 | **Two-way tracing** (anchor jumps, reader ↔ notes / Canvas / decks) | 🔒 | ✅ |
-| **Paragraph reading mode**, reference reading points | 🔒 | ✅ |
+| **Paragraph reading mode**, reference reading points, immersive fullscreen | 🔒 | ✅ |
 | **Reading progress**, bookshelf progress, last location, remaining-time estimates | ✅ | ✅ |
 | **Current-page bookmarks**, bookmark folder, and bookmark list navigation | ✅ | ✅ |
-| **Canvas** binding and automatic node creation | 🔒 | ✅ |
-| Footnote hover preview; export current chapter to Markdown | 🔒 | ✅ |
+| **Canvas** binding and automatic node creation | ✅ | ✅ |
+| Footnote hover preview | 🔒 | ✅ |
+| Export current chapter to Markdown | ✅ | ✅ |
 
 > Legend: ✅ included · 🔒 requires Premium support
 
@@ -424,16 +495,16 @@ Authoritative breakdown: [Essential experience and Premium support](#essential-e
 
 ## Quick start
 
-1. Open the **bookshelf** from the ribbon or command palette, then import or open a book.
-2. Select text to create highlights, excerpts, or bookmarks.
-3. Use the toolbar for chapter navigation, display settings, and export.
+1. Open the **bookshelf** from the ribbon or command palette, then import or open a book from your vault.
+2. Create or open a Markdown file and place the cursor where excerpts should go; turn on **Auto excerpt** in the reader. Select text to create highlights, excerpts, or bookmarks—they are inserted at that cursor.
+3. Click a highlight in the book to jump to its source note from the toolbar; in the Markdown / Canvas that holds the excerpt, click the book icon next to it to return to the matching passage.
 4. Reader menu → **Help** → **Tutorial** for in-app guidance. For workflow details, see [Excerpt and note workflows](#excerpt-and-note-workflows) above.
 
 ## Data and sync
 
-**Good to sync (in the vault)**: Book files, Markdown excerpts, Canvas files, Weave deck data.
+**Good to sync (in the vault)**: Book files, Markdown excerpts, Canvas files, Weave deck data, and per-book progress/bookmark notes (default `Weave EPUB Reader/data_*.md`).
 
-**Usually local (plugin folder)**: Reader cache, indexes, some UI state. Prefer syncing vault content across devices rather than `.obsidian/plugins/weave-epub-reader/` cache files.
+**Usually local (plugin folder)**: Reader cache, indexes, Canvas bindings, reference reading points, and similar local state. Prefer syncing vault content across devices rather than `.obsidian/plugins/weave-epub-reader/` cache files.
 
 ## Privacy and network
 
@@ -444,9 +515,9 @@ Authoritative breakdown: [Essential experience and Premium support](#essential-e
 
 ## FAQ
 
-### Excerpt highlights not showing in the book?
+### How do I capture reading excerpts correctly?
 
-Confirm the excerpt was created by this plugin, lives in Markdown / Canvas / Weave deck data, and you opened the **same book**. Recent edits refresh automatically after a short delay.
+Excerpts are stored at concrete locations in the Markdown, Canvas, or Weave deck files you choose. The reader aggregates source links from those captures and renders highlights in the book. Selections that are not saved this way only flash briefly and leave no durable data. The in-reader tutorial banner explains this in more detail.
 
 ### How does this relate to Weave?
 
@@ -468,9 +539,9 @@ Premium support **funds ongoing development** so the reader and excerpt workflow
 
 Premium support is **buy-once** (activate once, use long-term; see [Premium support terms](./PREMIUM_TERMS.md)), not a monthly subscription.
 
-### Cannot open MOBI / AZW3 / FB2?
+### Cannot open non-EPUB formats?
 
-**EPUB and TXT** are included in the essential experience. **MOBI, AZW3, FB2, FBZ, and CBZ** require Premium support. See [Essential experience and Premium support](#essential-experience-and-premium-support) above.
+**EPUB, TXT, and FB2/FBZ** are included in the essential experience. **MOBI, AZW3, and CBZ** require Premium support. See [Essential experience and Premium support](#essential-experience-and-premium-support) above.
 
 ### Plugin folder name?
 

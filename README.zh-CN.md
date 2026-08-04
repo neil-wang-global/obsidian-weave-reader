@@ -11,3 +11,7 @@
 - **日本語:** [README.ja.md](./README.ja.md)
 - **한국어:** [README.ko.md](./README.ko.md)
 - **Русский:** [README.ru.md](./README.ru.md)
+
+## 界面语言（插件内）
+
+阅读器界面现已支持：简体中文、繁體中文、English、日本語、한국어、Русский、**Deutsch**、**Español**、**العربية**（默认跟随 Obsidian，可在阅读器设置中固定）。
