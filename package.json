@@ -126,5 +126,9 @@
     "jszip": "3.10.1",
     "nunjucks": "3.2.4",
     "pako": "^2.1.0"
+  },
+  "overrides": {
+    "picomatch@2": "2.3.2",
+    "picomatch@4": "4.0.4"
   }
 }

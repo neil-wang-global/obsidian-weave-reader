@@ -295,6 +295,12 @@ body.styled-scrollbars
 	color: var(--text-muted);
 }
 
+.workspace-leaf-content.weave-epub-view-content .weave-vault-file-search__input,
+.workspace-leaf-content.weave-epub-view-content .weave-vault-file-search__input[type="text"],
+.workspace-leaf-content.weave-epub-view-content .weave-vault-file-search__input[type="text"]:hover,
+.workspace-leaf-content.weave-epub-view-content .weave-vault-file-search__input[type="text"]:focus,
+.workspace-leaf-content.weave-epub-view-content .weave-vault-file-search__input[type="text"]:focus-visible,
+.workspace-leaf-content.weave-epub-view-content .weave-vault-file-search__input[type="text"]:active,
 .weave-epub-view-content .weave-vault-file-search__input,
 .weave-epub-view-content .weave-vault-file-search__input[type="text"],
 .weave-epub-view-content .weave-vault-file-search__input[type="text"]:hover,
@@ -309,14 +315,18 @@ body.styled-scrollbars
 .epub-reader-root .weave-vault-file-search__input[type="text"]:active {
 	flex: 1 1 auto;
 	min-width: 0;
-	border: none !important;
-	background: transparent !important;
+	/* Beat host input chrome with higher selector specificity (no force flag). */
+	border: 0 solid transparent;
+	border-width: 0;
+	background: transparent;
+	background-color: transparent;
 	color: var(--text-normal);
 	font-size: 13px;
 	line-height: 1.4;
 	padding: 8px 0;
-	outline: none !important;
-	box-shadow: none !important;
+	outline: 0 solid transparent;
+	outline-width: 0;
+	box-shadow: none;
 	-webkit-appearance: none;
 	appearance: none;
 }

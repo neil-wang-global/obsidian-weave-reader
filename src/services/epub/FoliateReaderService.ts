@@ -111,7 +111,10 @@ import {
 } from "./scrolled-chapter-end";
 import { logger } from "../../utils/logger";
 import { domInstanceOf } from "../../utils/dom-instance-of";
-import { createSpanInOwnerDocument } from "../../utils/obsidian-document-dom";
+import {
+	createSpanInOwnerDocument,
+	createStyleElementInDocument,
+} from "../../utils/obsidian-document-dom";
 import {
 	sanitizeLegacyAuthorColorAttributes,
 	stripInlineAuthorColorStyles,
@@ -2474,7 +2477,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 		let styleElement = this.documentStyleElements.get(doc);
 		if (!styleElement || !styleElement.isConnected) {
-			styleElement = doc.createElement("style");
+			styleElement = createStyleElementInDocument(doc);
 			styleElement.setAttribute("data-weave-foliate-reader-style", "true");
 			mountPoint.appendChild(styleElement);
 			this.documentStyleElements.set(doc, styleElement);

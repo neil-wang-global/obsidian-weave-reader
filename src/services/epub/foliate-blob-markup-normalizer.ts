@@ -14,6 +14,7 @@ import {
 	stripInlineAuthorColorStyles,
 } from "../../utils/epub-author-color-sanitizer";
 import { logger } from "../../utils/logger";
+import { createStyleElementInDocument } from "../../utils/obsidian-document-dom";
 
 const REMOTE_RESOURCE_URL_PATTERN = /^(?:https?:)?\/\//i;
 const ACTIVE_CONTENT_SELECTOR = "script, iframe, object, embed";
@@ -244,7 +245,7 @@ function createInlineStylesheetElement(
 	cssText: string,
 	linkElement?: Element | null
 ): HTMLStyleElement {
-	const styleElement = doc.createElement("style");
+	const styleElement = createStyleElementInDocument(doc);
 	styleElement.setAttribute("type", "text/css");
 	styleElement.setAttribute("data-weave-inline-stylesheet", "true");
 	const media = linkElement?.getAttribute("media");
