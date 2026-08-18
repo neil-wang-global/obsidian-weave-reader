@@ -20,11 +20,11 @@
 
 ## Introduction
 
-Si vous voulez qu’**Obsidian soit plus qu’une archive de notes—un lieu où vous lisez vraiment**—Weave EPUB Reader mérite le détour.
+**Weave Epub Reader** est un plugin de lecture de la **série de plugins Obsidian Weave**, conçu entièrement pour Obsidian et disponible sur toutes les plateformes Obsidian. Il prend en charge gratuitement la lecture d’EPUB, TXT, FB2/FBZ, MOBI, AZW3, CBZ, PDF et d’autres formats, ainsi que des extraits annotés de plusieurs types. Les extraits peuvent être enregistrés dans des fichiers **Markdown**, **Canvas** et **paquets Weave**, avec des liens sources bidirectionnels pour sauter au passage correspondant, et les données restent entièrement locales.
 
-Il convient à ceux qui capturent des phrases en Markdown en lisant ; aux chercheurs qui organisent des extraits sur Canvas ; aux utilisateurs de Weave qui transforment des passages en cartes de répétition espacée ; et à quiconque lit plusieurs livres à la fois et préfère un rythme de calendrier mensuel plutôt que « dix livres ouverts, une demi-page chacun ».
+En plus des besoins essentiels et de l’expérience de base, les utilisateurs avancés disposent de la **lecture immersive**, de la **lecture par paragraphes**, du **marquage de vocabulaire**, des **résumés d’extraits en chronologie**, des **listes de citations d’extraits** et de **davantage de fonctions**—pour utiliser les outils dans Obsidian, favoriser la réflexion, affûter le jugement et donner du sens à la lecture.
 
-Démarrer est simple : placez un EPUB dans votre vault, ouvrez-le depuis l’étagère, sélectionnez du texte et créez un extrait. Chaque capture conserve un lien vers le même passage dans le livre ; lorsque vous modifiez, supprimez ou changez la couleur des notes, les surlignages dans le texte se mettent à jour. Cinq parcours plus complets—extraits automatiques, Canvas, cartes, backlinks et lecture incrémentale—sont diagrammés dans [Flux d’extraits et de notes](#flux-dextraits-et-de-notes) ci-dessous ; choisissez celui qui correspond à votre habitude.
+> Astuce : pour toute question, n’hésitez pas à écrire à tutaoyuan8@outlook.com
 
 ## Liste des fonctions principales
 
@@ -63,6 +63,14 @@ Démarrer est simple : placez un EPUB dans votre vault, ouvrez-le depuis l’ét
 - Liaison Canvas, création automatique de nœuds et rendu
 - Création de cartes / lecture incrémentale / IA (nécessite Weave ; ne consomme pas la licence Premium du lecteur)
 
+### API publique
+
+- Obtenir le contexte de lecture actuel (titre du livre, titre / index du chapitre actuel, etc.)
+- Obtenir le corps du chapitre actuel, ou le corps d’une section TOC donnée (texte / markdown)
+- Obtenir les extraits surlignés du chapitre actuel, ou lister tous les extraits du livre actuel / d’un livre donné
+- Lire la structure de la table des matières, lister les lecteurs ouverts ; éventuellement retirer un extrait par localisateur
+- Pas de recherche / RAG sur le corps de tout le livre ; pour les longs chapitres, privilégier les sections TOC
+
 ### Exportation et aides
 
 - Exporter le chapitre actuel en Markdown (Essential)
@@ -71,117 +79,15 @@ Démarrer est simple : placez un EPUB dans votre vault, ouvrez-le depuis l’ét
 - Aperçu des notes de bas de page au survol (Premium)
 - Interface multilingue (简体中文、繁體中文、English、日本語、한국어、Русский、Deutsch、Español、العربية) + tutoriel dans l’application
 
-Voir [Expérience Essential et support Premium](#expérience-essential-et-support-premium) pour le regroupement des capacités.
+Voir [Expérience essentielle et support Premium](#expérience-essentielle-et-support-premium) pour le regroupement des capacités.
 
 Version minimale d’Obsidian : **1.8.7**
 
-## Flux d’extraits et de notes
+## Expérience essentielle et support Premium
 
-Les diagrammes ci-dessous résument la structure (Mermaid s’affiche sur **GitHub** et dans **Obsidian**).
-
-### Diagramme 1 · Choisir un flux (carte par objectif)
-
-Lire dans Obsidian est le centre ; chaque branche est un chemin typique selon l’objectif.
-
-```mermaid
-flowchart TB
-  READ(["Lire dans Obsidian<br/>Weave EPUB Reader"])
-
-  READ --> A["A Extraits Markdown automatiques<br/>où capturer"]
-  READ --> B["B Cartographie Canvas<br/>structure"]
-  READ --> C["C Révision mémoire<br/>cartes"]
-  READ --> D["D Révision par backlinks<br/>notes ↔ livre"]
-  READ --> E["E Lecture incrémentale<br/>quand lire"]
-
-  A --> LOOP["Rejoindre la boucle centrale<br/>lire→capturer→rendre→revenir"]
-  B --> LOOP
-  C --> LOOP
-  D --> LOOP
-  E --> LOOP
-```
-
-### Diagramme 2 · Sous-flux de lecture incrémentale (flux E)
-
-Répond à **comment plusieurs livres avancent selon un calendrier** et complète les extraits automatiques (flux A) : **E planifie les chapitres ; A capture ce que vous avez noté**.
-
-```mermaid
-flowchart LR
-  TOC["TOC : Ajouter le chapitre actuel<br/>à la lecture incrémentale"]
-  CAL["Calendrier mensuel<br/>IR de Weave"]
-  MIX["Plusieurs livres et chapitres<br/>calendrier entrelacé"]
-  DAY["Jour programmé<br/>ouvrir la tâche"]
-  BOOK["Lien profond de retour<br/>au chapitre ou passage"]
-  DEEP["Point IR / point de reprise<br/>lecture approfondie"]
-  LOOP["lire→capturer→rendre→revenir<br/>extraits · backlinks · rendu"]
-
-  TOC --> CAL --> MIX --> DAY --> BOOK --> DEEP --> LOOP
-```
-
-### Cinq flux typiques
-
-#### A. Extraits Markdown automatiques (le plus courant)
-
-Idéal lorsque **les notes sont votre espace principal pendant la lecture** :
-
-1. **D’abord**, ouvrez une note Markdown comme carnet d’extraits et placez le curseur où les insertions doivent aller (la vue fractionnée fonctionne le mieux).
-2. Ouvrez le lecteur et activez le **mode automatique** dans la barre d’outils (icône éclair : activé = insérer, désactivé = copier dans le presse-papiers).
-3. Sélectionnez du texte dans le livre et créez un extrait → un bloc d’extrait localisé (avec un lien profond vers le livre) est **inséré à ce curseur**.
-4. Après avoir enregistré la note, rouvrez le livre : les passages correspondants affichent des **surlignages dans le corps**—ce que vous avez capturé dans les notes est visible dans le livre.
-
-Voir le [flux A](#a-extraits-markdown-automatiques-le-plus-courant) ci-dessus.
-
-#### B. Cartographie visuelle sur Canvas
-
-Idéal pour les **thèmes, la structure et les relations** :
-
-1. **Liez** un fichier Canvas au livre actuel.
-2. Avec le mode automatique activé, les extraits peuvent **créer automatiquement des nœuds Canvas** (la direction de mise en page est configurable).
-3. Organisez les nœuds dans le Canvas ; le lecteur **réaffiche les extraits liés dans le livre**.
-
-#### C. Révision mémoire
-
-Idéal lorsque les extraits doivent entrer en **répétition espacée** :
-
-1. Sélectionnez du texte → **Créer une carte** dans la barre d’outils → éditeur de cartes Weave.
-2. Enregistrez dans `.wdeck` ou d’autres fichiers de paquet ; le lecteur **affiche des surlignages à partir des données du paquet**.
-3. Révisez dans Weave ; revenez au livre lorsque vous avez besoin du passage original.
-
-#### D. Révision par backlinks
-
-Idéal pour **extraire d’abord, réviser ensuite, revenir à la source** :
-
-1. Relisez d’anciens extraits dans Markdown / Canvas / paquets ; rouvrez le livre pour voir les **surlignages dans le corps**.
-2. Cliquez sur un lien profond vers le livre dans une note → sautez au **passage original**.
-3. Cliquez sur un surlignage dans le lecteur → **ouvrez la note source** (traçage bidirectionnel).
-
-#### E. Lecture incrémentale : lecture approfondie entrelacée de plusieurs livres
-
-Idéal lorsque vous voulez que **plusieurs livres avancent à un rythme** plutôt que de lire un livre de bout en bout d’une traite :
-
-1. **Ajouter le chapitre actuel à la lecture incrémentale** : Dans la **table des matières** de la barre latérale du lecteur, utilisez **Ajouter à la lecture incrémentale** sur un chapitre (choisissez éventuellement un thème de lecture incrémentale) pour mettre ce chapitre en file.
-2. **Planifier dans le calendrier mensuel** : Le chapitre apparaît dans le **calendrier mensuel de lecture incrémentale** de Weave aux côtés de points de lecture d’autres livres et chapitres—**lecture entrelacée de plusieurs livres** au lieu de laisser beaucoup de livres à moitié ouverts sur l’étagère.
-3. **Lecture approfondie, pas superficielle** :  
-   - Sélectionnez du texte → créez un **point de lecture incrémentale** (conserve un lien profond vers la source EPUB) pour un suivi au niveau du paragraphe ;  
-   - Pendant la lecture, marquez un **point de reprise de lecture incrémentale** pour que la prochaine session IR revienne à l’**emplacement exact** dans le livre.  
-4. Le jour programmé, ouvrez l’élément depuis le calendrier ou la liste de tâches → suivez le lien profond jusqu’au chapitre ou au passage, puis continuez avec extraits et backlinks.
-
-Cela complète le flux A : **A est où vont les captures ; E est quand chaque chapitre est lu parmi plusieurs livres.**
-
-### Comparé à « lecteur externe + collage manuel »
-
-- **Moins de changements de contexte**—vous ne quittez pas Obsidian pour capturer une phrase.
-- **Les extraits deviennent une connaissance durable du vault**—recherchables dans Markdown, Canvas ou paquets—pas dans l’historique du presse-papiers.
-- **La révision garde la source en vue**—les notes indexent ce que vous avez lu ; le livre montre le contexte vivant via liens profonds et rendu.
-- **Le même flux sur tous les appareils**—livres et notes vivent dans le vault et suivent votre configuration de synchronisation Obsidian.
-- **Un rythme pour les longs livres ou plusieurs livres**—les chapitres entrent dans le calendrier de lecture incrémentale pour une progression planifiée et entrelacée.
-
-Plus de détails : [Flux d’extraits et de notes](#flux-dextraits-et-de-notes) et [Liste des fonctions principales](#liste-des-fonctions-principales) ci-dessus.
-
-## Expérience Essential et support Premium
-
-| Capacité | Expérience Essential | Support Premium |
-|----------|:--------------------:|:---------------:|
-| **Toutes les plateformes** (bureau et mobile) | ✅ | ✅ |
+| Capacité | Expérience essentielle | Support Premium |
+|----------|:----------------------:|:---------------:|
+| Lecture sur **toutes les plateformes** (bureau et mobile) | ✅ | ✅ |
 | Lire **EPUB**, TOC, modes paginé/défilement, typographie et thèmes | ✅ | ✅ |
 | Lire des livres texte brut **TXT** | ✅ | ✅ |
 | Lire **FB2 / FBZ** | ✅ | ✅ |
@@ -193,7 +99,7 @@ Plus de détails : [Flux d’extraits et de notes](#flux-dextraits-et-de-notes) 
 | **Barre de densité de la carte du livre** dans la barre latérale TOC | 🔒 | ✅ |
 | **Marques de chapitre** dans la table des matières (important / question / maîtrisé) | 🔒 | ✅ |
 | **Listes de lecture** de l’étagère | 🔒 | ✅ |
-| **Traçage bidirectionnel** (sauts d’ancre, lecteur ↔ notes / Canvas / paquets) | 🔒 | ✅ |
+| **Traçage bidirectionnel** (sauts d’ancre, notes ↔ emplacement dans le livre) | 🔒 | ✅ |
 | **Points de lecture de référence** (enregistrer / mettre à jour / aller) | ✅ | ✅ |
 | **Dégradé translucide de lecture** | 🔒 | ✅ |
 | **Mode de lecture par paragraphes**, plein écran immersif | 🔒 | ✅ |
@@ -202,13 +108,14 @@ Plus de détails : [Flux d’extraits et de notes](#flux-dextraits-et-de-notes) 
 | Liaison **Canvas** et création automatique de nœuds | ✅ | ✅ |
 | Aperçu des notes de bas de page au survol | 🔒 | ✅ |
 | Exporter le chapitre actuel en Markdown | ✅ | ✅ |
+| **API publique** (corps du chapitre actuel / d’une section TOC, extraits du chapitre ou de tout le livre, etc.) | ✅ | ✅ |
 
 > Légende : ✅ inclus · 🔒 nécessite le support Premium
 
-- **Activer le support Premium** : licence EPUB uniquement dans les réglages du lecteur, ou héritage depuis un plugin principal **Weave** activé.
-- **Création de cartes / lecture incrémentale / IA** : n’occupent pas un créneau de licence Premium EPUB distinct, mais nécessitent Weave ; l’IA nécessite aussi votre propre clé API.
+- **Activer le support Premium** : utilisez un code d’activation EPUB uniquement dans les réglages du lecteur ; si un plugin principal **Weave** activé est installé, l’autorisation peut être héritée sans ressaisir de code.
+- **Création de cartes / lecture incrémentale / IA** : ne consomment pas une licence Premium distincte du lecteur, mais nécessitent Weave ; l’IA nécessite aussi votre propre clé API.
 
-Répartition officielle : [Expérience Essential et support Premium](#expérience-essential-et-support-premium) ci-dessus. Activez dans les réglages du lecteur. Conditions : [PREMIUM_TERMS.md](./PREMIUM_TERMS.md).
+Répartition officielle : [Expérience essentielle et support Premium](#expérience-essentielle-et-support-premium) ci-dessus. Activez dans les réglages du lecteur. Conditions : [PREMIUM_TERMS.md](./PREMIUM_TERMS.md).
 
 ## Installation
 
@@ -228,10 +135,10 @@ Répartition officielle : [Expérience Essential et support Premium](#expérienc
 
 ## Démarrage rapide
 
-1. Ouvrez l’**étagère** depuis le ruban ou la palette de commandes ; puis importez ou ouvrez un livre de votre vault.
+1. Après avoir activé le plugin, ouvrez l’**étagère** depuis le ruban ou la palette de commandes, puis importez ou ouvrez un livre de votre vault.
 2. Créez ou ouvrez un fichier Markdown et placez le curseur où les extraits doivent aller ; activez **Extrait automatique** dans le lecteur. Sélectionnez du texte pour créer des surlignages, extraits ou signets—ils sont insérés à ce curseur.
 3. Cliquez sur un surlignage dans le livre pour aller à sa note source depuis la barre d’outils ; dans le Markdown / Canvas qui contient l’extrait, cliquez sur l’icône livre à côté pour revenir au passage correspondant.
-4. Menu du lecteur → **Aide** → **Tutoriel** pour le guide dans l’application. Pour les détails des flux, voir [Flux d’extraits et de notes](#flux-dextraits-et-de-notes) ci-dessus.
+4. Menu du lecteur → **Aide** → **Tutoriel** pour le guide dans l’application.
 
 ## Données et synchronisation
 
@@ -266,7 +173,7 @@ Les extraits sont enregistrés à des emplacements concrets dans les fichiers Ma
 
 ### Pourquoi le support Premium est-il payant ?
 
-Le support Premium **finance le développement continu** pour que le lecteur et le flux d’extraits continuent de s’améliorer. L’**expérience Essential est gratuite**—la lecture quotidienne, cinq couleurs de surlignage, annotations, extraits et rendu dans le corps sont pleinement utilisables sans payer. Activez le support Premium seulement lorsque vous souhaitez la chronologie des extraits, le traçage bidirectionnel, le mode de lecture par paragraphes et d’autres capacités avancées.
+Le support Premium **finance le développement continu** pour que le lecteur et le flux d’extraits continuent de s’améliorer. L’**expérience essentielle est gratuite**—la lecture quotidienne, cinq couleurs de surlignage, annotations, extraits et rendu dans le corps sont pleinement utilisables sans payer. Activez le support Premium seulement lorsque vous souhaitez la chronologie des extraits, le traçage bidirectionnel, le mode de lecture par paragraphes et d’autres capacités avancées.
 
 ### Abonnement ou achat unique ?
 
@@ -274,11 +181,7 @@ Le support Premium est un **achat unique** (activez une fois, utilisez à long t
 
 ### Impossible d’ouvrir des formats autres qu’EPUB ?
 
-**EPUB, TXT, FB2/FBZ, MOBI, AZW3, CBZ et PDF** sont inclus dans l’expérience Essential. Voir [Expérience Essential et support Premium](#expérience-essential-et-support-premium) ci-dessus.
-
-### Nom du dossier du plugin ?
-
-ID du plugin : `weave-epub-reader` → `.obsidian/plugins/weave-epub-reader/`
+**EPUB, TXT, FB2/FBZ, MOBI, AZW3, CBZ et PDF** sont inclus dans l’expérience essentielle. Voir [Expérience essentielle et support Premium](#expérience-essentielle-et-support-premium) ci-dessus.
 
 ## Plus de documentation
 

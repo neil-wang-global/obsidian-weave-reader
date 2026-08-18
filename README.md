@@ -23,11 +23,11 @@
 
 ### 插件介绍
 
-Weave epub reader为weave插件系列下的一款完全服务于obsidian并随obsidian全平台使用的阅读器插件。
+**Weave Epub Reader**为**Obsidian Weave插件系列**下的一款完全服务于obsidian并随obsidian全平台使用的阅读器插件。支持免费提供EPUB、TXT、FB2/FBZ、MOBI、AZW3、CBZ、PDF 等多格式书籍阅读与多标注类型的摘录笔记体验。并支持将这些摘录笔记数据保存在**md**，**cavans**，**weave牌组文件**中，通过双向溯源链接相互瞄点定位跳转，且数据完全本地化。
 
-它适合：边读边把句子记进 Markdown 的人；做专题研究、想把摘录画进 Canvas 的人；用 Weave 做间隔复习、想把书中段落制成卡片的人；同时推进多本书、需要月历排期而不是「开十本读半页」的人。
+在保证满足用户基础需求与核心体验的前提下为高级用户提供**沉浸式阅读**，**段落阅读**，**生词标注模式**，**时间线摘录笔记汇总**，**摘录引用列表**及**更多功能**，旨在obdian中利用工具，促进思考，磨砺思维，诠释存在。
 
-上手很轻：把 EPUB 放进 Vault，从书架打开，选中文字即可摘录。摘录会带着回到原书的位置信息；你改笔记、删摘录或换颜色，书里的高亮也会跟着变。更完整的五条工作流（自动摘录、Canvas、制卡、回链、增量阅读）见下方 [摘录笔记工作流](#摘录笔记工作流) 图示——按自己的习惯选一条路走即可。
+> 提示：若有问题，欢迎通过邮箱反馈交流 tutaoyuan8@outlook.com
 
 ## 核心功能特性清单
 
@@ -66,6 +66,14 @@ Weave epub reader为weave插件系列下的一款完全服务于obsidian并随ob
 - Canvas 绑定、自动写入节点、回显
 - 制卡 / 增量阅读 / AI（需 Weave，不占阅读器高级许可）
 
+### 公开 API
+
+- 获取当前阅读上下文（书名、当前章标题 / 索引等）
+- 获取当前章正文，或按目录获取指定 TOC 小节正文（text / markdown）
+- 获取当前章高亮摘录，或列出当前书 / 指定书的全书摘录笔记
+- 读取目录结构、列出已打开的阅读器；可选按定位移除摘录
+- 不做全书正文检索 / RAG；长章优先按 TOC 小节拉取
+
 ### 导出与辅助
 
 - 导出当前章为 Markdown（基础）
@@ -74,109 +82,12 @@ Weave epub reader为weave插件系列下的一款完全服务于obsidian并随ob
 - 脚注浮窗预览（高级）
 - 多语言界面（简体中文、繁體中文、English、日本語、한국어、Русский、Deutsch、Español、العربية）+ 应用内使用教程
 
+
+
 各能力在 [基础体验与高级支持](#基础体验与高级支持) 中的划分见下表。
 
 最低 Obsidian 版本：**1.8.7**
 
-## 摘录笔记工作流
-
-下方图示概括整体结构（GitHub / Obsidian 均可渲染 Mermaid）。
-
-### 图 1 · 五条工作流怎么选（按目标分流）
-
-中心是「在 Obsidian 内读书」；向外是按目标选择的五条典型路径。
-
-```mermaid
-flowchart TB
-  READ(["在 Obsidian 内阅读<br/>Weave EPUB Reader"])
-
-  READ --> A["A 自动 Markdown 摘录<br/>记到哪"]
-  READ --> B["B Canvas 视觉整理<br/>画结构"]
-  READ --> C["C 记忆回顾<br/>制卡复习"]
-  READ --> D["D 回链复盘<br/>笔记 ↔ 原书"]
-  READ --> E["E 增量阅读<br/>何时读哪章"]
-
-  A --> LOOP["汇入核心闭环<br/>读→记→显→回"]
-  B --> LOOP
-  C --> LOOP
-  D --> LOOP
-  E --> LOOP
-```
-
-### 图 2 · 增量阅读子流程（工作流 E）
-
-解决「**多本书如何交错推进、长书如何按章深度读**」，与自动摘录（工作流 A）互补：**E 管排期，A 管记下什么**。
-
-```mermaid
-flowchart LR
-  TOC["目录：当前章节<br/>添加到增量阅读"]
-  CAL["Weave 增量阅读<br/>月历视图排期"]
-  MIX["多本书 · 多章节<br/>交错调度"]
-  DAY["调度日<br/>打开任务"]
-  BOOK["深链接回到<br/>书中章节/段落"]
-  DEEP["阅读点 / 续读点<br/>深度精读"]
-  LOOP["读→记→显→回<br/>摘录 · 回链 · 回显"]
-
-  TOC --> CAL --> MIX --> DAY --> BOOK --> DEEP --> LOOP
-```
-
-### 五条典型工作流
-
-#### A. 自动 Markdown 摘录（最常用）
-
-适合「边读边记、笔记就是主战场」：
-
-1. **先**打开一本 Markdown 作为摘录笔记本，光标放在要插入的位置（与阅读器分屏体验最佳）。
-2. 打开阅读器，开启工具栏 **自动模式**（闪电图标：开 = 插入，关 = 复制到剪贴板）。
-3. 在书中选中文本并摘录 → 带定位的摘录块（含书籍深链接）**自动插入到上一步光标处**。
-4. 保存笔记后，再次打开该书，正文会在对应段落**回显高亮**——你在笔记里记过什么，打开书就能看见。
-
-详见上文 [工作流 A](#a-自动-markdown-摘录最常用)。
-
-#### B. Canvas 视觉整理
-
-适合「做专题、画结构、理清论点关系」：
-
-1. 为当前书**绑定**一个 Canvas 文件。
-2. 开启自动模式后，摘录可**自动写入 Canvas 新节点**（可调整节点排布方向）。
-3. 在 Canvas 里拖拽、连线、分组；阅读器识别绑定 Canvas 中的摘录并**回显到正文**。
-
-#### C. 记忆回顾
-
-适合「摘录之后要复习、要间隔重复」：
-
-1. 选中文本 → 工具栏 **制卡**，进入 Weave 记忆卡片窗口。
-2. 保存到 `.wdeck` 等牌组文件后，阅读器从牌组数据**回显高亮**。
-3. 在 Weave 记忆模块中按牌组规则做复习；需要时仍可回到书中原文。
-
-#### D. 回链复盘
-
-适合「先摘录、后复习、再回原文」：
-
-1. 在 Markdown / Canvas / 牌组笔记里查看历史摘录；打开书时正文侧已有**回显高亮**。
-2. 点击笔记中的书籍深链接 → 跳回**原文段落**。
-3. 在阅读器里点击某条高亮 → **一键定位到来源笔记**，完成「笔记 ↔ 原书」双向溯源。
-
-#### E. 增量阅读：多书交错与深度精读
-
-适合「**不想一次读完一本**、而是多本书按节奏交错推进，并在月历里看见整体阅读计划」：
-
-1. **把当前章节加入增量阅读**：在阅读器侧边栏 **目录** 中，对某一章使用 **「添加到增量阅读」**（可选择一个增量阅读专题），将该章纳入增量阅读任务。
-2. **进入月历视图统一调度**：章节会出现在 Weave **增量阅读月历视图** 中，与来自其他书籍、其他章节的阅读点一起排期——实现 **多本书的交错阅读**，而不是在书架里同时开很多本却都读不深。
-3. **深度阅读而非浅尝辄止**：  
-   - 选中文本 → 创建 **增量阅读点**（保留 EPUB 溯源深链接），把段落级内容纳入后续处理；  
-   - 阅读过程中可标记 **增量阅读续读点**，下次从增量阅读流程**一键回到书中精确位置**继续。  
-4. 到调度日时，从月历或任务列表打开对应项 → 经深链接回到原书章节/段落，与摘录、回链工作流衔接。
-
-这与工作流 A（边读边记）互补：**A 解决「记到哪」；E 解决「何时读哪一章、多本书如何轮流推进」**。
-
-### 和「只用外部阅读器 + 手动粘贴」相比
-
-- **少一次上下文切换**：不必为了记一句而离开 Obsidian。
-- **摘录可沉淀、可检索**：内容在 Vault 的 Markdown / Canvas / 牌组里，而不是散落在剪贴板历史里。
-- **复习时原文仍在场**：笔记是索引，书是现场；两者通过深链接与正文回显连在一起。
-- **多端一致**：书与笔记都在 Vault 里，随 Obsidian 同步策略走；手机读、桌面整理可以同一条链路。
-- **长书与多书有节奏**：章节可进入增量阅读月历，按调度交错阅读，而不是靠意志力硬啃单本。
 
 更完整的操作说明见上文 [摘录笔记工作流](#摘录笔记工作流) 与 [核心功能特性清单](#核心功能特性清单)。
 
@@ -205,6 +116,7 @@ flowchart LR
 | **Canvas** 绑定与自动写入节点 | ✅ | ✅ |
 | 脚注浮窗预览 | 🔒 | ✅ |
 | 导出当前章节为 Markdown | ✅ | ✅ |
+| **公开 API**（当前章 / 指定 TOC 小节正文、本章或全书摘录笔记等） | ✅ | ✅ |
 
 > 图例：✅ 已包含 · 🔒 需启用高级支持
 
@@ -279,58 +191,6 @@ flowchart LR
 
 **EPUB、TXT、FB2/FBZ、MOBI、AZW3、CBZ、PDF** 均为基础免费阅读格式。详见上文 [基础体验与高级支持](#基础体验与高级支持)。
 
-### 插件文件夹名称？
-
-插件 ID 为 `weave-epub-reader`，路径：`.obsidian/plugins/weave-epub-reader/`
-
-### Official API（给 Obsidian AI / Skill）
-
-阅读器对 Obsidian AI / Skill 暴露薄 Official API：**只读当前正在读的书**的当前章或 **TOC 小节**正文，不做全书检索 / RAG。抽章与菜单「导出当前章 / 按目录导出」同源；导出给人存档，API 给会话。长章优先用 `getTocSection`。
-
-```js
-const api = app.plugins.plugins["weave-epub-reader"]?.getOfficialAPI?.();
-if (!api) throw new Error("Weave EPUB Reader is not enabled");
-
-const info = api.getInfo?.();
-// info.capabilities.reading.getCurrentChapter === true
-// info.capabilities.reading.getTocSection === true
-// info.capabilities.reading.sourceLocator === true
-
-const ctx = await api.getReadingContext();
-if (!ctx.ok) {
-  // ctx.error.code: no_active_reader | no_current_chapter | ...
-} else {
-  // ctx.data.bookTitle, chapterTitle, chapterHref, chapterIndex
-}
-
-// Prefer for long chapters / named subsections:
-const section = await api.getTocSection({ format: "text" }); // current TOC node
-// or: await api.getTocSection({ label: "第二节" })
-// or: await api.getTocSection({ href: "Text/ch2.xhtml#s-b" }) // from getToc()
-if (section.ok) {
-  // section.data.text + section.data.sourceLink / sourceCallout（制卡溯源）
-}
-
-// Whole current spine chapter (may be long):
-const chapter = await api.getCurrentChapter({ format: "text" }); // or "markdown" | "both"
-if (chapter.ok) {
-  // chapter.data.text / markdown + chapter.data.sourceLink
-  // chapter.meta?.truncated may be true for very long chapters
-}
-
-// Optional:
-// await api.listCurrentChapterHighlights()
-// await api.listBookExcerpts() // all excerpts for current book; or { filePath } / { bookId }
-// await api.getToc({ maxDepth: 3 })
-// await api.listOpenReaders()
-```
-
-未打开阅读器时返回 `{ ok: false, error: { code, message } }`，不抛含糊异常。TOC 无匹配 / 歧义时分别为 `toc_not_found` / `ambiguous_toc`。`listBookExcerpts` 在传入 `filePath`/`bookId` 时可在未打开阅读器时列出该书摘录；书不在书架则为 `book_not_found`。`sourceLink` 为小节/章起点定位（非选区句子级）。`capabilities.reading.searchBook` / `streamToModel` 为 `false`。
-
-给 Obsidian AI 插件用的可发现 Skill 文档（复制到该 AI 插件的 skills 目录即可）：
-
-- [`skills/weave-epub-current-chapter/SKILL.md`](./skills/weave-epub-current-chapter/SKILL.md) — 当前章 / TOC 小节正文
-- [`skills/weave-epub-book-excerpts/SKILL.md`](./skills/weave-epub-book-excerpts/SKILL.md) — 整本书摘录列表
 
 ## 更多文档
 
@@ -352,11 +212,11 @@ if (chapter.ok) {
 
 ### Introduction
 
-If you want **Obsidian to be more than a note archive—a place where you actually read**—Weave EPUB Reader is worth a look.
+**Weave Epub Reader** is a reader plugin in the **Obsidian Weave plugin series**, built fully for Obsidian and available across Obsidian platforms. It freely supports reading EPUB, TXT, FB2/FBZ, MOBI, AZW3, CBZ, PDF, and more, plus multi-style excerpt notes. Excerpts can be stored in **Markdown**, **Canvas**, and **Weave deck** files, with two-way source links for jump-to-passage navigation, and data stays fully local.
 
-It fits readers who capture sentences into Markdown as they go; researchers who map excerpts onto Canvas; Weave users who turn passages into cards for spaced repetition; and anyone juggling several books who prefers a month-calendar rhythm over “ten books open, half a page each.”
+On top of essential needs and the core experience, advanced users get **immersive reading**, **paragraph reading**, **vocabulary marking**, **timeline excerpt summaries**, **excerpt reference lists**, and **more**—using tools inside Obsidian to think, sharpen judgment, and make reading count.
 
-Getting started is light: put an EPUB in your vault, open it from the bookshelf, select text, and excerpt. Each capture keeps a link back to the same passage in the book; when you edit, delete, or recolor notes, highlights in the text update to match. Five fuller paths—auto excerpts, Canvas, cards, backlinks, incremental reading—are diagrammed in [Excerpt and note workflows](#excerpt-and-note-workflows) below; follow the one that matches your habit.
+> Tip: Questions welcome—email tutaoyuan8@outlook.com
 
 ## Core feature checklist
 
@@ -395,6 +255,14 @@ Getting started is light: put an EPUB in your vault, open it from the bookshelf,
 - Canvas binding, auto node creation, and rendering
 - Card making / incremental reading / AI (requires Weave; does not consume reader Premium license)
 
+### Public API
+
+- Get current reading context (book title, current chapter title / index, etc.)
+- Get current chapter body, or a specified TOC section body (text / markdown)
+- Get current-chapter highlight excerpts, or list all excerpt notes for the current / a specified book
+- Read TOC structure, list open readers; optionally remove an excerpt by locator
+- No whole-book body search / RAG; prefer TOC sections for long chapters
+
 ### Export and helpers
 
 - Export current chapter to Markdown (Essential)
@@ -406,108 +274,6 @@ Getting started is light: put an EPUB in your vault, open it from the bookshelf,
 See [Essential experience and Premium support](#essential-experience-and-premium-support) for how capabilities are grouped.
 
 Minimum Obsidian version: **1.8.7**
-
-## Excerpt and note workflows
-
-The diagrams below summarize the structure (Mermaid renders on **GitHub** and in **Obsidian**).
-
-### Diagram 1 · Pick a workflow (goal-based map)
-
-Reading in Obsidian is the hub; each branch is a typical path you can follow by goal.
-
-```mermaid
-flowchart TB
-  READ(["Read inside Obsidian<br/>Weave EPUB Reader"])
-
-  READ --> A["A Auto Markdown excerpts<br/>where to capture"]
-  READ --> B["B Canvas mapping<br/>structure"]
-  READ --> C["C Memory review<br/>cards"]
-  READ --> D["D Backlink review<br/>notes ↔ book"]
-  READ --> E["E Incremental reading<br/>when to read"]
-
-  A --> LOOP["Join the core loop<br/>read→capture→render→return"]
-  B --> LOOP
-  C --> LOOP
-  D --> LOOP
-  E --> LOOP
-```
-
-### Diagram 2 · Incremental reading subflow (workflow E)
-
-Answers **how several books advance on a schedule** and complements auto excerpts (workflow A): **E schedules chapters; A captures what you noted**.
-
-```mermaid
-flowchart LR
-  TOC["TOC: Add current chapter<br/>to incremental reading"]
-  CAL["Weave IR<br/>month calendar"]
-  MIX["Multiple books & chapters<br/>interleaved schedule"]
-  DAY["Scheduled day<br/>open task"]
-  BOOK["Deep link back to<br/>chapter or passage"]
-  DEEP["IR point / resume point<br/>deep reading"]
-  LOOP["read→capture→render→return<br/>excerpts · backlinks · rendering"]
-
-  TOC --> CAL --> MIX --> DAY --> BOOK --> DEEP --> LOOP
-```
-
-### Five typical workflows
-
-#### A. Auto Markdown excerpts (most common)
-
-Best when **notes are your primary workspace while reading**:
-
-1. **First**, open a Markdown note as your excerpt notebook and place the cursor where inserts should go (split view works best).
-2. Open the reader and turn on **Auto mode** in the toolbar (lightning icon: on = insert, off = copy to clipboard).
-3. Select text in the book and excerpt → a located excerpt block (with a book deep link) is **inserted at that cursor**.
-4. After saving the note, reopen the book: matching passages show **highlights in the body**—what you captured in notes is visible in the book.
-
-See [workflow A](#a-auto-markdown-excerpts-most-common) above.
-
-#### B. Canvas visual mapping
-
-Best for **topics, structure, and relationships**:
-
-1. **Bind** a Canvas file to the current book.
-2. With Auto mode on, excerpts can **auto-create Canvas nodes** (layout direction is configurable).
-3. Arrange nodes in the Canvas; the reader **renders related excerpts back into the book**.
-
-#### C. Memory review
-
-Best when excerpts should enter **spaced repetition**:
-
-1. Select text → **Make card** in the toolbar → Weave card editor.
-2. Save to `.wdeck` or other deck files; the reader **renders highlights from deck data**.
-3. Review in Weave; jump back to the book when you need the original passage.
-
-#### D. Backlink review
-
-Best for **excerpt first, review later, return to source**:
-
-1. Review past excerpts in Markdown / Canvas / decks; reopen the book to see **highlights in the body**.
-2. Click a book deep link in a note → jump to the **original passage**.
-3. Click a highlight in the reader → **open the source note** (two-way tracing).
-
-#### E. Incremental reading: interleaved multi-book deep reading
-
-Best when you want **several books to advance on a rhythm** instead of reading one cover-to-cover in a single sprint:
-
-1. **Add the current chapter to incremental reading**: In the reader sidebar **table of contents**, use **Add to incremental reading** on a chapter (optionally pick an incremental-reading topic) to enqueue that chapter.
-2. **Schedule in the month calendar**: The chapter appears in Weave’s **incremental reading month calendar** alongside reading points from other books and chapters—**interleaved multi-book reading** instead of leaving many books half-open on the shelf.
-3. **Deep reading, not skimming**:  
-   - Select text → create an **incremental reading point** (keeps an EPUB source deep link) for paragraph-level follow-up;  
-   - While reading, mark an **incremental reading resume point** so the next IR session jumps back to the **exact location** in the book.  
-4. On a scheduled day, open the item from the calendar or task list → follow the deep link back to the chapter or passage, then continue with excerpts and backlinks.
-
-This complements workflow A: **A is where captures go; E is when each chapter gets read across multiple books.**
-
-### Compared with “external reader + manual paste”
-
-- **Fewer context switches**—no leaving Obsidian to capture a sentence.
-- **Excerpts become durable vault knowledge**—searchable in Markdown, Canvas, or decks—not clipboard history.
-- **Review keeps the source in view**—notes index what you read; the book shows the live context via deep links and rendering.
-- **Same workflow across devices**—books and notes live in the vault and follow your Obsidian sync setup.
-- **Rhythm for long or multiple books**—chapters enter the incremental reading calendar for scheduled, interleaved progress.
-
-More detail: [Excerpt and note workflows](#excerpt-and-note-workflows) and [Core feature checklist](#core-feature-checklist) above.
 
 ## Essential experience and Premium support
 
@@ -525,7 +291,7 @@ More detail: [Excerpt and note workflows](#excerpt-and-note-workflows) and [Core
 | TOC sidebar **book map density bar** | 🔒 | ✅ |
 | TOC **chapter marks** (important / question / mastered) | 🔒 | ✅ |
 | Bookshelf **playlists** | 🔒 | ✅ |
-| **Two-way tracing** (anchor jumps, reader ↔ notes / Canvas / decks) | 🔒 | ✅ |
+| **Two-way tracing** (anchor jumps, notes ↔ book location display) | 🔒 | ✅ |
 | **Reading reference points** (record / update / jump) | ✅ | ✅ |
 | **Reading background glow** | 🔒 | ✅ |
 | **Paragraph reading mode**, immersive fullscreen | 🔒 | ✅ |
@@ -534,11 +300,12 @@ More detail: [Excerpt and note workflows](#excerpt-and-note-workflows) and [Core
 | **Canvas** binding and automatic node creation | ✅ | ✅ |
 | Footnote hover preview | 🔒 | ✅ |
 | Export current chapter to Markdown | ✅ | ✅ |
+| **Public API** (current chapter / TOC section body, chapter or whole-book excerpt notes, etc.) | ✅ | ✅ |
 
 > Legend: ✅ included · 🔒 requires Premium support
 
-- **Enable Premium support**: EPUB-only license in reader settings, or inherit from an activated **Weave** main plugin.
-- **Card making / incremental reading / AI**: No separate EPUB Premium-support license slot, but require Weave; AI also needs your own API key.
+- **Enable Premium support**: Use an EPUB-only activation code in reader settings; if an activated **Weave** main plugin is installed, authorization can be inherited without re-entering a code.
+- **Card making / incremental reading / AI**: Do not consume a separate reader Premium-support license, but require Weave; AI also needs your own API key.
 
 Authoritative breakdown: [Essential experience and Premium support](#essential-experience-and-premium-support) above. Activate in reader settings. Terms: [PREMIUM_TERMS.md](./PREMIUM_TERMS.md).
 
@@ -560,10 +327,10 @@ Authoritative breakdown: [Essential experience and Premium support](#essential-e
 
 ## Quick start
 
-1. Open the **bookshelf** from the ribbon or command palette, then import or open a book from your vault.
+1. After enabling the plugin, open the **bookshelf** from the ribbon or command palette, then import or open a book from your vault.
 2. Create or open a Markdown file and place the cursor where excerpts should go; turn on **Auto excerpt** in the reader. Select text to create highlights, excerpts, or bookmarks—they are inserted at that cursor.
 3. Click a highlight in the book to jump to its source note from the toolbar; in the Markdown / Canvas that holds the excerpt, click the book icon next to it to return to the matching passage.
-4. Reader menu → **Help** → **Tutorial** for in-app guidance. For workflow details, see [Excerpt and note workflows](#excerpt-and-note-workflows) above.
+4. Reader menu → **Help** → **Tutorial** for the in-app short guide.
 
 ## Data and sync
 
@@ -607,33 +374,6 @@ Premium support is **buy-once** (activate once, use long-term; see [Premium supp
 ### Cannot open non-EPUB formats?
 
 **EPUB, TXT, FB2/FBZ, MOBI, AZW3, CBZ, and PDF** are all included in the essential experience. See [Essential experience and Premium support](#essential-experience-and-premium-support) above.
-
-### Plugin folder name?
-
-Plugin ID: `weave-epub-reader` → `.obsidian/plugins/weave-epub-reader/`
-
-### Official API (for Obsidian AI / Skills)
-
-A thin in-process API exposes **the currently open book** — either the current spine chapter or a **TOC subsection** — not whole-book search/RAG. Extraction matches “Export current chapter / export TOC entry”; export writes files, the API feeds AI sessions. Prefer `getTocSection` for long chapters. Whole-book **excerpt notes** (not body text) are available via `listBookExcerpts`.
-
-```js
-const api = app.plugins.plugins["weave-epub-reader"]?.getOfficialAPI?.();
-if (!api) throw new Error("Weave EPUB Reader is not enabled");
-
-const ctx = await api.getReadingContext();
-const section = await api.getTocSection({ format: "text" }); // current TOC node; or { label } / { href }
-// section.data.sourceLink / sourceCallout — section-level provenance for Weave cards
-const chapter = await api.getCurrentChapter({ format: "text" }); // whole spine section
-// Optional: listCurrentChapterHighlights / listBookExcerpts / getToc / listOpenReaders
-// listBookExcerpts() — current book; or { filePath } / { bookId } without an open reader
-```
-
-When no reader is open, chapter methods return `{ ok: false, error: { code, message } }` instead of throwing. TOC miss / ambiguity: `toc_not_found` / `ambiguous_toc`. Unknown book locator: `book_not_found`. `sourceLink` jumps to section/TOC start (not a sentence selection).
-
-Agent Skills for Obsidian AI plugins (copy into that plugin’s skills folder):
-
-- [`skills/weave-epub-current-chapter/SKILL.md`](./skills/weave-epub-current-chapter/SKILL.md) — current chapter / TOC section body
-- [`skills/weave-epub-book-excerpts/SKILL.md`](./skills/weave-epub-book-excerpts/SKILL.md) — whole-book excerpt list
 
 ## More documentation
 
