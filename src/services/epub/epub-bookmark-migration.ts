@@ -8,7 +8,7 @@ import { showObsidianConfirm } from "../../utils/obsidian-confirm";
 import { ensureEpubBookmarkCoverPath } from "./epub-bookmark-cover";
 import { deriveEpubBookmarkDisplayTitle } from "./epub-bookmark-display-title";
 import { readEpubBookmarkAnalyticsFromFrontmatter } from "./epub-bookmark-analytics";
-import { EPUB_BOOKMARK_FILE_FORMAT_V3 } from "./epub-bookmark-page-types";
+import { EPUB_BOOKMARK_FILE_FORMAT_V3, type EpubBookmarkUserMetadata } from "./epub-bookmark-page-types";
 import { renderEpubBookmarkFileContent } from "./epub-bookmark-page-render";
 import { EPUB_BOOKMARK_DATA_FILE_PREFIX } from "./epub-bookmark-folder-path";
 import {
@@ -16,6 +16,7 @@ import {
 	parseEpubBookmarkVaultYamlBlock,
 } from "./epub-bookmark-vault-parse";
 import { resolveEpubBookmarkFolderForApp } from "./epub-bookmark-vault-path";
+import { isPlainObject } from "./reading-pace";
 import { EpubLinkService } from "./EpubLinkService";
 
 const BACKUP_ROOT_SEGMENT = "epub-bookmarks";
@@ -269,15 +270,21 @@ async function migrateSingleBookmarkFile(
 		(typeof frontmatter.coverPath === "string" ? frontmatter.coverPath : undefined);
 
 	const analytics = readEpubBookmarkAnalyticsFromFrontmatter(frontmatter);
-	const user =
-		frontmatter.user && typeof frontmatter.user === "object"
-			? (frontmatter.user as Record<string, unknown>)
-			: {
-					tags: [],
-					rating: null,
-					priority: "",
-					notes: "",
-				};
+	const user: EpubBookmarkUserMetadata = isPlainObject(frontmatter.user)
+		? {
+				tags: Array.isArray(frontmatter.user.tags)
+					? frontmatter.user.tags.map((item) => String(item))
+					: [],
+				rating: typeof frontmatter.user.rating === "number" ? frontmatter.user.rating : null,
+				priority: typeof frontmatter.user.priority === "string" ? frontmatter.user.priority : "",
+				notes: typeof frontmatter.user.notes === "string" ? frontmatter.user.notes : "",
+			}
+		: {
+				tags: [],
+				rating: null,
+				priority: "",
+				notes: "",
+			};
 
 	const content = renderEpubBookmarkFileContent(
 		{
@@ -338,12 +345,7 @@ async function migrateSingleBookmarkFile(
 						})
 					: undefined,
 			analytics,
-			user: user as {
-				tags?: string[];
-				rating?: number | null;
-				priority?: string;
-				notes?: string;
-			},
+			user,
 		},
 		linkService
 	);

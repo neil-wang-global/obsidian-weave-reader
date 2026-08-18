@@ -33,7 +33,7 @@ import {
 } from "./epub-bookmark-page-render";
 import { deriveEpubBookmarkDisplayTitle } from "./epub-bookmark-display-title";
 import { ensureEpubBookmarkCoverPath } from "./epub-bookmark-cover";
-import { normalizeReadingPaceStats } from "./reading-pace";
+import { isPlainObject, normalizeReadingPaceStats } from "./reading-pace";
 import type { ReaderHighlightInput } from "./reader-engine-types";
 import type { EpubBook, ReadingPosition, ReadingStats } from "./types";
 import { errorPlainText, unknownPlainText } from "../../utils/unknown-plain-text";
@@ -1121,10 +1121,10 @@ export class EpubBookmarkService {
 	}
 
 	private normalizeReadingStats(value: unknown): ReadingStats | null {
-		if (!value || typeof value !== "object") {
+		if (!isPlainObject(value)) {
 			return null;
 		}
-		return normalizeReadingPaceStats(value as Partial<ReadingStats>);
+		return normalizeReadingPaceStats(value);
 	}
 
 	private normalizeBookmarkRecords(value: unknown, stableKey: string): EpubBookmarkRecord[] {

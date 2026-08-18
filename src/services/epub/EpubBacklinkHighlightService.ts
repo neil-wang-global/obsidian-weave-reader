@@ -3485,7 +3485,7 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 	}
 
 	private getDiskCachePath(): string {
-		return getPluginPathsById(this.app as unknown, this.localPluginId).cache.incrementalReading
+		return getPluginPathsById(this.app, this.localPluginId).cache.incrementalReading
 			.epubBacklinkHighlightsCache;
 	}
 
@@ -4114,13 +4114,9 @@ logger.debug("[EpubBacklinkHighlightService] deleteHighlightFromCardData failed:
 			return raw;
 		} catch (error) {
 			const recovered = await safeReadJson<unknown>(
-				this.app.vault.adapter as {
-					read: (path: string) => Promise<string>;
-					exists: (path: string) => Promise<boolean>;
-					write: (path: string, data: string) => Promise<void>;
-				},
+				this.app.vault.adapter,
 				file.path,
-				this.app as { vault: { configDir: string } }
+				this.app
 			);
 			if (recovered !== null) {
 				return JSON.stringify(recovered);

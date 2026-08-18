@@ -1068,7 +1068,7 @@ export class EpubView extends ItemView {
 		const incomingPending = pendingLocateFromLegacyState({
 			pendingLocate:
 				viewState.pendingLocate && typeof viewState.pendingLocate === "object"
-					? (viewState.pendingLocate as PendingLocateState)
+					? { ...viewState.pendingLocate }
 					: undefined,
 			pendingCfi: typeof viewState.pendingCfi === "string" ? viewState.pendingCfi : undefined,
 			pendingText: typeof viewState.pendingText === "string" ? viewState.pendingText : undefined,

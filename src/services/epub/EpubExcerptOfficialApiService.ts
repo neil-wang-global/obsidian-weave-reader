@@ -212,8 +212,7 @@ export class EpubExcerptOfficialApiService implements EpubWeaveOfficialAPI {
 			return result;
 		}
 		if (result && typeof result === "object" && "success" in result) {
-			const success = (result as { success?: boolean }).success;
-			return success !== false;
+			return result.success !== false;
 		}
 		return true;
 	}

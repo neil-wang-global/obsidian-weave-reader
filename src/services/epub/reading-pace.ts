@@ -23,6 +23,10 @@ export const PACE_DEFAULT_WPM = 260;
 export const PACE_DEFAULT_WPM_ZH = 320;
 export const PACE_DEFAULT_WPM_EN = 240;
 
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 export interface SectionReadingSlice {
 	index: number;
 	wordCount: number;
@@ -110,7 +114,7 @@ export function median(values: number[]): number | undefined {
 }
 
 export function normalizeReadingPaceStats(
-	stats: Partial<ReadingStats> | null | undefined,
+	stats: Partial<ReadingStats> | Record<string, unknown> | null | undefined,
 	now = Date.now()
 ): ReadingStats {
 	const base = stats || {};

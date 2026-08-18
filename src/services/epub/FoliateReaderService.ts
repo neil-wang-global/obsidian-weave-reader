@@ -537,14 +537,14 @@ export class FoliateReaderService implements EpubReaderEngine {
 
 		const view = activeWindow.createEl("foliate-view") as FoliateViewElement;
 		view.classList.add("weave-epub-reader-host");
-		view.addEventListener("relocate", this.handleRelocateEvent as EventListener);
-		view.addEventListener("load", this.handleLoadEvent as EventListener);
-		view.addEventListener("link", this.handleLinkEvent as EventListener);
-		view.addEventListener("draw-annotation", this.handleDrawAnnotationEvent as EventListener);
-		view.addEventListener("show-annotation", this.handleShowAnnotationEvent as EventListener);
+		view.addEventListener("relocate", this.handleRelocateEvent);
+		view.addEventListener("load", this.handleLoadEvent);
+		view.addEventListener("link", this.handleLinkEvent);
+		view.addEventListener("draw-annotation", this.handleDrawAnnotationEvent);
+		view.addEventListener("show-annotation", this.handleShowAnnotationEvent);
 		this.foliateView = view;
 		container.appendChild(view);
-		this.attachRenderContainerWheelListener(container, view as unknown as HTMLElement);
+		this.attachRenderContainerWheelListener(container, view);
 
 		try {
 			await view.open(this.parser.getBook());
@@ -1443,14 +1443,14 @@ export class FoliateReaderService implements EpubReaderEngine {
 		const onRelocate = () => schedulePublish();
 
 		renderer.addEventListener("scroll", onScroll, { passive: true });
-		this.foliateView?.addEventListener("relocate", onRelocate as EventListener);
+		this.foliateView?.addEventListener("relocate", onRelocate);
 		this.scrolledChapterEndMonitorCleanup = () => {
 			if (this.scrolledChapterEndSyncFrame) {
 				window.cancelAnimationFrame(this.scrolledChapterEndSyncFrame);
 				this.scrolledChapterEndSyncFrame = 0;
 			}
 			renderer.removeEventListener("scroll", onScroll);
-			this.foliateView?.removeEventListener("relocate", onRelocate as EventListener);
+			this.foliateView?.removeEventListener("relocate", onRelocate);
 		};
 	}
 
@@ -2233,12 +2233,12 @@ export class FoliateReaderService implements EpubReaderEngine {
 			if (windowSelectionDescriptor) {
 				Object.defineProperty(window, "getSelection", windowSelectionDescriptor);
 			} else {
-				Reflect.deleteProperty(window as unknown as Record<string, unknown>, "getSelection");
+				Reflect.deleteProperty(window, "getSelection");
 			}
 			if (documentSelectionDescriptor) {
 				Object.defineProperty(activeDocument, "getSelection", documentSelectionDescriptor);
 			} else {
-				Reflect.deleteProperty(activeDocument as unknown as Record<string, unknown>, "getSelection");
+				Reflect.deleteProperty(activeDocument, "getSelection");
 			}
 		}
 	}
@@ -2902,21 +2902,22 @@ export class FoliateReaderService implements EpubReaderEngine {
 		return this.clamp(probe.toString().length / Math.max(text.length, 1), 0, 1);
 	}
 
+	private getFoliateRenderer(): FoliateRenderer | undefined {
+		const renderer = this.foliateView?.renderer;
+		return domInstanceOf(renderer, HTMLElement) ? renderer : undefined;
+	}
+
 	private getFoliateVisibleContents(): Array<{ index?: number; doc?: Document | null }> {
-		const rendererContents = (
-			this.foliateView?.renderer as FoliateRenderer | undefined
-		)?.getContents?.();
+		const rendererContents = this.getFoliateRenderer()?.getContents?.();
 		if (Array.isArray(rendererContents)) {
 			return rendererContents;
 		}
 
-		// Backward-compat fallback for older foliate runtimes that exposed getContents() on the view.
-		const legacyView = this.foliateView as
-			| (FoliateViewElement & {
-					getContents?: () => Array<{ index?: number; doc?: Document | null }>;
-			  })
-			| null;
-		const legacyContents = legacyView?.getContents?.();
+		const legacyGetContents = this.foliateView?.getContents;
+		if (typeof legacyGetContents !== "function") {
+			return [];
+		}
+		const legacyContents = legacyGetContents.call(this.foliateView);
 		return Array.isArray(legacyContents) ? legacyContents : [];
 	}
 
@@ -5687,7 +5688,7 @@ export class FoliateReaderService implements EpubReaderEngine {
 	}
 
 	private applyRendererAppearance(): void {
-		const renderer = this.foliateView?.renderer as FoliateRenderer | undefined;
+		const renderer = this.getFoliateRenderer();
 		const styles = this.buildReaderStyles();
 		renderer?.setStyles?.(styles);
 		this.applyHostThemeSurface();
@@ -5701,8 +5702,8 @@ export class FoliateReaderService implements EpubReaderEngine {
 		applyReaderThemeHostSurfaces({
 			styleSource: this.getObsidianStyleSource(),
 			renderContainer: this.renderContainer,
-			foliateView: (this.foliateView as HTMLElement | null) ?? null,
-			renderer: this.foliateView?.renderer as HTMLElement | undefined,
+			foliateView: this.foliateView ?? null,
+			renderer: this.getFoliateRenderer(),
 		});
 	}
 
@@ -6709,17 +6710,11 @@ export class FoliateReaderService implements EpubReaderEngine {
 			return;
 		}
 
-		currentView.removeEventListener("relocate", this.handleRelocateEvent as EventListener);
-		currentView.removeEventListener("load", this.handleLoadEvent as EventListener);
-		currentView.removeEventListener("link", this.handleLinkEvent as EventListener);
-		currentView.removeEventListener(
-			"draw-annotation",
-			this.handleDrawAnnotationEvent as EventListener
-		);
-		currentView.removeEventListener(
-			"show-annotation",
-			this.handleShowAnnotationEvent as EventListener
-		);
+		currentView.removeEventListener("relocate", this.handleRelocateEvent);
+		currentView.removeEventListener("load", this.handleLoadEvent);
+		currentView.removeEventListener("link", this.handleLinkEvent);
+		currentView.removeEventListener("draw-annotation", this.handleDrawAnnotationEvent);
+		currentView.removeEventListener("show-annotation", this.handleShowAnnotationEvent);
 		try {
 			currentView.close();
 		} catch (error) {

@@ -17,7 +17,7 @@ export function resolveEpubBookmarkFolderForApp(app: App): string {
 	};
 	const plugin =
 		pluginLookup.plugins?.getPlugin?.(runtimePluginId) ??
-		(getCompatiblePlugin(pluginLookup as unknown) as { settings?: { bookmarkFolder?: string } } | null);
+		getCompatiblePlugin(pluginLookup);
 	return (
 		normalizeEpubBookmarkFolderPath(plugin?.settings?.bookmarkFolder) ||
 		DEFAULT_EPUB_BOOKMARK_FOLDER

@@ -17,7 +17,12 @@ type NativeDomCreator = {
 };
 
 function nativeDomCreator(doc: Document): NativeDomCreator {
-	return doc as unknown as NativeDomCreator;
+	const createElement = doc.createElement.bind(doc);
+	const createDocumentFragment = doc.createDocumentFragment.bind(doc);
+	return {
+		createElement: (tagName: string) => createElement(tagName),
+		createDocumentFragment,
+	};
 }
 
 export function createDivInDocument(doc: Document): HTMLDivElement {

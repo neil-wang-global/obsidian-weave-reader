@@ -5,6 +5,11 @@
 export {};
 
 declare module "obsidian" {
+	interface App {
+		loadLocalStorage(key: string): string | null | undefined;
+		saveLocalStorage(key: string, value: string | undefined): void;
+	}
+
 	interface PluginSettingTab {
 		getSettingDefinitions?(): Array<{
 			type: "render";

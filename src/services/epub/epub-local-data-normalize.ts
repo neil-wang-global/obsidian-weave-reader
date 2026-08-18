@@ -33,7 +33,7 @@ import {
 	normalizeEpubReaderSettingsForDevice,
 	type EpubReaderSettingsDeviceKind,
 } from "./reader-settings";
-import { normalizeReadingPaceStats } from "./reading-pace";
+import { isPlainObject, normalizeReadingPaceStats } from "./reading-pace";
 import type {
 	BookMetadata,
 	ConcealedText,
@@ -109,10 +109,10 @@ export function normalizeReadingPosition(value: unknown): ReadingPosition | unde
 }
 
 export function normalizeReadingStats(value: unknown): ReadingStats | undefined {
-	if (!value || typeof value !== "object") {
+	if (!isPlainObject(value)) {
 		return undefined;
 	}
-	return normalizeReadingPaceStats(value as Partial<ReadingStats>);
+	return normalizeReadingPaceStats(value);
 }
 
 export function normalizeBookState(
@@ -400,7 +400,7 @@ export function normalizeExcerptSettings(value: unknown): EpubExcerptSettings {
 
 export function normalizeReaderSettingsForDevice(
 	deviceKind: EpubReaderSettingsDeviceKind,
-	settings: Partial<EpubReaderSettings>
+	settings: Partial<EpubReaderSettings> | Record<string, unknown>
 ): EpubReaderSettings {
 	const mergedSettings: EpubReaderSettings = {
 		...getDefaultEpubReaderSettings(deviceKind),
@@ -450,18 +450,18 @@ export function normalizeLocalReaderData(value: unknown): EpubReaderLocalDataFil
 		normalized.uiMemory = normalizePluginUiMemory(record.uiMemory);
 	}
 
-	if (Object.prototype.hasOwnProperty.call(readerSettingsRecord, "desktop")) {
+	if (isPlainObject(readerSettingsRecord.desktop)) {
 		normalized.readerSettings = normalized.readerSettings || {};
 		normalized.readerSettings.desktop = normalizeReaderSettingsForDevice(
 			"desktop",
-			readerSettingsRecord.desktop as Partial<EpubReaderSettings>
+			readerSettingsRecord.desktop
 		);
 	}
-	if (Object.prototype.hasOwnProperty.call(readerSettingsRecord, "mobile")) {
+	if (isPlainObject(readerSettingsRecord.mobile)) {
 		normalized.readerSettings = normalized.readerSettings || {};
 		normalized.readerSettings.mobile = normalizeReaderSettingsForDevice(
 			"mobile",
-			readerSettingsRecord.mobile as Partial<EpubReaderSettings>
+			readerSettingsRecord.mobile
 		);
 	}
 	if (Object.prototype.hasOwnProperty.call(record, "excerptSettings")) {

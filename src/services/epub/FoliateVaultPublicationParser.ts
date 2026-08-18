@@ -359,7 +359,7 @@ export class FoliateVaultPublicationParser {
 			this.currentBook = makePlainTextBook({
 				fileName: vaultFile.name,
 				text,
-			}) as FoliateBook;
+			});
 		} else if (usesFoliateGenericBookLoader(extension)) {
 			this.archive = null;
 			this.archiveEntryLookup.clear();
@@ -1942,8 +1942,8 @@ export class FoliateVaultPublicationParser {
 					return "";
 				});
 		};
-		target.addEventListener("data", listener as EventListener);
-		this.transformCleanup = () => target.removeEventListener("data", listener as EventListener);
+		target.addEventListener("data", listener);
+		this.transformCleanup = () => target.removeEventListener("data", listener);
 	}
 
 	private async inlineFoliateBlobStylesheets(markup: string, mediaType: string): Promise<string> {
@@ -3068,7 +3068,7 @@ export class FoliateVaultPublicationParser {
 	private getNormalizedFootnoteElementTextForExport(element: Element): string {
 		const clone = element.cloneNode(true) as Element;
 		this.removeFootnoteBacklinks(clone);
-		const text = this.extractReadableSectionText(clone as HTMLElement) || clone.textContent || "";
+		const text = this.extractReadableSectionText(clone) || clone.textContent || "";
 		return this.normalizeFootnoteExportText(text);
 	}
 
@@ -3083,7 +3083,7 @@ export class FoliateVaultPublicationParser {
 			container.appendChild(fragment);
 			this.removeFootnoteBacklinks(container);
 			return this.normalizeFootnoteExportText(
-				this.extractReadableSectionText(container as HTMLElement) || container.textContent || ""
+				this.extractReadableSectionText(container) || container.textContent || ""
 			);
 		} catch {
 			return this.normalizeFootnoteExportText(range.toString());

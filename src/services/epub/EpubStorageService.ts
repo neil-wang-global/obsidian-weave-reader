@@ -26,7 +26,7 @@ import {
 } from "./epub-vault-path";
 import { normalizeCanvasExcerptAnchorsMap } from "./canvas-excerpt-anchor";
 import { EpubBookmarkService, type EpubBookmarkReadingState } from "./EpubBookmarkService";
-import { normalizeReadingPaceStats } from "./reading-pace";
+import { isPlainObject, normalizeReadingPaceStats } from "./reading-pace";
 import type {
 	BookMetadata,
 	ConcealedText,
@@ -1472,14 +1472,15 @@ export class EpubStorageService {
 		}
 	}
 
-	private async readJsonObjectFromPath(path: string): Promise<object | null> {
+	private async readJsonObjectFromPath(path: string): Promise<Record<string, unknown> | null> {
 		const adapter = this.app.vault.adapter;
 		if (!(await adapter.exists(path))) {
 			return null;
 		}
 
 		try {
-			return JSON.parse(await adapter.read(path)) as object;
+			const parsed: unknown = JSON.parse(await adapter.read(path));
+			return isPlainObject(parsed) ? parsed : null;
 		} catch (error) {
 			logger.warn(`[EpubStorageService] Failed to parse JSON from ${path}:`, error);
 			return null;
@@ -1556,7 +1557,7 @@ export class EpubStorageService {
 			}
 			return this.normalizeReaderSettingsForDevice(
 				deviceKind,
-				parsed as Partial<EpubReaderSettings>
+				parsed
 			);
 		}
 
@@ -4407,7 +4408,7 @@ export class EpubStorageService {
 
 		return (
 			(await this.readLegacyReaderSettings(deviceKind)) ??
-			({ ...this.getDefaultReaderSettingsForCurrentDevice() } as EpubReaderSettings)
+			({ ...this.getDefaultReaderSettingsForCurrentDevice() })
 		);
 	}
 
@@ -4956,11 +4957,11 @@ function readLegacyPendingProgress(service: EpubStorageService): EpubStoragePend
 	if (!isEpubStorageServiceLike(service)) {
 		return null;
 	}
-	const progressStore: unknown = Reflect.get(service as object, "progressStore");
+	const progressStore: unknown = Reflect.get(service, "progressStore");
 	if (progressStore instanceof EpubProgressStore) {
 		return progressStore.readPending();
 	}
-	const pending: unknown = Reflect.get(service as object, "_pendingProgress");
+	const pending: unknown = Reflect.get(service, "_pendingProgress");
 	return normalizePendingProgressPayload(pending);
 }
 
@@ -4968,28 +4969,28 @@ function clearLegacyPendingProgressTimer(service: EpubStorageService): void {
 	if (!isEpubStorageServiceLike(service)) {
 		return;
 	}
-	const progressStore: unknown = Reflect.get(service as object, "progressStore");
+	const progressStore: unknown = Reflect.get(service, "progressStore");
 	if (progressStore instanceof EpubProgressStore) {
 		progressStore.clearTimer();
 		return;
 	}
-	const timer: unknown = Reflect.get(service as object, "_progressDebounceTimer");
+	const timer: unknown = Reflect.get(service, "_progressDebounceTimer");
 	if (typeof timer === "number") {
 		window.clearTimeout(timer);
 	}
-	Reflect.set(service as object, "_progressDebounceTimer", null);
+	Reflect.set(service, "_progressDebounceTimer", null);
 }
 
 function clearLegacyPendingProgress(service: EpubStorageService): void {
 	if (!isEpubStorageServiceLike(service)) {
 		return;
 	}
-	const progressStore: unknown = Reflect.get(service as object, "progressStore");
+	const progressStore: unknown = Reflect.get(service, "progressStore");
 	if (progressStore instanceof EpubProgressStore) {
 		progressStore.clearPending();
 		return;
 	}
-	Reflect.set(service as object, "_pendingProgress", null);
+	Reflect.set(service, "_pendingProgress", null);
 }
 
 async function flushEpubStoragePendingProgressState(service: EpubStorageService): Promise<void> {

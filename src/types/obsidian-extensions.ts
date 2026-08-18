@@ -343,7 +343,7 @@ export interface AppWithLegacyLocalStorage extends App {
 }
 
 export function getAppWithLegacyLocalStorage(app: App): AppWithLegacyLocalStorage {
-	return app as AppWithLegacyLocalStorage;
+	return app;
 }
 
 /**
@@ -428,7 +428,7 @@ export interface NoticeWithShownState {
 }
 
 export function getNoticeWithShownState(notice: Notice): NoticeWithShownState {
-	return notice as unknown as NoticeWithShownState;
+	return notice;
 }
 
 export function readNoticeShownState(notice: Notice): boolean | null {

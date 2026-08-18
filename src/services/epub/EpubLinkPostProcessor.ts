@@ -238,7 +238,7 @@ export function createEpubLinkPostProcessor(app: App) {
 			const locatorHref = protocolLocatorHref || (isSupportedBookLocatorHref(rawHref) ? rawHref : "");
 
 			if (!locatorHref) {
-				clearBoundEpubHandler(linkEl as BoundEpubLinkElement);
+				clearBoundEpubHandler(linkEl);
 				return;
 			}
 

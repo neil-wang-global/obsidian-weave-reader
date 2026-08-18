@@ -41,7 +41,7 @@ export function getDefaultEpubReaderSettings(
 
 export function normalizeEpubReaderSettingsForDevice(
 	deviceKind: EpubReaderSettingsDeviceKind,
-	settings: Partial<EpubReaderSettings>
+	settings: Partial<EpubReaderSettings> | Record<string, unknown>
 ): EpubReaderSettings {
 	const defaults = getDefaultEpubReaderSettings(deviceKind);
 	const normalized: EpubReaderSettings = {
