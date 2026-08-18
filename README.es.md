@@ -32,12 +32,13 @@ Además de las necesidades esenciales y la experiencia principal, los usuarios a
 
 - Lectura en todas las plataformas: escritorio y móvil
 - Lectura de EPUB, TXT, FB2/FBZ, MOBI, AZW3, CBZ y PDF
-- Mi estantería: importar, portadas, progreso, búsqueda/filtro, estado de lectura
-- Paginado / desplazamiento continuo, una / dos columnas, controles de ancho y tipografía
+- Mi estantería: importar, portadas, progreso, búsqueda/filtro, estado de lectura, varias vistas
+- Salto de índice, lectura a doble página, desplazamiento continuo de una página y otros modos, más tipografía y temas
 - Progreso de lectura persistente, marcadores, estimación de tiempo restante
 - Puntos de lectura de referencia (registrar / actualizar / saltar)
 - Resplandor de fondo de lectura (Premium)
 - Modo de lectura por párrafos, pantalla completa inmersiva (Premium)
+- Modo de marcado de vocabulario (Premium)
 - Listas de reproducción de la estantería (Premium)
 
 ### Extractos y anotaciones
@@ -73,9 +74,9 @@ Además de las necesidades esenciales y la experiencia principal, los usuarios a
 
 ### Exportación y ayudas
 
-- Exportar el capítulo actual a Markdown (Essential)
+- Plantillas de exportación de notas y presets integrados (Essential)
+- Exportar el capítulo actual a Markdown con notas de extracto (Premium)
 - Exportar extractos de todo el libro / del capítulo y capítulos marcados (Premium)
-- Estudio de plantillas de exportación con presets integrados
 - Vista previa de notas al pie al pasar el cursor (Premium)
 - Interfaz multilingüe (简体中文、繁體中文、English、日本語、한국어、Русский、Deutsch、Español、العربية) + tutorial en la app
 
@@ -87,28 +88,29 @@ Versión mínima de Obsidian: **1.8.7**
 
 | Capacidad | Experiencia esencial | Soporte Premium |
 |-----------|:--------------------:|:---------------:|
-| **Todas las plataformas** (escritorio y móvil) | ✅ | ✅ |
-| Leer **EPUB**, TOC, modos paginado/desplazamiento, tipografía y temas | ✅ | ✅ |
-| Leer libros de texto plano **TXT** | ✅ | ✅ |
-| Leer **FB2 / FBZ** | ✅ | ✅ |
-| Leer **MOBI / AZW3 / CBZ** | ✅ | ✅ |
+| **Todas las plataformas** | ✅ | ✅ |
+| **EPUB / TXT / FB2 / FBZ / MOBI / AZW3 / CBZ / PDF** | ✅ | ✅ |
+| **Salto de índice**, **lectura a doble página**, **desplazamiento continuo de una página** y otros modos | ✅ | ✅ |
 | **Cinco colores de resaltado**, anotaciones, extractos y **renderizado en el cuerpo** | ✅ | ✅ |
 | Estilos de **subrayado / tachado / subrayado ondulado** | ✅ | ✅ |
 | Vista de **lista de tarjetas** de extractos | ✅ | ✅ |
+| **Varias vistas** de la estantería | ✅ | ✅ |
+| **Puntos de lectura de referencia** (registrar / actualizar / saltar) | ✅ | ✅ |
+| **Progreso de lectura**, progreso en la estantería, última ubicación | ✅ | ✅ |
+| **Marcadores de la página actual**, carpeta de marcadores y navegación por lista de marcadores | ✅ | ✅ |
+| Vinculación **Canvas** y creación automática de nodos | ✅ | ✅ |
+| **Plantillas de exportación de notas** y presets integrados | ✅ | ✅ |
+| **API pública** (capítulo actual / cuerpo de sección TOC, notas de extracto del capítulo o de todo el libro, etc.) | ✅ | ✅ |
 | Vista de **línea de tiempo** de extractos | 🔒 | ✅ |
 | **Barra de densidad del mapa del libro** en la barra lateral del TOC | 🔒 | ✅ |
 | **Marcas de capítulo** en el índice (importante / duda / dominado) | 🔒 | ✅ |
 | **Listas de reproducción** de la estantería | 🔒 | ✅ |
 | **Trazado bidireccional** (saltos de ancla, notas ↔ ubicación en el libro) | 🔒 | ✅ |
-| **Puntos de lectura de referencia** (registrar / actualizar / saltar) | ✅ | ✅ |
 | **Resplandor de fondo de lectura** | 🔒 | ✅ |
 | **Modo de lectura por párrafos**, pantalla completa inmersiva | 🔒 | ✅ |
-| **Progreso de lectura**, progreso en la estantería, última ubicación, estimación de tiempo restante | ✅ | ✅ |
-| **Marcadores de la página actual**, carpeta de marcadores y navegación por lista de marcadores | ✅ | ✅ |
-| Vinculación **Canvas** y creación automática de nodos | ✅ | ✅ |
+| **Modo de marcado de vocabulario** | 🔒 | ✅ |
+| Exportar el capítulo actual a Markdown (con notas de extracto) | 🔒 | ✅ |
 | Vista previa de notas al pie al pasar el cursor | 🔒 | ✅ |
-| Exportar el capítulo actual a Markdown | ✅ | ✅ |
-| **API pública** (capítulo actual / cuerpo de sección TOC, notas de extracto del capítulo o de todo el libro, etc.) | ✅ | ✅ |
 
 > Leyenda: ✅ incluido · 🔒 requiere soporte Premium
 
@@ -179,9 +181,13 @@ El soporte Premium **financia el desarrollo continuo** para que el lector y el f
 
 El soporte Premium es **compra única** (activa una vez, úsalo a largo plazo; consulta [términos del soporte Premium](./PREMIUM_TERMS.md)), no una suscripción mensual.
 
-### ¿No puedo abrir formatos que no son EPUB?
+### ¿Cómo cambio la fuente y el tamaño?
 
-**EPUB, TXT, FB2/FBZ, MOBI, AZW3, CBZ y PDF** están incluidos en la experiencia esencial. Consulta [Experiencia esencial y soporte Premium](#experiencia-esencial-y-soporte-premium) más arriba.
+La fuente y el tamaño del lector **siguen automáticamente a Obsidian**. El complemento no ofrece un ajuste propio: cámbialos en **Ajustes → Apariencia** de Obsidian.
+
+### ¿Cómo cambio el color de fondo?
+
+El fondo del lector **sigue el tema activo de Obsidian**. Instala y cambia de tema; el complemento no define un fondo propio.
 
 ## Más documentación
 

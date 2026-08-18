@@ -35,12 +35,13 @@
 
 - 桌面 / 移动端全平台阅读
 - EPUB、TXT、FB2/FBZ、MOBI、AZW3、CBZ、PDF 阅读
-- 我的书架：导入、封面、进度、搜索筛选、阅读状态
-- 翻页 / 连续滚动、单页 / 双栏、宽度与排版调节
+- 我的书架：导入、封面、进度、搜索筛选、阅读状态、多视图展示
+- 目录跳转、双页阅读、单页连续滚动等多种模式，以及版式与主题
 - 阅读进度持久化、书签、剩余阅读时间估算
 - 参考阅读点（手动记录 / 更新 / 跳转）
 - 常规阅读透光渐变（高级）
 - 段落阅读模式、沉浸式全屏（高级）
+- 生词标注模式（高级）
 - 书架书单（高级）
 
 ### 摘录与标注
@@ -76,9 +77,9 @@
 
 ### 导出与辅助
 
-- 导出当前章为 Markdown（基础）
+- 导出笔记模板与内置预设（基础）
+- 导出当前章为 Markdown（含摘录笔记；高级）
 - 导出全书 / 本章摘录、带标记章节（高级）
-- 导出模板工作室与内置预设
 - 脚注浮窗预览（高级）
 - 多语言界面（简体中文、繁體中文、English、日本語、한국어、Русский、Deutsch、Español、العربية）+ 应用内使用教程
 
@@ -95,28 +96,29 @@
 
 | 能力 | 基础体验 | 高级支持 |
 |------|:--------:|:--------:|
-| **全平台**阅读（桌面端与移动端） | ✅ | ✅ |
-| 阅读 **EPUB**，目录跳转、翻页/滚动、版式与主题 | ✅ | ✅ |
-| 阅读 **TXT** 纯文本书籍 | ✅ | ✅ |
-| 阅读 **FB2 / FBZ** | ✅ | ✅ |
-| 阅读 **MOBI / AZW3 / CBZ** | ✅ | ✅ |
+| **全平台** | ✅ | ✅ |
+| **EPUB / TXT / FB2 / FBZ / MOBI / AZW3 / CBZ / PDF** | ✅ | ✅ |
+| **目录跳转**、**双页阅读**、**单页连续滚动**等多种模式 | ✅ | ✅ |
 | **五种高亮色**、想法、摘录与**正文回显** | ✅ | ✅ |
 | **下划线 / 删除线 / 波浪线**等样式标注 | ✅ | ✅ |
 | 摘录笔记**汇总卡片列表** | ✅ | ✅ |
+| 书架**多视图**展示 | ✅ | ✅ |
+| **参考阅读点**（手动记录 / 更新 / 跳转） | ✅ | ✅ |
+| **阅读进度**持久化、书架进度、最后阅读点 | ✅ | ✅ |
+| **当前页书签**、书签目录与书签列表跳转 | ✅ | ✅ |
+| **Canvas** 绑定与自动写入节点 | ✅ | ✅ |
+| **导出笔记模板**与内置预设 | ✅ | ✅ |
+| **公开 API**（当前章 / 指定 TOC 小节正文、本章或全书摘录笔记等） | ✅ | ✅ |
 | 摘录笔记**时间线**视图 | 🔒 | ✅ |
 | 目录侧栏**全书地图密度条** | 🔒 | ✅ |
 | 目录**章节标记**（重要 / 疑问 / 已掌握等） | 🔒 | ✅ |
 | 书架**书单** | 🔒 | ✅ |
 | **双向溯源**（锚点跳转、笔记 ↔ 原书定位显示） | 🔒 | ✅ |
-| **参考阅读点**（手动记录 / 更新 / 跳转） | ✅ | ✅ |
 | **常规阅读透光渐变** | 🔒 | ✅ |
 | **段落阅读模式**、沉浸式全屏 | 🔒 | ✅ |
-| **阅读进度**持久化、书架进度、最后阅读点、剩余阅读时间 | ✅ | ✅ |
-| **当前页书签**、书签目录与书签列表跳转 | ✅ | ✅ |
-| **Canvas** 绑定与自动写入节点 | ✅ | ✅ |
+| **生词标注模式** | 🔒 | ✅ |
+| 导出当前章节为 Markdown（含摘录笔记） | 🔒 | ✅ |
 | 脚注浮窗预览 | 🔒 | ✅ |
-| 导出当前章节为 Markdown | ✅ | ✅ |
-| **公开 API**（当前章 / 指定 TOC 小节正文、本章或全书摘录笔记等） | ✅ | ✅ |
 
 > 图例：✅ 已包含 · 🔒 需启用高级支持
 
@@ -187,9 +189,13 @@
 
 阅读器高级支持采用**买断制**（一次激活，长期使用，具体以 [高级支持条款](./PREMIUM_TERMS.md) 为准），而非按月订阅。
 
-### 非 EPUB 格式打不开？
+### 如何调整字体与字号？
 
-**EPUB、TXT、FB2/FBZ、MOBI、AZW3、CBZ、PDF** 均为基础免费阅读格式。详见上文 [基础体验与高级支持](#基础体验与高级支持)。
+阅读器的字体与字号**自动适配 Obsidian**，插件内不单独提供自定义。请在 Obsidian **设置 → 外观** 中调整。
+
+### 如何更换背景色？
+
+阅读器背景色**随当前 Obsidian 主题自动适配**。安装并切换不同主题即可，插件不会单独设置背景色。
 
 
 ## 更多文档
@@ -224,12 +230,13 @@ On top of essential needs and the core experience, advanced users get **immersiv
 
 - Full-platform reading on desktop and mobile
 - EPUB, TXT, FB2/FBZ, MOBI, AZW3, CBZ, and PDF reading
-- My bookshelf: import, covers, progress, search/filter, reading status
-- Paginated / continuous scroll, single / dual column, width and typography controls
+- My bookshelf: import, covers, progress, search/filter, reading status, multiple views
+- TOC jump, dual-page reading, single-page continuous scroll, and other modes, plus typography and themes
 - Persistent reading progress, bookmarks, remaining-time estimates
 - Reading reference points (record / update / jump)
 - Reading background glow (Premium)
 - Paragraph reading mode, immersive fullscreen (Premium)
+- Vocabulary marking mode (Premium)
 - Bookshelf playlists (Premium)
 
 ### Excerpts and annotations
@@ -265,9 +272,9 @@ On top of essential needs and the core experience, advanced users get **immersiv
 
 ### Export and helpers
 
-- Export current chapter to Markdown (Essential)
+- Excerpt export templates and built-in presets (Essential)
+- Export current chapter to Markdown with excerpt notes (Premium)
 - Export whole-book / chapter excerpts and marked chapters (Premium)
-- Export template studio with built-in presets
 - Footnote hover preview (Premium)
 - Multilingual UI (Simplified Chinese, Traditional Chinese, English, Japanese, Korean, Russian, German, Spanish, Arabic) + in-app tutorial
 
@@ -280,27 +287,28 @@ Minimum Obsidian version: **1.8.7**
 | Capability | Essential experience | Premium support |
 |------------|:--------------------:|:---------------:|
 | **All platforms** (desktop and mobile) | ✅ | ✅ |
-| Read **EPUB**, TOC, paginated/scroll modes, typography and themes | ✅ | ✅ |
-| Read **TXT** plain-text books | ✅ | ✅ |
-| Read **FB2 / FBZ** | ✅ | ✅ |
-| Read **MOBI / AZW3 / CBZ** | ✅ | ✅ |
+| Read **EPUB / TXT / FB2 / FBZ / MOBI / AZW3 / CBZ / PDF** | ✅ | ✅ |
+| **TOC jump**, **dual-page reading**, **single-page continuous scroll**, and other modes, plus typography and themes | ✅ | ✅ |
 | **Five highlight colors**, annotations, excerpts, and **in-body rendering** | ✅ | ✅ |
 | **Underline / strikethrough / wavy underline** styling | ✅ | ✅ |
 | Excerpt **card list** | ✅ | ✅ |
+| Bookshelf **multiple views** | ✅ | ✅ |
+| **Reading reference points** (record / update / jump) | ✅ | ✅ |
+| **Reading progress**, bookshelf progress, last location, remaining-time estimates | ✅ | ✅ |
+| **Current-page bookmarks**, bookmark folder, and bookmark list navigation | ✅ | ✅ |
+| **Canvas** binding and automatic node creation | ✅ | ✅ |
+| **Excerpt export templates** and built-in presets | ✅ | ✅ |
+| **Public API** (current chapter / TOC section body, chapter or whole-book excerpt notes, etc.) | ✅ | ✅ |
 | Excerpt **timeline** view | 🔒 | ✅ |
 | TOC sidebar **book map density bar** | 🔒 | ✅ |
 | TOC **chapter marks** (important / question / mastered) | 🔒 | ✅ |
 | Bookshelf **playlists** | 🔒 | ✅ |
 | **Two-way tracing** (anchor jumps, notes ↔ book location display) | 🔒 | ✅ |
-| **Reading reference points** (record / update / jump) | ✅ | ✅ |
 | **Reading background glow** | 🔒 | ✅ |
 | **Paragraph reading mode**, immersive fullscreen | 🔒 | ✅ |
-| **Reading progress**, bookshelf progress, last location, remaining-time estimates | ✅ | ✅ |
-| **Current-page bookmarks**, bookmark folder, and bookmark list navigation | ✅ | ✅ |
-| **Canvas** binding and automatic node creation | ✅ | ✅ |
+| **Vocabulary marking mode** | 🔒 | ✅ |
+| Export current chapter to Markdown with excerpt notes | 🔒 | ✅ |
 | Footnote hover preview | 🔒 | ✅ |
-| Export current chapter to Markdown | ✅ | ✅ |
-| **Public API** (current chapter / TOC section body, chapter or whole-book excerpt notes, etc.) | ✅ | ✅ |
 
 > Legend: ✅ included · 🔒 requires Premium support
 
@@ -371,9 +379,13 @@ Premium support **funds ongoing development** so the reader and excerpt workflow
 
 Premium support is **buy-once** (activate once, use long-term; see [Premium support terms](./PREMIUM_TERMS.md)), not a monthly subscription.
 
-### Cannot open non-EPUB formats?
+### How do I change font and size?
 
-**EPUB, TXT, FB2/FBZ, MOBI, AZW3, CBZ, and PDF** are all included in the essential experience. See [Essential experience and Premium support](#essential-experience-and-premium-support) above.
+The reader **follows Obsidian’s font and size**. There is no separate in-plugin control—adjust them in Obsidian **Settings → Appearance**.
+
+### How do I change the background color?
+
+The reader background **follows the active Obsidian theme**. Install and switch themes; the plugin does not set a background of its own.
 
 ## More documentation
 
