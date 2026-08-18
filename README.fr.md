@@ -31,11 +31,13 @@ Démarrer est simple : placez un EPUB dans votre vault, ouvrez-le depuis l’ét
 ### Lecture et étagère
 
 - Lecture sur toutes les plateformes : bureau et mobile
-- Lecture EPUB, TXT et FB2/FBZ (MOBI, AZW3 et CBZ sont Premium)
+- Lecture EPUB, TXT, FB2/FBZ, MOBI, AZW3, CBZ et PDF
 - Mon étagère : import, couvertures, progression, recherche/filtre, statut de lecture
 - Pagination / défilement continu, une / deux colonnes, contrôles de largeur et de typographie
 - Progression de lecture persistante, signets, estimation du temps restant
-- Mode de lecture par paragraphes, plein écran immersif, points de lecture de référence (Premium)
+- Points de lecture de référence (enregistrer / mettre à jour / aller)
+- Dégradé translucide de lecture (Premium)
+- Mode de lecture par paragraphes, plein écran immersif (Premium)
 - Listes de lecture de l’étagère (Premium)
 
 ### Extraits et annotations
@@ -49,9 +51,10 @@ Démarrer est simple : placez un EPUB dans votre vault, ouvrez-le depuis l’ét
 ### Résumés d’extraits
 
 - Liste de cartes d’extraits (filtrer, trier, aller à la source)
-- Vue chronologique des extraits (revoir par date, aller à la source)
+- Vue chronologique des extraits (revoir par date, aller à la source ; Premium)
 - Sélection par lots : exporter / supprimer
-- Barre de densité de la carte du livre dans la barre latérale de la table des matières
+- Barre de densité de la carte du livre dans la barre latérale de la table des matières (Premium)
+- Marques de chapitre dans la table des matières (important / question / maîtrisé ; Premium)
 
 ### Traçage et intégrations
 
@@ -182,14 +185,18 @@ Plus de détails : [Flux d’extraits et de notes](#flux-dextraits-et-de-notes) 
 | Lire **EPUB**, TOC, modes paginé/défilement, typographie et thèmes | ✅ | ✅ |
 | Lire des livres texte brut **TXT** | ✅ | ✅ |
 | Lire **FB2 / FBZ** | ✅ | ✅ |
-| Lire **MOBI / AZW3 / CBZ** | 🔒 | ✅ |
+| Lire **MOBI / AZW3 / CBZ** | ✅ | ✅ |
 | **Cinq couleurs de surlignage**, annotations, extraits et **rendu dans le corps** | ✅ | ✅ |
 | Styles **souligné / barré / souligné ondulé** | ✅ | ✅ |
-| Vues **liste de cartes** et **chronologie** des extraits | ✅ | ✅ |
-| **Barre de densité de la carte du livre** dans la barre latérale TOC | ✅ | ✅ |
+| Vue **liste de cartes** des extraits | ✅ | ✅ |
+| Vue **chronologie** des extraits | 🔒 | ✅ |
+| **Barre de densité de la carte du livre** dans la barre latérale TOC | 🔒 | ✅ |
+| **Marques de chapitre** dans la table des matières (important / question / maîtrisé) | 🔒 | ✅ |
 | **Listes de lecture** de l’étagère | 🔒 | ✅ |
 | **Traçage bidirectionnel** (sauts d’ancre, lecteur ↔ notes / Canvas / paquets) | 🔒 | ✅ |
-| **Mode de lecture par paragraphes**, points de lecture de référence, plein écran immersif | 🔒 | ✅ |
+| **Points de lecture de référence** (enregistrer / mettre à jour / aller) | ✅ | ✅ |
+| **Dégradé translucide de lecture** | 🔒 | ✅ |
+| **Mode de lecture par paragraphes**, plein écran immersif | 🔒 | ✅ |
 | **Progression de lecture**, progression sur l’étagère, dernier emplacement, estimation du temps restant | ✅ | ✅ |
 | **Signets de la page actuelle**, dossier de signets et navigation dans la liste de signets | ✅ | ✅ |
 | Liaison **Canvas** et création automatique de nœuds | ✅ | ✅ |
@@ -259,7 +266,7 @@ Les extraits sont enregistrés à des emplacements concrets dans les fichiers Ma
 
 ### Pourquoi le support Premium est-il payant ?
 
-Le support Premium **finance le développement continu** pour que le lecteur et le flux d’extraits continuent de s’améliorer. L’**expérience Essential est gratuite**—la lecture quotidienne, cinq couleurs de surlignage, annotations, extraits et rendu dans le corps sont pleinement utilisables sans payer. Activez le support Premium seulement lorsque vous souhaitez des formats, le traçage bidirectionnel, le mode de lecture par paragraphes et d’autres capacités avancées.
+Le support Premium **finance le développement continu** pour que le lecteur et le flux d’extraits continuent de s’améliorer. L’**expérience Essential est gratuite**—la lecture quotidienne, cinq couleurs de surlignage, annotations, extraits et rendu dans le corps sont pleinement utilisables sans payer. Activez le support Premium seulement lorsque vous souhaitez la chronologie des extraits, le traçage bidirectionnel, le mode de lecture par paragraphes et d’autres capacités avancées.
 
 ### Abonnement ou achat unique ?
 
@@ -267,7 +274,7 @@ Le support Premium est un **achat unique** (activez une fois, utilisez à long t
 
 ### Impossible d’ouvrir des formats autres qu’EPUB ?
 
-**EPUB, TXT et FB2/FBZ** sont inclus dans l’expérience Essential. **MOBI, AZW3 et CBZ** nécessitent le support Premium. Voir [Expérience Essential et support Premium](#expérience-essential-et-support-premium) ci-dessus.
+**EPUB, TXT, FB2/FBZ, MOBI, AZW3, CBZ et PDF** sont inclus dans l’expérience Essential. Voir [Expérience Essential et support Premium](#expérience-essential-et-support-premium) ci-dessus.
 
 ### Nom du dossier du plugin ?
 

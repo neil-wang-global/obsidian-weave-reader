@@ -15,9 +15,6 @@
 
 ![QQ_1785812351950](https://github.com/user-attachments/assets/5c33039e-7ca4-461b-b258-972561f9789d)
 
-![QQ20260808-194811-HD](https://github.com/user-attachments/assets/557a2687-0b9b-456e-99fc-3f90f6f2bc94)
-
-
 </div>
 
 ---
@@ -25,7 +22,8 @@
 ## 中文文档
 
 ### 插件介绍
- Weave epub reader为weave插件系列下的一款完全服务于obsidian并随obsidian全平台使用的阅读器插件。
+
+如果你希望 **Obsidian 不只是笔记仓库，也是你正经读书的地方**，可以试试 Weave EPUB Reader。
 
 它适合：边读边把句子记进 Markdown 的人；做专题研究、想把摘录画进 Canvas 的人；用 Weave 做间隔复习、想把书中段落制成卡片的人；同时推进多本书、需要月历排期而不是「开十本读半页」的人。
 
@@ -36,11 +34,13 @@
 ### 阅读与书架
 
 - 桌面 / 移动端全平台阅读
-- EPUB、TXT、FB2/FBZ 阅读（MOBI、AZW3、CBZ 为高级）
+- EPUB、TXT、FB2/FBZ、MOBI、AZW3、CBZ、PDF 阅读
 - 我的书架：导入、封面、进度、搜索筛选、阅读状态
 - 翻页 / 连续滚动、单页 / 双栏、宽度与排版调节
 - 阅读进度持久化、书签、剩余阅读时间估算
-- 段落阅读模式、沉浸式全屏、参考阅读点（高级）
+- 参考阅读点（手动记录 / 更新 / 跳转）
+- 常规阅读透光渐变（高级）
+- 段落阅读模式、沉浸式全屏（高级）
 - 书架书单（高级）
 
 ### 摘录与标注
@@ -54,9 +54,10 @@
 ### 摘录汇总
 
 - 摘录笔记汇总卡片列表（筛选、排序、定位原文）
-- 摘录笔记汇总时间线视图（按日期回顾、跳转原文）
+- 摘录笔记汇总时间线视图（按日期回顾、跳转原文；高级）
 - 批量选择：导出 / 删除
-- 目录侧栏全书地图密度条
+- 目录侧栏全书地图密度条（高级）
+- 目录章节标记（重要 / 疑问 / 已掌握等彩色圆点；高级）
 
 ### 溯源与联动
 
@@ -187,14 +188,18 @@ flowchart LR
 | 阅读 **EPUB**，目录跳转、翻页/滚动、版式与主题 | ✅ | ✅ |
 | 阅读 **TXT** 纯文本书籍 | ✅ | ✅ |
 | 阅读 **FB2 / FBZ** | ✅ | ✅ |
-| 阅读 **MOBI / AZW3 / CBZ** | 🔒 | ✅ |
+| 阅读 **MOBI / AZW3 / CBZ** | ✅ | ✅ |
 | **五种高亮色**、想法、摘录与**正文回显** | ✅ | ✅ |
 | **下划线 / 删除线 / 波浪线**等样式标注 | ✅ | ✅ |
-| 摘录笔记**汇总卡片列表**与**时间线**视图 | ✅ | ✅ |
-| 目录侧栏**全书地图密度条** | ✅ | ✅ |
+| 摘录笔记**汇总卡片列表** | ✅ | ✅ |
+| 摘录笔记**时间线**视图 | 🔒 | ✅ |
+| 目录侧栏**全书地图密度条** | 🔒 | ✅ |
+| 目录**章节标记**（重要 / 疑问 / 已掌握等） | 🔒 | ✅ |
 | 书架**书单** | 🔒 | ✅ |
 | **双向溯源**（锚点跳转、笔记 ↔ 原书定位显示） | 🔒 | ✅ |
-| **段落阅读模式**、参考阅读点、沉浸式全屏 | 🔒 | ✅ |
+| **参考阅读点**（手动记录 / 更新 / 跳转） | ✅ | ✅ |
+| **常规阅读透光渐变** | 🔒 | ✅ |
+| **段落阅读模式**、沉浸式全屏 | 🔒 | ✅ |
 | **阅读进度**持久化、书架进度、最后阅读点、剩余阅读时间 | ✅ | ✅ |
 | **当前页书签**、书签目录与书签列表跳转 | ✅ | ✅ |
 | **Canvas** 绑定与自动写入节点 | ✅ | ✅ |
@@ -264,7 +269,7 @@ flowchart LR
 
 ### 为何提供高级付费？
 
-高级支持用于**支持持续开发**——让开发者能长期投入、打磨阅读与摘录细节。**基础体验免费**，已覆盖日常阅读、五色高亮、想法、摘录与正文回显等核心能力，上手体验完整；若你需要多格式、双向溯源、段落阅读模式等进阶能力，再按需启用高级支持即可。
+高级支持用于**支持持续开发**——让开发者能长期投入、打磨阅读与摘录细节。**基础体验免费**，已覆盖日常阅读、五色高亮、想法、摘录与正文回显等核心能力，上手体验完整；若你需要时间线视图、双向溯源、段落阅读模式等进阶能力，再按需启用高级支持即可。
 
 ### 是订阅还是买断？
 
@@ -272,11 +277,60 @@ flowchart LR
 
 ### 非 EPUB 格式打不开？
 
-**EPUB、TXT、FB2/FBZ** 在基础体验中即可阅读；**MOBI、AZW3、CBZ** 等需启用高级支持。详见上文 [基础体验与高级支持](#基础体验与高级支持)。
+**EPUB、TXT、FB2/FBZ、MOBI、AZW3、CBZ、PDF** 均为基础免费阅读格式。详见上文 [基础体验与高级支持](#基础体验与高级支持)。
 
 ### 插件文件夹名称？
 
 插件 ID 为 `weave-epub-reader`，路径：`.obsidian/plugins/weave-epub-reader/`
+
+### Official API（给 Obsidian AI / Skill）
+
+阅读器对 Obsidian AI / Skill 暴露薄 Official API：**只读当前正在读的书**的当前章或 **TOC 小节**正文，不做全书检索 / RAG。抽章与菜单「导出当前章 / 按目录导出」同源；导出给人存档，API 给会话。长章优先用 `getTocSection`。
+
+```js
+const api = app.plugins.plugins["weave-epub-reader"]?.getOfficialAPI?.();
+if (!api) throw new Error("Weave EPUB Reader is not enabled");
+
+const info = api.getInfo?.();
+// info.capabilities.reading.getCurrentChapter === true
+// info.capabilities.reading.getTocSection === true
+// info.capabilities.reading.sourceLocator === true
+
+const ctx = await api.getReadingContext();
+if (!ctx.ok) {
+  // ctx.error.code: no_active_reader | no_current_chapter | ...
+} else {
+  // ctx.data.bookTitle, chapterTitle, chapterHref, chapterIndex
+}
+
+// Prefer for long chapters / named subsections:
+const section = await api.getTocSection({ format: "text" }); // current TOC node
+// or: await api.getTocSection({ label: "第二节" })
+// or: await api.getTocSection({ href: "Text/ch2.xhtml#s-b" }) // from getToc()
+if (section.ok) {
+  // section.data.text + section.data.sourceLink / sourceCallout（制卡溯源）
+}
+
+// Whole current spine chapter (may be long):
+const chapter = await api.getCurrentChapter({ format: "text" }); // or "markdown" | "both"
+if (chapter.ok) {
+  // chapter.data.text / markdown + chapter.data.sourceLink
+  // chapter.meta?.truncated may be true for very long chapters
+}
+
+// Optional:
+// await api.listCurrentChapterHighlights()
+// await api.listBookExcerpts() // all excerpts for current book; or { filePath } / { bookId }
+// await api.getToc({ maxDepth: 3 })
+// await api.listOpenReaders()
+```
+
+未打开阅读器时返回 `{ ok: false, error: { code, message } }`，不抛含糊异常。TOC 无匹配 / 歧义时分别为 `toc_not_found` / `ambiguous_toc`。`listBookExcerpts` 在传入 `filePath`/`bookId` 时可在未打开阅读器时列出该书摘录；书不在书架则为 `book_not_found`。`sourceLink` 为小节/章起点定位（非选区句子级）。`capabilities.reading.searchBook` / `streamToModel` 为 `false`。
+
+给 Obsidian AI 插件用的可发现 Skill 文档（复制到该 AI 插件的 skills 目录即可）：
+
+- [`skills/weave-epub-current-chapter/SKILL.md`](./skills/weave-epub-current-chapter/SKILL.md) — 当前章 / TOC 小节正文
+- [`skills/weave-epub-book-excerpts/SKILL.md`](./skills/weave-epub-book-excerpts/SKILL.md) — 整本书摘录列表
 
 ## 更多文档
 
@@ -309,11 +363,13 @@ Getting started is light: put an EPUB in your vault, open it from the bookshelf,
 ### Reading and bookshelf
 
 - Full-platform reading on desktop and mobile
-- EPUB, TXT, and FB2/FBZ reading (MOBI, AZW3, and CBZ are Premium)
+- EPUB, TXT, FB2/FBZ, MOBI, AZW3, CBZ, and PDF reading
 - My bookshelf: import, covers, progress, search/filter, reading status
 - Paginated / continuous scroll, single / dual column, width and typography controls
 - Persistent reading progress, bookmarks, remaining-time estimates
-- Paragraph reading mode, immersive fullscreen, reference reading points (Premium)
+- Reading reference points (record / update / jump)
+- Reading background glow (Premium)
+- Paragraph reading mode, immersive fullscreen (Premium)
 - Bookshelf playlists (Premium)
 
 ### Excerpts and annotations
@@ -327,9 +383,10 @@ Getting started is light: put an EPUB in your vault, open it from the bookshelf,
 ### Excerpt summaries
 
 - Excerpt card list (filter, sort, jump to source)
-- Excerpt timeline view (review by date, jump to source)
+- Excerpt timeline view (review by date, jump to source; Premium)
 - Batch select: export / delete
-- TOC sidebar book-map density bar
+- TOC sidebar book-map density bar (Premium)
+- TOC chapter marks (important / question / mastered colored dots; Premium)
 
 ### Tracing and integrations
 
@@ -460,14 +517,18 @@ More detail: [Excerpt and note workflows](#excerpt-and-note-workflows) and [Core
 | Read **EPUB**, TOC, paginated/scroll modes, typography and themes | ✅ | ✅ |
 | Read **TXT** plain-text books | ✅ | ✅ |
 | Read **FB2 / FBZ** | ✅ | ✅ |
-| Read **MOBI / AZW3 / CBZ** | 🔒 | ✅ |
+| Read **MOBI / AZW3 / CBZ** | ✅ | ✅ |
 | **Five highlight colors**, annotations, excerpts, and **in-body rendering** | ✅ | ✅ |
 | **Underline / strikethrough / wavy underline** styling | ✅ | ✅ |
-| Excerpt **card list** and **timeline** views | ✅ | ✅ |
-| TOC sidebar **book map density bar** | ✅ | ✅ |
+| Excerpt **card list** | ✅ | ✅ |
+| Excerpt **timeline** view | 🔒 | ✅ |
+| TOC sidebar **book map density bar** | 🔒 | ✅ |
+| TOC **chapter marks** (important / question / mastered) | 🔒 | ✅ |
 | Bookshelf **playlists** | 🔒 | ✅ |
 | **Two-way tracing** (anchor jumps, reader ↔ notes / Canvas / decks) | 🔒 | ✅ |
-| **Paragraph reading mode**, reference reading points, immersive fullscreen | 🔒 | ✅ |
+| **Reading reference points** (record / update / jump) | ✅ | ✅ |
+| **Reading background glow** | 🔒 | ✅ |
+| **Paragraph reading mode**, immersive fullscreen | 🔒 | ✅ |
 | **Reading progress**, bookshelf progress, last location, remaining-time estimates | ✅ | ✅ |
 | **Current-page bookmarks**, bookmark folder, and bookmark list navigation | ✅ | ✅ |
 | **Canvas** binding and automatic node creation | ✅ | ✅ |
@@ -537,7 +598,7 @@ Excerpts are stored at concrete locations in the Markdown, Canvas, or Weave deck
 
 ### Why is Premium support paid?
 
-Premium support **funds ongoing development** so the reader and excerpt workflow can keep improving. The **essential experience is free**—daily reading, five highlight colors, annotations, excerpts, and in-body rendering are fully usable without paying. Enable Premium support only when you want formats, two-way tracing, paragraph reading mode, and other advanced capabilities.
+Premium support **funds ongoing development** so the reader and excerpt workflow can keep improving. The **essential experience is free**—daily reading, five highlight colors, annotations, excerpts, and in-body rendering are fully usable without paying. Enable Premium support only when you want the excerpt timeline, two-way tracing, paragraph reading mode, and other advanced capabilities.
 
 ### Subscription or one-time purchase?
 
@@ -545,11 +606,34 @@ Premium support is **buy-once** (activate once, use long-term; see [Premium supp
 
 ### Cannot open non-EPUB formats?
 
-**EPUB, TXT, and FB2/FBZ** are included in the essential experience. **MOBI, AZW3, and CBZ** require Premium support. See [Essential experience and Premium support](#essential-experience-and-premium-support) above.
+**EPUB, TXT, FB2/FBZ, MOBI, AZW3, CBZ, and PDF** are all included in the essential experience. See [Essential experience and Premium support](#essential-experience-and-premium-support) above.
 
 ### Plugin folder name?
 
 Plugin ID: `weave-epub-reader` → `.obsidian/plugins/weave-epub-reader/`
+
+### Official API (for Obsidian AI / Skills)
+
+A thin in-process API exposes **the currently open book** — either the current spine chapter or a **TOC subsection** — not whole-book search/RAG. Extraction matches “Export current chapter / export TOC entry”; export writes files, the API feeds AI sessions. Prefer `getTocSection` for long chapters. Whole-book **excerpt notes** (not body text) are available via `listBookExcerpts`.
+
+```js
+const api = app.plugins.plugins["weave-epub-reader"]?.getOfficialAPI?.();
+if (!api) throw new Error("Weave EPUB Reader is not enabled");
+
+const ctx = await api.getReadingContext();
+const section = await api.getTocSection({ format: "text" }); // current TOC node; or { label } / { href }
+// section.data.sourceLink / sourceCallout — section-level provenance for Weave cards
+const chapter = await api.getCurrentChapter({ format: "text" }); // whole spine section
+// Optional: listCurrentChapterHighlights / listBookExcerpts / getToc / listOpenReaders
+// listBookExcerpts() — current book; or { filePath } / { bookId } without an open reader
+```
+
+When no reader is open, chapter methods return `{ ok: false, error: { code, message } }` instead of throwing. TOC miss / ambiguity: `toc_not_found` / `ambiguous_toc`. Unknown book locator: `book_not_found`. `sourceLink` jumps to section/TOC start (not a sentence selection).
+
+Agent Skills for Obsidian AI plugins (copy into that plugin’s skills folder):
+
+- [`skills/weave-epub-current-chapter/SKILL.md`](./skills/weave-epub-current-chapter/SKILL.md) — current chapter / TOC section body
+- [`skills/weave-epub-book-excerpts/SKILL.md`](./skills/weave-epub-book-excerpts/SKILL.md) — whole-book excerpt list
 
 ## More documentation
 
