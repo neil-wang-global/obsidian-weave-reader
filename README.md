@@ -23,7 +23,7 @@
 
 ### 插件介绍
 
-如果你希望 **Obsidian 不只是笔记仓库，也是你正经读书的地方**，可以试试 Weave EPUB Reader。
+Weave epub reader为weave插件系列下的一款完全服务于obsidian并随obsidian全平台使用的阅读器插件。
 
 它适合：边读边把句子记进 Markdown 的人；做专题研究、想把摘录画进 Canvas 的人；用 Weave 做间隔复习、想把书中段落制成卡片的人；同时推进多本书、需要月历排期而不是「开十本读半页」的人。
 
