@@ -2,7 +2,7 @@
 
 [中文](#中文文档) | [繁體中文](./README.zh-TW.md) | [English](#english-documentation) | [Español](./README.es.md) | [Français](./README.fr.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Русский](./README.ru.md) | [العربية](./README.ar.md)
 
-<div align="center">
+
    
 ![weave-series-banner-og](https://github.com/user-attachments/assets/a52c0875-9296-4dfd-bf94-114a225f2972)
 
