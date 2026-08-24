@@ -34,6 +34,7 @@ Además de las necesidades esenciales y la experiencia principal, los usuarios a
 - Lectura de EPUB, TXT, FB2/FBZ, MOBI, AZW3, CBZ y PDF
 - Mi estantería: importar, portadas, progreso, búsqueda/filtro, estado de lectura, varias vistas
 - Salto de índice, lectura a doble página, desplazamiento continuo de una página y otros modos, más tipografía y temas
+- Tipografía de lectura: por defecto sigue Obsidian; permite fuente y tamaño de cuerpo personalizados en el lector
 - Progreso de lectura persistente, marcadores, estimación de tiempo restante
 - Puntos de lectura de referencia (registrar / actualizar / saltar)
 - Resplandor de fondo de lectura (Premium)
@@ -183,7 +184,7 @@ El soporte Premium es **compra única** (activa una vez, úsalo a largo plazo; c
 
 ### ¿Cómo cambio la fuente y el tamaño?
 
-La fuente y el tamaño del lector **siguen automáticamente a Obsidian**. El complemento no ofrece un ajuste propio: cámbialos en **Ajustes → Apariencia** de Obsidian.
+Por defecto el lector **sigue la fuente y el tamaño de texto de Obsidian**. Abre **Tipografía** en el menú del lector y activa **Fuente y tamaño de cuerpo personalizados** para elegir una fuente predefinida y ajustar el tamaño (como porcentaje de la base de Obsidian). Con **Usar estilos del editor** activado, se aplican las fuentes originales del EPUB.
 
 ### ¿Cómo cambio el color de fondo?
 

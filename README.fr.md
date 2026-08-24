@@ -34,6 +34,7 @@ En plus des besoins essentiels et de l’expérience de base, les utilisateurs a
 - Lecture EPUB, TXT, FB2/FBZ, MOBI, AZW3, CBZ et PDF
 - Mon étagère : import, couvertures, progression, recherche/filtre, statut de lecture, plusieurs vues
 - Saut dans la table des matières, lecture double page, défilement continu d’une page et autres modes, plus typographie et thèmes
+- Mise en forme : par défaut suit Obsidian ; police et taille du corps personnalisable dans le lecteur
 - Progression de lecture persistante, signets, estimation du temps restant
 - Points de lecture de référence (enregistrer / mettre à jour / aller)
 - Dégradé translucide de lecture (Premium)
@@ -183,7 +184,7 @@ Le support Premium est un **achat unique** (activez une fois, utilisez à long t
 
 ### Comment changer la police et la taille ?
 
-La police et la taille du lecteur **suivent automatiquement Obsidian**. Il n’y a pas de réglage séparé dans le plugin : ajustez-les dans **Réglages → Apparence**.
+Par défaut, le lecteur **suit la police et la taille de texte d’Obsidian**. Ouvrez **Typographie** dans le menu du lecteur et activez **Police et taille du corps personnalisées** pour choisir une police prédéfinie et ajuster la taille (en pourcentage de la base Obsidian). Avec **Utiliser les styles de l’éditeur** activé, les polices originales de l’EPUB s’appliquent.
 
 ### Comment changer la couleur de fond ?
 

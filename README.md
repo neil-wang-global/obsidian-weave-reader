@@ -40,6 +40,7 @@
 - EPUB、TXT、FB2/FBZ、MOBI、AZW3、CBZ、PDF 阅读
 - 我的书架：导入、封面、进度、搜索筛选、阅读状态、多视图展示
 - 目录跳转、双页阅读、单页连续滚动等多种模式，以及版式与主题
+- 阅读排版：默认跟随 Obsidian 正文字体与字号，支持在阅读器内自定义正文字体与大小
 - 阅读进度持久化、书签、剩余阅读时间估算
 - 参考阅读点（手动记录 / 更新 / 跳转）
 - 常规阅读透光渐变（高级）
@@ -194,7 +195,7 @@
 
 ### 如何调整字体与字号？
 
-阅读器的字体与字号**自动适配 Obsidian**，插件内不单独提供自定义。请在 Obsidian **设置 → 外观** 中调整。
+默认**跟随 Obsidian 外观**中的正文字体与字号。在阅读器菜单打开**排版设置**，启用「**自定义正文字体与字号**」后，可选择预设字体并调节字号（相对 Obsidian 基准的百分比）。若开启「**出版商样式**」，则沿用 EPUB 原书字体。
 
 ### 如何更换背景色？
 
@@ -235,6 +236,7 @@ On top of essential needs and the core experience, advanced users get **immersiv
 - EPUB, TXT, FB2/FBZ, MOBI, AZW3, CBZ, and PDF reading
 - My bookshelf: import, covers, progress, search/filter, reading status, multiple views
 - TOC jump, dual-page reading, single-page continuous scroll, and other modes, plus typography and themes
+- Reading typography: follows Obsidian text font and size by default; custom body font and size in the reader
 - Persistent reading progress, bookmarks, remaining-time estimates
 - Reading reference points (record / update / jump)
 - Reading background glow (Premium)
@@ -384,7 +386,7 @@ Premium support is **buy-once** (activate once, use long-term; see [Premium supp
 
 ### How do I change font and size?
 
-The reader **follows Obsidian’s font and size**. There is no separate in-plugin control—adjust them in Obsidian **Settings → Appearance**.
+By default the reader **follows Obsidian’s text font and size**. Open **Typography** in the reader menu and enable **Custom body font and size** to choose a preset font and adjust size (as a percentage of Obsidian’s baseline). When **Use publisher styles** is on, the book’s original fonts apply.
 
 ### How do I change the background color?
 
