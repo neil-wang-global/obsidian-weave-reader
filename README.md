@@ -103,6 +103,7 @@
 | **全平台** | ✅ | ✅ |
 | **EPUB / TXT / FB2 / FBZ / MOBI / AZW3 / CBZ / PDF** | ✅ | ✅ |
 | **目录跳转**、**双页阅读**、**单页连续滚动**等多种模式 | ✅ | ✅ |
+| **阅读排版字体**：**跟随 Obsidian**、**自定义正文字体与大小**、**书籍原版（出版商样式）** | ✅ | ✅ |
 | **五种高亮色**、想法、摘录与**正文回显** | ✅ | ✅ |
 | **下划线 / 删除线 / 波浪线**等样式标注 | ✅ | ✅ |
 | 摘录笔记**汇总卡片列表** | ✅ | ✅ |
@@ -294,6 +295,7 @@ Minimum Obsidian version: **1.8.7**
 | **All platforms** (desktop and mobile) | ✅ | ✅ |
 | Read **EPUB / TXT / FB2 / FBZ / MOBI / AZW3 / CBZ / PDF** | ✅ | ✅ |
 | **TOC jump**, **dual-page reading**, **single-page continuous scroll**, and other modes, plus typography and themes | ✅ | ✅ |
+| **Reading typography**: **follow Obsidian** text font, **custom body font and size**, or **publisher (original book) styles** | ✅ | ✅ |
 | **Five highlight colors**, annotations, excerpts, and **in-body rendering** | ✅ | ✅ |
 | **Underline / strikethrough / wavy underline** styling | ✅ | ✅ |
 | Excerpt **card list** | ✅ | ✅ |

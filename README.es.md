@@ -92,6 +92,7 @@ Versión mínima de Obsidian: **1.8.7**
 | **Todas las plataformas** | ✅ | ✅ |
 | **EPUB / TXT / FB2 / FBZ / MOBI / AZW3 / CBZ / PDF** | ✅ | ✅ |
 | **Salto de índice**, **lectura a doble página**, **desplazamiento continuo de una página** y otros modos | ✅ | ✅ |
+| **Tipografía de lectura**: **seguir Obsidian**, **fuente y tamaño de cuerpo personalizados**, **estilos originales del libro (editorial)** | ✅ | ✅ |
 | **Cinco colores de resaltado**, anotaciones, extractos y **renderizado en el cuerpo** | ✅ | ✅ |
 | Estilos de **subrayado / tachado / subrayado ondulado** | ✅ | ✅ |
 | Vista de **lista de tarjetas** de extractos | ✅ | ✅ |
