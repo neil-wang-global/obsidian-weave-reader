@@ -77,4 +77,19 @@ describe("LicenseManager current license validation", () => {
 		expect(result.isValid).toBe(true);
 		expect(cloudValidator.validate).toHaveBeenCalledTimes(1);
 	});
+
+	it("downgrades when initial cloud validation is unavailable", async () => {
+		const { manager, cloudValidator } = createManager();
+		cloudValidator.validate.mockResolvedValue({
+			valid: false,
+			is_network_error: true,
+		});
+
+		const result = await manager.validateCurrentLicense(buildLicense());
+
+		expect(result).toMatchObject({
+			isValid: false,
+			error: "许可证验证暂时不可用，请恢复网络后重试",
+		});
+	});
 });
