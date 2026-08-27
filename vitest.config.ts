@@ -37,6 +37,7 @@ export default defineConfig({
       'src/utils/__tests__/activation-privacy.test.ts',
       'src/utils/__tests__/plugin-license.test.ts',
       'src/utils/__tests__/license-device-stats.test.ts',
+       'src/utils/__tests__/license-validation-lease.test.ts',
       'src/utils/__tests__/device-fingerprint.test.ts',
       'src/utils/__tests__/mobile-edit-viewport.test.ts',
       'src/utils/__tests__/mobile-floating-viewport.test.ts',
